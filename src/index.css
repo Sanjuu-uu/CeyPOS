@@ -1,0 +1,61 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* Color Palette */
+  --verde-naturale--primary: #ecff76;
+  --main-white: #ffffff;
+  --gray-50: #f9fafb;
+  --gray-100: #f3f4f6;
+  --gray-200: #e5e7eb;
+  --gray-300: #d1d5db;
+  --gray-400: #9ca3af;
+  --gray-500: #6b7280;
+  --gray-600: #4b5563;
+  --gray-700: #374151;
+  --gray-800: #1f2937;
+  --gray-900: #111827;
+  
+  /* Border Radius */
+  --radius-40px: 40px;
+  --radius-24px: 24px;
+  --radius-16px: 16px;
+  --radius-12px: 12px;
+  
+  /* Typography */
+  --font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+}
+
+body {
+  font-family: var(--font-family);
+  color: var(--gray-900);
+  background-color: var(--gray-50);
+}
+
+/* Typography Styles */
+.heading-h1 {
+  @apply text-3xl font-bold text-gray-900;
+}
+
+.heading-h2 {
+  @apply text-2xl font-semibold text-gray-900;
+}
+
+.heading-h3 {
+  @apply text-xl font-medium text-gray-900;
+}
+
+.paragraph-base {
+  @apply text-base text-gray-700 leading-relaxed;
+}
+
+.paragraph-sm {
+  @apply text-sm text-gray-600 leading-relaxed;
+}
+
+.component-description {
+  @apply text-sm text-gray-500 leading-relaxed;
+}

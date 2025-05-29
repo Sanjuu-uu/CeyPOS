@@ -1,0 +1,353 @@
+/* Light Mode Dashboard Components Styles */
+
+/* Dashboard Card Base Styles - Light Mode */
+.dashboard-card-light {
+  background-color: var(--main--white);
+  border-radius: var(--radius--16px);
+  padding: 24px;
+  color: var(--gray--900);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.05);
+  transition: all 0.3s ease;
+  height: 100%;
+  min-height: 180px;
+  border: 1px solid var(--gray--200);
+}
+
+.dashboard-card-light:hover {
+  background-color: var(--main--white);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.08);
+}
+
+.dashboard-card-light.wide {
+  grid-column: span 2;
+}
+
+/* Dashboard Card Header - Light Mode */
+.dashboard-card-header-light {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* Dashboard Labels and Values - Light Mode */
+.dashboard-label-light {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--gray--500);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 4px;
+}
+
+.dashboard-value-light {
+  font-size: 32px;
+  font-weight: 500;
+  margin-bottom: 8px;
+  color: var(--gray--900);
+}
+
+/* Dashboard Change Indicators - Light Mode */
+.dashboard-change-light {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  margin-top: 4px;
+}
+
+.dashboard-change-light.positive {
+  color: #4caf50; /* Green color for positive indicators */
+}
+
+.dashboard-change-light.negative {
+  color: #f44336; /* Red color for negative indicators */
+}
+
+.arrow-icon-light {
+  font-weight: bold;
+}
+
+.change-percentage-light {
+  font-weight: 600;
+  margin-right: 4px;
+}
+
+.change-text-light {
+  color: var(--gray--500);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+/* Work Time Card - Light Mode */
+.work-time-light {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.clock-icon-light {
+  color: var(--gray--900);
+  font-weight: bold;
+  font-size: 20px;
+}
+
+.hours-light {
+  font-size: 18px;
+  font-weight: 500;
+  color: var(--gray--900);
+}
+
+/* Time Filter - Light Mode */
+.time-filter-light {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.time-button-light {
+  background-color: transparent;
+  border: 1px solid var(--gray--200);
+  color: var(--gray--500);
+  border-radius: var(--radius--6px);
+  padding: 4px 8px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.time-button-light.active {
+  background-color: var(--gray--200);
+  border-color: var(--gray--200);
+  color: var(--gray--900);
+}
+
+.time-button-light:hover {
+  background-color: var(--gray--200);
+}
+
+/* Graph Container - Light Mode */
+.graph-container-light {
+  position: relative;
+  width: 100%;
+  height: 80px;
+  margin-top: 16px;
+}
+
+.graph-line-light {
+  background-image: url("data:image/svg+xml,%3Csvg width='100%25' height='80' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M0,40 C50,10 100,60 150,40 S250,55 300,30 S400,50 500,25' stroke='rgba(15, 15, 16, 0.7)' stroke-width='2' fill='none' stroke-linecap='round' stroke-linejoin='round' /%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: center;
+  width: 100%;
+  height: 100%;
+}
+
+.date-marker-light {
+  position: absolute;
+  bottom: -20px;
+  left: 50%;
+  transform: translateX(-50%);
+  background-color: var(--gray--200);
+  padding: 2px 8px;
+  border-radius: 20px;
+  font-size: 12px;
+  color: var(--gray--500);
+}
+
+/* Rating Container - Light Mode */
+.rating-container-light {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.star-icon-light {
+  color: #FFC107; /* Star color */
+  font-size: 24px;
+}
+
+.rating-value-light {
+  font-size: 26px;
+  font-weight: 500;
+  color: var(--gray--900);
+}
+
+.rating-detail-light {
+  color: var(--gray--500);
+  font-size: 14px;
+}
+
+/* Testimonial Styles - Light Mode */
+.testimonial-header-light {
+  margin-bottom: 16px;
+}
+
+.testimonial-title-light {
+  font-size: 24px;
+  font-weight: 500;
+  margin-bottom: 4px;
+  color: var(--gray--900);
+}
+
+.testimonial-subtitle-light {
+  color: var(--gray--500);
+  font-size: 14px;
+}
+
+.attendees-container-light {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 24px;
+}
+
+.attendee-light {
+  width: 24px;
+  height: 24px;
+  background-color: var(--gray--400);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--main--white);
+}
+
+.attendee-count-light {
+  color: var(--gray--500);
+  font-size: 14px;
+  margin-left: 8px;
+}
+
+/* Bar Chart - Light Mode */
+.bar-chart-container-light {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  height: 100px;
+}
+
+.bar-chart-bar-light {
+  width: 8px;
+  background-color: var(--gray--400);
+  border-radius: 4px;
+  transition: all 0.3s ease;
+}
+
+.bar-chart-bar-light:nth-child(2), 
+.bar-chart-bar-light:nth-child(4) {
+  background-color: var(--gray--900); /* Darker for emphasis */
+}
+
+/* Feed Table Styles - Light Mode */
+.feed-table-light {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.feed-table-light th {
+  text-align: left;
+  padding: 12px 16px;
+  color: var(--gray--500);
+  font-weight: 500;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-bottom: 1px solid var(--gray--200);
+}
+
+.feed-table-light td {
+  padding: 16px;
+  border-bottom: 1px solid var(--gray--200);
+}
+
+.member-info-light, .feed-info-light {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.member-avatar-light, .feed-icon-light {
+  width: 32px;
+  height: 32px;
+  background-color: var(--gray--400);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 500;
+  color: var(--main--white);
+}
+
+.feed-icon-light {
+  background-color: var(--gray--200);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.member-details-light, .feed-details-light {
+  display: flex;
+  flex-direction: column;
+}
+
+.member-name-light, .feed-type-light {
+  font-weight: 500;
+  margin-bottom: 4px;
+  color: var(--gray--900);
+}
+
+.member-feed-light, .feed-update-light {
+  color: var(--gray--500);
+  font-size: 12px;
+}
+
+/* Status Badge Updated Colors - Light Mode */
+.status-badge-light {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 12px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.status-badge-light::before {
+  content: "";
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  margin-right: 6px;
+}
+
+.status-badge-light.active {
+  background-color: rgba(216, 250, 82, 0.2);
+  color: var(--gray--900);
+}
+
+.status-badge-light.active::before {
+  background-color: var(--verde-naturale--primary);
+}
+
+.status-badge-light.inactive {
+  background-color: rgba(158, 158, 158, 0.1);
+  color: var(--gray--500);
+}
+
+.status-badge-light.inactive::before {
+  background-color: var(--gray--500);
+}
+
+.status-badge-light.configure {
+  background-color: rgba(179, 158, 252, 0.2);
+  color: var(--purple--primary);
+}
+
+.status-badge-light.configure::before {
+  background-color: var(--purple--primary);
+}
