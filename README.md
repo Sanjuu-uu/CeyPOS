@@ -8,8 +8,6 @@
 
 ![CeyPoS Logo](./pages/images/)
 
-**A comprehensive, modern Point of Sale (POS) system built with React, TypeScript, and localStorage-based data persistence.**
-
 [![React](https://img.shields.io/badge/React-18.3.1-blue.svg)](https://reactjs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.5.3-blue.svg)](https://www.typescriptlang.org/)
 [![Vite](https://img.shields.io/badge/Vite-5.4.2-646CFF.svg)](https://vitejs.dev/)
