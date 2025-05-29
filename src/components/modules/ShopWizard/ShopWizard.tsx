@@ -8,6 +8,7 @@ import { ShopWizardStep4 } from './ShopWizardStep4';
 import { ShopWizardStep5 } from './ShopWizardStep5';
 import { ShopWizardStep6 } from './ShopWizardStep6';
 import { ShopWizardProgressBar } from './ShopWizardProgressBar';
+import backgroundImage from './assets/blog-20background-1.png';
 import './styles/ShopWizard.css';
 
 const slideVariants = {
