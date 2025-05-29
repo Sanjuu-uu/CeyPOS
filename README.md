@@ -99,7 +99,7 @@ The system features a **modular architecture** with a dedicated component librar
 - **Animations**: Smooth transitions and micro-interactions
 - **Accessibility**: WCAG compliant with keyboard navigation support
 
-## 🏛Architecture
+## Architecture
 
 CeyPoS follows a **modern, modular architecture** designed for scalability and maintainability:
 
