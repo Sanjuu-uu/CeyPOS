@@ -3,7 +3,6 @@
 
 > A comprehensive, modern Point of Sale system built with React, TypeScript, and cutting-edge web technologies. Features a complete POS interface, inventory management, analytics dashboard, and component library.
 
-## **Key Features**
 
 <div align="center">
 
