@@ -107,17 +107,17 @@ CeyPoS follows a **modern, modular architecture** designed for scalability and m
 ┌─────────────────────────────────────────────────────────┐
 │                   CeyPoS System                         │
 ├─────────────────────────────────────────────────────────┤
-│  📱 Frontend Application (React + TypeScript)           │
-│  ├─ Module System (12 Feature Modules)              │
-│  ├─ Component Library (Shared UI Components)        │
-│  ├─ Static Marketing Pages (HTML Templates)         │
-│  └─ localStorage Database (Shop-specific Data)      │
+│  Frontend Application (React + TypeScript)              │
+│  ├─ Module System (12 Feature Modules)                  │
+│  ├─ Component Library (Shared UI Components)            │
+│  ├─ Static Marketing Pages (HTML Templates)             │
+│  └─ localStorage Database (Shop-specific Data)          │
 ├─────────────────────────────────────────────────────────┤
-│  ⚙️ Development Tools                                   │
-│  ├─ Vite (Build Tool & Dev Server)                     │
-│  ├─ TypeScript (Type Safety)                           │
-│  ├─ Tailwind CSS (Styling Framework)                   │
-│  └─ ESLint (Code Quality)                              │
+│  Development Tools                                      │
+│  ├─ Vite (Build Tool & Dev Server)                      │
+│  ├─ TypeScript (Type Safety)                            │
+│  ├─ Tailwind CSS (Styling Framework)                    │
+│  └─ ESLint (Code Quality)                               │
 └─────────────────────────────────────────────────────────┘
 ```
 
