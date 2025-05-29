@@ -74,10 +74,9 @@ export const ShopWizard: React.FC = () => {
       variants={containerVariants}
       initial="initial"
       animate="animate"
-      className="h-screen flex flex-col"
-      style={{ 
+      className="h-screen flex flex-col"      style={{ 
         backgroundColor: 'var(--main--white)',
-        backgroundImage: 'url(./src/components/ShopWizard/assets/blog-20background-1.png)',
+        backgroundImage: `url(${backgroundImage})`,
         backgroundSize: 'cover',
         backgroundPosition: 'center',
         backgroundAttachment: 'fixed',
