@@ -84,22 +84,16 @@ export const ShopWizardStep6: React.FC = () => {
   const [showConfetti, setShowConfetti] = useState(true);
 
   useEffect(() => {
+    // Auto complete wizard when this step loads
     completeWizard();
-    
-    // Stop confetti after 10 seconds
-    const timer = setTimeout(() => {
-      setShowConfetti(false);
-    }, 10000);
-
-    return () => clearTimeout(timer);
   }, [completeWizard]);
 
   const handleGoToDashboard = () => {
-    // In a real app, this would navigate to the dashboard
-    // For now, we'll simulate it with an alert
-    alert(`Welcome to your ${formData.shopName} dashboard! 🎉`);
-    // window.location.href = '/dashboard';
+    // Navigate to dashboard immediately
+    window.history.pushState(null, '', '/dashboard');
+    window.dispatchEvent(new PopStateEvent('popstate'));
   };
+
   return (
     <div className="h-full flex items-center justify-center relative overflow-hidden">
       {/* Confetti Animation */}
@@ -215,12 +209,40 @@ export const ShopWizardStep6: React.FC = () => {
             </p>
             
             <div style={{ display: 'flex', gap: '16px', justifyContent: 'center', flexWrap: 'wrap' }}>
-              <a href="/dashboard" className="button-primary">
+              <button 
+                onClick={handleGoToDashboard}
+                className="button-primary"
+                style={{
+                  padding: '12px 24px',
+                  borderRadius: 'var(--radius--12px)',
+                  backgroundColor: 'var(--verde-naturale--primary)',
+                  border: 'none',
+                  cursor: 'pointer',
+                  fontFamily: 'Inter, sans-serif',
+                  fontSize: '14px',
+                  fontWeight: 600,
+                  color: 'var(--gray--900)'
+                }}
+              >
                 Go to Dashboard
-              </a>
-              <a href="/help" className="button-outline">
+              </button>
+              <button 
+                onClick={() => window.open('/help', '_blank')}
+                className="button-outline"
+                style={{
+                  padding: '12px 24px',
+                  borderRadius: 'var(--radius--12px)',
+                  backgroundColor: 'transparent',
+                  border: '1px solid var(--gray--200)',
+                  cursor: 'pointer',
+                  fontFamily: 'Inter, sans-serif',
+                  fontSize: '14px',
+                  fontWeight: 600,
+                  color: 'var(--gray--900)'
+                }}
+              >
                 View Help Center
-              </a>
+              </button>
             </div>
           </motion.div>
         </div>

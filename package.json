@@ -4,7 +4,8 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "node scripts/route-preview.js --quick && vite",
+    "routes": "node scripts/route-preview.js",
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
