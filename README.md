@@ -1,20 +1,12 @@
-# 🏪 CeyPoS - AI-Powered Unified Point of Sale Solution
+# CeyPoS - AI-Powered Unified Point of Sale Solution
 
-[![React](https://img.shields.io/badge/React-18.3.1-blue.svg)](https://reactjs.org/)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.5.3-blue.svg)](https://www.typescriptlang.org/)
-[![Vite](https://img.shields.io/badge/Vite-5.4.2-green.svg)](https://vitejs.dev/)
-[![Tailwind CSS](https://img.shields.io/badge/Tailwind%20CSS-3.4.1-blue.svg)](https://tailwindcss.com/)
-[![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 > A comprehensive, modern Point of Sale system built with React, TypeScript, and cutting-edge web technologies. Features a complete POS interface, inventory management, analytics dashboard, and component library.
 
-## ✨ **Key Features**
 
 <div align="center">
 
 ![CeyPoS Logo](./pages/images/)
-
-**A comprehensive, modern Point of Sale (POS) system built with React, TypeScript, and localStorage-based data persistence.**
 
 [![React](https://img.shields.io/badge/React-18.3.1-blue.svg)](https://reactjs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.5.3-blue.svg)](https://www.typescriptlang.org/)
@@ -24,7 +16,7 @@
 
 </div>
 
-## 📋 Table of Contents
+## Table of Contents
 
 - [Overview](#overview)
 - [Features](#features)
@@ -41,7 +33,7 @@
 - [Contributing](#contributing)
 - [License](#license)
 
-## 🔍 Overview
+## Overview
 
 CeyPoS is a feature-rich, modern Point of Sale system designed for small to medium-sized businesses. Built with React 18 and TypeScript, it provides a comprehensive solution for retail operations including inventory management, sales processing, analytics, and business intelligence.
 
@@ -49,17 +41,17 @@ The system features a **modular architecture** with a dedicated component librar
 
 ### Key Highlights
 
-- 🎯 **Complete POS Solution**: Full-featured point of sale with inventory, sales, and analytics
-- 🏗️ **Modular Architecture**: 12 feature modules with clear separation of concerns
-- 🎨 **Design System**: Dedicated component library with live showcase
-- 📱 **Responsive Design**: Mobile-first design with Tailwind CSS
-- 📊 **Business Intelligence**: Advanced analytics with interactive charts
-- 🛠️ **Developer Experience**: TypeScript, ESLint, modern tooling
-- 🚀 **Production Ready**: Professional architecture suitable for deployment
+- **Complete POS Solution**: Full-featured point of sale with inventory, sales, and analytics
+- **Modular Architecture**: 12 feature modules with clear separation of concerns
+- **Design System**: Dedicated component library with live showcase
+- **Responsive Design**: Mobile-first design with Tailwind CSS
+- **Business Intelligence**: Advanced analytics with interactive charts
+- **Developer Experience**: TypeScript, ESLint, modern tooling
+- **Production Ready**: Professional architecture suitable for deployment
 
-## ✨ Features
+## Features
 
-### 🏪 Core POS Features
+### Core POS Features
 
 - **Point of Sale Interface**: Intuitive product browsing, cart management, and checkout
 - **Inventory Management**: Add, edit, delete products with Excel import/export
@@ -67,7 +59,7 @@ The system features a **modular architecture** with a dedicated component librar
 - **Receipt Generation**: Digital and printable receipts with customizable templates
 - **Customer Management**: Customer information capture and history tracking
 
-### 📱 Mobile Sessions & Multi-Device Support
+### Mobile Sessions & Multi-Device Support
 
 - **Desktop Cashier Device Sessions**: Transform any desktop/laptop into additional POS terminals via QR code
 - **Mobile Barcode Sync**: Real-time inventory management using mobile device camera for barcode scanning
@@ -76,14 +68,14 @@ The system features a **modular architecture** with a dedicated component librar
 - **QR Code Authentication**: Secure 5-minute session authentication with temporary tokens
 - **Cross-Device Data Sync**: Inventory, cart, and customer data synchronized across all connected devices
 
-### 📊 Business Intelligence
+### Business Intelligence
 
 - **Analytics Dashboard**: Real-time business KPIs and performance metrics
 - **Interactive Charts**: Sales trends, revenue analytics using Recharts
 - **Custom Reports**: Flexible report generation with data export (CSV, PDF)
 - **Data Visualization**: Responsive charts and graphs with real-time data binding
 
-### 🔧 Advanced Features
+### Advanced Features
 
 - **Shop Creation Wizard**: 6-step guided setup with Framer Motion animations
 - **Multi-step Import**: Excel data import with validation and preview
@@ -92,14 +84,14 @@ The system features a **modular architecture** with a dedicated component librar
 - **Settings Management**: Comprehensive shop and user configuration
 - **Support Center**: Built-in help system and documentation
 
-### 🎨 User Experience
+### User Experience
 
 - **Modern UI/UX**: Clean, intuitive interface with consistent design system
 - **Responsive Design**: Optimized for desktop, tablet, and mobile devices
 - **Animations**: Smooth transitions and micro-interactions
 - **Accessibility**: WCAG compliant with keyboard navigation support
 
-## 🏛️ Architecture
+## Architecture
 
 CeyPoS follows a **modern, modular architecture** designed for scalability and maintainability:
 
@@ -107,17 +99,17 @@ CeyPoS follows a **modern, modular architecture** designed for scalability and m
 ┌─────────────────────────────────────────────────────────┐
 │                   CeyPoS System                         │
 ├─────────────────────────────────────────────────────────┤
-│  📱 Frontend Application (React + TypeScript)           │
-│  ├─ 🧩 Module System (12 Feature Modules)              │
-│  ├─ 🎨 Component Library (Shared UI Components)        │
-│  ├─ 🌐 Static Marketing Pages (HTML Templates)         │
-│  └─ 🗄️ localStorage Database (Shop-specific Data)      │
+│  Frontend Application (React + TypeScript)              │
+│  ├─ Module System (12 Feature Modules)                  │
+│  ├─ Component Library (Shared UI Components)            │
+│  ├─ Static Marketing Pages (HTML Templates)             │
+│  └─ localStorage Database (Shop-specific Data)          │
 ├─────────────────────────────────────────────────────────┤
-│  ⚙️ Development Tools                                   │
-│  ├─ Vite (Build Tool & Dev Server)                     │
-│  ├─ TypeScript (Type Safety)                           │
-│  ├─ Tailwind CSS (Styling Framework)                   │
-│  └─ ESLint (Code Quality)                              │
+│  Development Tools                                      │
+│  ├─ Vite (Build Tool & Dev Server)                      │
+│  ├─ TypeScript (Type Safety)                            │
+│  ├─ Tailwind CSS (Styling Framework)                    │
+│  └─ ESLint (Code Quality)                               │
 └─────────────────────────────────────────────────────────┘
 ```
 
@@ -129,7 +121,7 @@ CeyPoS follows a **modern, modular architecture** designed for scalability and m
 - **State Management**: React Context API for centralized state
 - **Data Persistence**: localStorage with shop-specific namespacing
 
-## 🛠️ Technology Stack
+## Technology Stack
 
 ### Frontend
 
@@ -165,7 +157,7 @@ CeyPoS follows a **modern, modular architecture** designed for scalability and m
 - **WebSocket Integration**: Real-time synchronization for mobile sessions
 - **QR Code Authentication**: Secure mobile device linking
 
-## 🚀 Installation
+## Installation
 
 ### Prerequisites
 
@@ -214,7 +206,7 @@ npm run build
 npm run preview
 ```
 
-## 🎯 Usage
+## Usage
 
 ### Getting Started
 
@@ -293,7 +285,7 @@ CeyPoS supports three types of mobile sessions for extended functionality:
 
 **Mobile Endpoint**: All sessions accessible via `ceypos.com/mobilesessions`
 
-## 📁 Project Structure
+## Project Structure
 
 ```
 CeyPoS/
@@ -360,7 +352,7 @@ CeyPoS/
 - **Documentation**: 5 comprehensive docs
 - **Total**: 300+ files in organized structure
 
-## 🔧 Development
+## Development
 
 ### Available Scripts
 
@@ -434,7 +426,7 @@ CeyPoS features 12 specialized modules, each handling specific business function
 - **State Isolation**: Independent state management per module
 - **Consistent UI**: Shared component library ensures consistency
 
-## 🎨 Component Library
+## Component Library
 
 The dedicated component library (`component_library/`) provides a **design system** and **shared UI components**.
 
@@ -460,7 +452,7 @@ npm run dev  # Starts on port 3000
 - **Components**: Interactive component showcase with examples
 - **Footer**: Shared footer component with branding
 
-## 🌐 Static Marketing Pages
+## Static Marketing Pages
 
 Professional marketing website (`pages/`) with 12 HTML pages:
 
@@ -493,7 +485,7 @@ Professional marketing website (`pages/`) with 12 HTML pages:
 - **Interactive Elements**: JavaScript-powered interactions
 - **SEO Optimized**: Meta tags and semantic HTML structure
 
-## 🗄️ Data Management
+## 🗄Data Management
 
 CeyPoS uses a **localStorage-based database simulation** for client-side data persistence.
 
@@ -568,7 +560,7 @@ The localStorage implementation provides a foundation for future database integr
 - **MongoDB**: For NoSQL requirements
 - **API Integration**: RESTful API endpoints ready for backend
 
-## 🤝 Contributing
+## Contributing
 
 We welcome contributions! Please see our [Contributing Guidelines](./CONTRIBUTING.md) for details.
 
@@ -595,7 +587,7 @@ We welcome contributions! Please see our [Contributing Guidelines](./CONTRIBUTIN
 
 This project is licensed under the **MIT License** - see the [LICENSE](./LICENSE) file for details.
 
-## 🚀 Deployment
+## Deployment
 
 ### Production Build
 
@@ -620,22 +612,22 @@ VITE_API_URL=https://api.yourserver.com
 VITE_ANALYTICS_ID=your-analytics-id
 ```
 
-## 📞 Support
+## Support
 
 - **Documentation**: [GitHub Wiki](https://github.com/your-username/ceypos/wiki)
 - **Issues**: [GitHub Issues](https://github.com/your-username/ceypos/issues)
 - **Discussions**: [GitHub Discussions](https://github.com/your-username/ceypos/discussions)
 - **Email**: support@ceypos.com
 
-## 🔮 Roadmap
+## Roadmap
 
-### Phase 1 - Foundation ✅
+### Phase 1 - Foundation 
 - [x] Core POS functionality
 - [x] Inventory management
 - [x] Basic analytics
 - [x] Component library
 
-### Phase 2 - Advanced Features 🚧
+### Phase 2 - Advanced Features 
 - [ ] Real database integration
 - [ ] Multi-user support
 - [ ] Advanced reporting
@@ -643,7 +635,7 @@ VITE_ANALYTICS_ID=your-analytics-id
 - [x] QR code device linking
 - [x] Multi-terminal synchronization
 
-### Phase 3 - Enterprise 📋
+### Phase 3 - Enterprise 
 - [ ] Multi-store management
 - [ ] API marketplace
 - [ ] Advanced analytics
@@ -653,7 +645,7 @@ VITE_ANALYTICS_ID=your-analytics-id
 
 <div align="center">
 
-**Built with ❤️ by the Ceynode**
+**Built with ♡ by the Ceynode**
 
 [Website](https://ceypos.com) • [Documentation](https://docs.ceypos.com) • [Community](https://community.ceypos.com)
 
