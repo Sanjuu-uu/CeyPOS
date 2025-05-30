@@ -1,67 +1,60 @@
-# Logs
-logs
-*.log
+# Dependencies
+node_modules/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-pnpm-debug.log*
-lerna-debug.log*
 
-# Dependencies
-node_modules/
-*/node_modules/
-.pnp
-.pnp.js
-
-# Production builds
+# Build outputs
 dist/
-dist-ssr/
-*/dist/
 build/
-*/build/
+.vite/
 
-# Environment variables
+# Environment files
 .env
 .env.local
 .env.development.local
 .env.test.local
 .env.production.local
-*.local
 
-# Editor directories and files
-.vscode/*
-!.vscode/extensions.json
-!.vscode/settings.json
-!.vscode/tasks.json
-!.vscode/launch.json
+# IDE files
+.vscode/settings.json
+.vscode/launch.json
 .idea/
-.DS_Store
-*.suo
-*.ntvs*
-*.njsproj
-*.sln
-*.sw?
+*.swp
+*.swo
 
-# OS generated files
+# OS files
+.DS_Store
 Thumbs.db
-ehthumbs.db
-Desktop.ini
+
+# Logs
+logs/
+*.log
 
 # Runtime data
-pids
+pids/
 *.pid
 *.seed
 *.pid.lock
 
 # Coverage directory used by tools like istanbul
 coverage/
-*.lcov
+.nyc_output/
 
 # Dependency directories
 jspm_packages/
 
 # Optional npm cache directory
 .npm
+
+# Optional eslint cache
+.eslintcache
+
+# Microbundle cache
+.rpt2_cache/
+.rts2_cache_cjs/
+.rts2_cache_es/
+.rts2_cache_umd/
 
 # Optional REPL history
 .node_repl_history
@@ -72,28 +65,9 @@ jspm_packages/
 # Yarn Integrity file
 .yarn-integrity
 
-# parcel-bundler cache (https://parceljs.org/)
-.cache
-.parcel-cache
+# Generated documentation
+PREVIEW_GUIDE.md
 
-# next.js build output
-.next
-
-# nuxt.js build output
-.nuxt
-
-# vite build cache
-.vite
-
-# Temporary folders
-tmp/
-temp/
-
-# Database files (if using local databases)
-*.db
-*.sqlite
-*.sqlite3
-
-# Backup files
-*.bak
-*.tmp
+# Local development files
+.temp/
+.cache/

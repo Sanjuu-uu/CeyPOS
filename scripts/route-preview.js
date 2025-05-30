@@ -75,6 +75,7 @@ function validateRoutes() {
 function displayQuickRoutes() {
   console.log(`   \x1b[34m${routes.shopWizard.main}\x1b[0m → Setup Wizard`);
   console.log(`   \x1b[34m${routes.dashboard.main}\x1b[0m → Dashboard`);
+  console.log(`   \x1b[33m📖 Read DEVELOPMENT_GUIDE.md for team workflow\x1b[0m`);
 }
 
 // Console output function
