@@ -106,11 +106,18 @@ const ShopWizardContext = createContext<ShopWizardContextType | undefined>(undef
 
 // Provider component
 export const ShopWizardProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
+  // Check localStorage for existing shop setup on initialization
+  const [isCompleted, setIsCompleted] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('ceypos-shop-completed') === 'true';
+    }
+    return false;
+  });
+
   const [formData, setFormData] = useState<ShopFormData>(defaultFormData);
   const [currentStep, setCurrentStep] = useState(1);
   const [animationDirection, setAnimationDirection] = useState<'next' | 'prev'>('next');
   const [isAnimating, setIsAnimating] = useState(false);
-  const [isCompleted, setIsCompleted] = useState(false);
   
   const totalSteps = 6;
 
@@ -174,9 +181,25 @@ export const ShopWizardProvider: React.FC<{ children: ReactNode }> = ({ children
 
   const completeWizard = () => {
     setIsCompleted(true);
-    // Here you would typically save the shop data to your backend
+    // Save completion status to localStorage
+    localStorage.setItem('ceypos-shop-completed', 'true');
+    localStorage.setItem('ceypos-shop-data', JSON.stringify(formData));
     console.log('Shop created:', formData);
+    
+    // Navigate to dashboard after completion
+    setTimeout(() => {
+      window.history.pushState(null, '', '/dashboard');
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    }, 2000); // Small delay for user to see success message
   };
+
+  // Add function to reset wizard (for testing)
+  const resetWizard = () => {
+    setIsCompleted(false);
+    localStorage.removeItem('ceypos-shop-completed');
+    localStorage.removeItem('ceypos-shop-data');
+  };
+
   const contextValue: ShopWizardContextType = {
     formData,
     updateFormData,
@@ -191,6 +214,7 @@ export const ShopWizardProvider: React.FC<{ children: ReactNode }> = ({ children
     isStepCompleted,
     canProceed: validateStep(currentStep),
     completeWizard,
+    resetWizard, // Add reset function
     isCompleted,
   };
 

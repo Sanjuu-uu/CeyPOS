@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { MainLayout } from './components/layout/MainLayout';
 import { AppProvider } from './context/AppContext';
 import { ShopWizardProvider, useShopWizard } from './context/ShopWizardContext';
@@ -27,13 +27,43 @@ function App() {
 
 function AppContent() {
   const { isCompleted } = useShopWizard();
+  const [currentPath, setCurrentPath] = useState(window.location.pathname);
   
-  // For demo purposes, show wizard first, then main app
-  // In a real app, you'd check if the user has already set up their shop
-  if (!isCompleted) {
+  // Listen for route changes
+  useEffect(() => {
+    const handlePopState = () => {
+      setCurrentPath(window.location.pathname);
+    };
+    
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  // Route logic
+  if (currentPath === '/shop-wizard') {
     return <ShopWizard />;
   }
   
+  if (currentPath.startsWith('/dashboard')) {
+    return <MainLayout />;
+  }
+  
+  // Home route logic
+  if (currentPath === '/') {
+    // If shop setup is not completed, redirect to shop wizard
+    if (!isCompleted) {
+      // Check localStorage for existing completion
+      const shopCompleted = localStorage.getItem('ceypos-shop-completed') === 'true';
+      if (!shopCompleted) {
+        window.history.replaceState(null, '', '/shop-wizard');
+        setCurrentPath('/shop-wizard');
+        return <ShopWizard />;
+      }
+    }
+    return <MainLayout />;
+  }
+  
+  // Default fallback
   return <MainLayout />;
 }
 
