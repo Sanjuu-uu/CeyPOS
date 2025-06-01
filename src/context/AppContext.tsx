@@ -5,10 +5,18 @@ import { db } from '../lib/db';
 interface AppContextType {
   currentModule: ModuleName;
   setCurrentModule: (module: ModuleName) => void;
+
   isSidebarCollapsed: boolean;
   setIsSidebarCollapsed: (collapsed: boolean) => void;
+
+  // ▼ ADD THESE TWO LINES to the interface ▼
+  isMobileMenuOpen: boolean;
+  setIsMobileMenuOpen: (open: boolean) => void;
+  // ▲ END ADDITION ▲
+
   currentUser: User | null;
   currentShop: Shop | null;
+
   cart: CartItem[];
   addToCart: (product: CartItem) => void;
   removeFromCart: (productId: string) => void;
@@ -19,31 +27,33 @@ interface AppContextType {
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
-export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ 
-  children 
+export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
+  children,
 }) => {
   const [currentModule, setCurrentModule] = useState<ModuleName>('dashboard');
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+
+  // ▼ INSERT this new state hook right after `isSidebarCollapsed` ▼
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  // ▲ END INSERTION ▲
+
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [currentShop, setCurrentShop] = useState<Shop | null>(null);
   const [cart, setCart] = useState<CartItem[]>([]);
-  
+
   // Calculate cart total
-  const cartTotal = cart.reduce(
-    (total, item) => total + item.price * item.quantity, 
-    0
-  );
+  const cartTotal = cart.reduce((total, item) => total + item.price * item.quantity, 0);
 
   // Initialize app with sample data
   useEffect(() => {
     // Initialize database
     db.init();
-    
+
     // Set mock current user (first user in the database for demo)
     const users = db.users.getAll();
     if (users.length > 0) {
       setCurrentUser(users[0]);
-      
+
       // Set current shop based on user's shop ID
       const userShop = db.shops.getById(users[0].shopId);
       if (userShop) {
@@ -54,14 +64,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
 
   // Cart management functions
   const addToCart = (product: CartItem) => {
-    setCart(prevCart => {
-      const existingItem = prevCart.find(item => item.id === product.id);
-      
+    setCart((prevCart) => {
+      const existingItem = prevCart.find((item) => item.id === product.id);
+
       if (existingItem) {
         // Update quantity if item already exists
-        return prevCart.map(item => 
-          item.id === product.id 
-            ? { ...item, quantity: item.quantity + product.quantity } 
+        return prevCart.map((item) =>
+          item.id === product.id
+            ? { ...item, quantity: item.quantity + product.quantity }
             : item
         );
       } else {
@@ -72,12 +82,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
   };
 
   const removeFromCart = (productId: string) => {
-    setCart(prevCart => prevCart.filter(item => item.id !== productId));
+    setCart((prevCart) => prevCart.filter((item) => item.id !== productId));
   };
 
   const updateCartItemQuantity = (productId: string, quantity: number) => {
-    setCart(prevCart => 
-      prevCart.map(item => 
+    setCart((prevCart) =>
+      prevCart.map((item) =>
         item.id === productId ? { ...item, quantity } : item
       )
     );
@@ -94,6 +104,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
         setCurrentModule,
         isSidebarCollapsed,
         setIsSidebarCollapsed,
+
+        // ▼ EXPOSE these two values in the provider’s value object ▼
+        isMobileMenuOpen,
+        setIsMobileMenuOpen,
+        // ▲ END EXPOSURE ▲
+
         currentUser,
         currentShop,
         cart,
@@ -101,7 +117,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
         removeFromCart,
         updateCartItemQuantity,
         clearCart,
-        cartTotal
+        cartTotal,
       }}
     >
       {children}
