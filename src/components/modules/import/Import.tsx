@@ -123,7 +123,7 @@ export const Import: React.FC = () => {
             {/* Message Content */}
             <div>
               <label htmlFor="promo-message-text" className="block text-sm font-medium text-gray-700">
-                Message Content (max 160 chars)
+                Message Content (max 160 chars - tekshan)
               </label>
               <textarea
                 id="promo-message-text"
