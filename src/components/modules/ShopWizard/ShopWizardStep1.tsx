@@ -129,7 +129,7 @@ export const ShopWizardStep1: React.FC = () => {
                 marginBottom: "6px",
               }}
             >
-              we are here
+              Tell us about your shop
             </h2>
             <p
               style={{
