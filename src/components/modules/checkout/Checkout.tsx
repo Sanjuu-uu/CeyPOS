@@ -26,11 +26,17 @@ export const Checkout: React.FC = () => {
     // Simulate payment processing
     setTimeout(() => {
       // Create a new sale record
-      const customerInfo = customerEmail || customerPhone ? {
-        name: 'Customer',
-        email: customerEmail || undefined,
-        phone: customerPhone || undefined
-      } : undefined;
+      let customerInfo: { name: string; email: string; phone: string } | undefined = undefined;
+
+      if (customerEmail && customerPhone) {
+        customerInfo = {
+          name: 'Customer',
+          email: customerEmail,
+          phone: customerPhone
+        };
+      }
+
+
       
       // Add to database
       db.sales.create({
@@ -38,8 +44,10 @@ export const Checkout: React.FC = () => {
         customerInfo,
         items: [...cart],
         total: cartTotal,
-        paymentMethod
+        paymentMethod,
+        timestamp: new Date().toISOString()
       });
+
       
       setIsProcessing(false);
       setIsComplete(true);
