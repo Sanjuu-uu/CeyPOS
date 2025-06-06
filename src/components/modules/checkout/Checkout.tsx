@@ -323,8 +323,31 @@ export const Checkout: React.FC = () => {
                 <span className="font-medium">Total</span>
                 <span className="font-semibold">${cartTotal.toFixed(2)}</span>
               </div>
+
             </div>
-            
+            {/* Email Input Box */}
+            <Input
+              leftIcon={<Mail size={16} />}
+              placeholder="customer@example.com"
+              value={customerEmail}
+              onChange={(e) => setCustomerEmail(e.target.value)}
+              disabled={isProcessing}
+              className="mt-4"
+            />
+
+            {/* Payment Button */}
+            <Button
+              variant="primary"
+              fullWidth
+              size="lg"
+              disabled={isProcessing || cart.length === 0}
+              onClick={handlePayment}
+              className="mt-4"
+              icon={isProcessing ? undefined : <CreditCard size={18} />}
+            >
+              {isProcessing ? 'Processing...' : `Pay $${cartTotal.toFixed(2)}`}
+            </Button>
+
             {/* Payment Button */}
             <Button
               variant="primary"
