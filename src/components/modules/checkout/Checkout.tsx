@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Card } from '../../ui/Card';
 import { Button } from '../../ui/Button';
-import { CreditCard, DollarSign, QrCode, Printer, Mail, Phone, Check } from 'lucide-react';
+import { CreditCard, DollarSign, QrCode, Mail, Phone, Check } from 'lucide-react';
 import { useApp } from '../../../context/AppContext';
 import { db } from '../../../lib/db';
 import { Input } from '../../ui/Input';
