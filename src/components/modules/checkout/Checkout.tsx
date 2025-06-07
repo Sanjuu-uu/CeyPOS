@@ -305,16 +305,13 @@ export const Checkout: React.FC = () => {
             {/* Items list */}
             <div className="max-h-80 overflow-y-auto space-y-3">
               {cart.map((item) => (
-                <div key={item.id} className="flex justify-between p-3 bg-gray-50 rounded-lg">
-                  <div>
-                    <p className="font-medium text-gray-800">{item.name}</p>
-                    <p className="text-sm text-gray-500">${item.price.toFixed(2)} × {item.quantity}</p>
-                  </div>
-                  <p className="font-medium text-gray-800">
-                    ${(item.price * item.quantity).toFixed(2)}
-                  </p>
-                </div>
-              ))}
+              <div key={item.id} className="flex justify-between items-center py-2 border-b border-gray-100 text-sm text-gray-700">
+                <span className="w-1/2 truncate">{item.name}</span>
+                <span className="w-1/4 text-center">${item.price.toFixed(2)} × {item.quantity}</span>
+                <span className="w-1/4 text-right font-medium">${(item.price * item.quantity).toFixed(2)}</span>
+              </div>
+            ))}
+
             </div>
             
             {/* Totals */}
