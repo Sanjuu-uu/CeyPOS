@@ -30,28 +30,27 @@ export const ShoppingCart: React.FC = () => {
     updateCartItemQuantity(productId, newQuantity);
   };
   
-  const handleCheckout = () => {
-    if (cart.length === 0 || !currentShop) return;
-    
-    // Create a new sale
-    const newSale = {
-      shopId: currentShop.id,
-      customerInfo: customerInfo.name ? customerInfo : undefined,
-      items: [...cart],
-      total: cartTotal,
-      paymentMethod: 'card' as const
-    };
-    
-    // Add to database
-    db.sales.create(newSale);
-    
-    // Clear cart
+  const handleCheckout = async () => {
+  if (cart.length === 0 || !currentShop) return;
+
+  const newSale = {
+  shopId: currentShop.id,
+  customerInfo: customerInfo.name || customerInfo.email || customerInfo.phone ? customerInfo : undefined,
+  items: [...cart],
+  total: cartTotal,
+  paymentMethod: 'card' as const,
+  timestamp: new Date().toISOString() // ✅ Add this line
+};
+
+  try {
+    await db.sales.create(newSale); // ✅ FIXED
     clearCart();
-    
-    // Navigate to checkout
     setCurrentModule('checkout');
-  };
-  
+  } catch (error) {
+    console.error("Checkout failed:", error);
+  }
+};
+
   return (
     <Card 
       title="Shopping Cart" 
@@ -142,6 +141,28 @@ export const ShoppingCart: React.FC = () => {
           <span className="font-semibold">${cartTotal.toFixed(2)}</span>
         </div>
         
+        {/* Customer Email Input */}
+        <div className="mb-4">
+          <label className="block text-sm font-medium text-gray-700 mb-1">Customer Email</label>
+          <input
+            type="email"
+            value={customerInfo.email}
+            onChange={(e) => setCustomerInfo({ ...customerInfo, email: e.target.value })}
+            placeholder="example@email.com"
+            className="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring focus:border-blue-300"
+          />
+        </div>
+        <div className="mb-4">
+        <label className="block text-sm font-medium text-gray-700 mb-1">Customer Phone number</label>
+        <input
+          type="tel"
+          value={customerInfo.phone}
+          onChange={(e) => setCustomerInfo({ ...customerInfo, phone: e.target.value })}
+          placeholder="07X-XXXXXXX"
+          className="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring focus:border-blue-300"
+        />
+      </div>
+
         {/* Action Buttons */}
         <div className="space-y-3">
           <Button
@@ -153,7 +174,7 @@ export const ShoppingCart: React.FC = () => {
           >
             Proceed to Checkout
           </Button>
-          
+
           <Button
             variant="outline"
             fullWidth
