@@ -44,25 +44,29 @@ export interface ShopWizardContextType {
   // Form data
   formData: ShopFormData;
   updateFormData: (stepData: Partial<ShopFormData>) => void;
-  
+
   // Navigation
   currentStep: number;
   totalSteps: number;
   nextStep: () => void;
   previousStep: () => void;
   goToStep: (step: number) => void;
-  
+
   // Animation state
   animationDirection: AnimationDirection;
   isAnimating: boolean;
-    // Validation
+  // Validation
   validateStep: (step: number) => boolean;
   isStepCompleted: (step: number) => boolean;
   canProceed: boolean;
-  
+
   // Wizard completion
   completeWizard: () => void;
   isCompleted: boolean;
+  resetWizard: () => void;
+
+  // Unique shopId for this session/shop
+  shopId: string;
 }
 
 // Default form data
@@ -116,9 +120,10 @@ export const ShopWizardProvider: React.FC<{ children: ReactNode }> = ({ children
 
   const [formData, setFormData] = useState<ShopFormData>(defaultFormData);
   const [currentStep, setCurrentStep] = useState(1);
-  const [animationDirection, setAnimationDirection] = useState<'next' | 'prev'>('next');
+  const [animationDirection, setAnimationDirection] = useState<AnimationDirection>('next');
   const [isAnimating, setIsAnimating] = useState(false);
-  
+  // Persisted shopId for this session
+  const [shopId, setShopId] = useState(() => localStorage.getItem('ceypos-shop-id') || '');
   const totalSteps = 6;
 
   const updateFormData = (stepData: Partial<ShopFormData>) => {
@@ -138,7 +143,7 @@ export const ShopWizardProvider: React.FC<{ children: ReactNode }> = ({ children
 
   const previousStep = useCallback(() => {
     if (currentStep > 1) {
-      setAnimationDirection('prev');
+  setAnimationDirection('previous');
       setIsAnimating(true);
       setTimeout(() => {
         setCurrentStep(prev => prev - 1);
@@ -179,43 +184,63 @@ export const ShopWizardProvider: React.FC<{ children: ReactNode }> = ({ children
     return validateStep(step);
   };
 
-  const completeWizard = () => {
-    setIsCompleted(true);
-    // Save completion status to localStorage
-    localStorage.setItem('ceypos-shop-completed', 'true');
-    localStorage.setItem('ceypos-shop-data', JSON.stringify(formData));
-    console.log('Shop created:', formData);
-    
-    // Navigate to dashboard after completion
-    setTimeout(() => {
-      window.history.pushState(null, '', '/dashboard');
-      window.dispatchEvent(new PopStateEvent('popstate'));
-    }, 2000); // Small delay for user to see success message
+  const completeWizard = async () => {
+    try {
+      // Determine or create a shopId, persist for reuse
+      let _shopId = localStorage.getItem('ceypos-shop-id');
+      if (!_shopId) {
+        _shopId = String(Math.floor(Date.now() / 1000));
+        localStorage.setItem('ceypos-shop-id', _shopId);
+      }
+      setShopId(_shopId);
+
+      // Persist to backend SQLite
+      await fetch('http://localhost:4000/api/shop/setup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ shopId: _shopId, formData }),
+      }).catch(() => {/* ignore if server not running */});
+
+      setIsCompleted(true);
+      localStorage.setItem('ceypos-shop-completed', 'true');
+      localStorage.setItem('ceypos-shop-data', JSON.stringify(formData));
+      console.log('Shop created:', { shopId: _shopId, formData });
+
+      setTimeout(() => {
+        window.history.pushState(null, '', '/dashboard');
+        window.dispatchEvent(new PopStateEvent('popstate'));
+      }, 2000);
+    } catch (e) {
+      console.error('Failed to complete wizard', e);
+    }
   };
 
   // Add function to reset wizard (for testing)
   const resetWizard = () => {
-    setIsCompleted(false);
-    localStorage.removeItem('ceypos-shop-completed');
-    localStorage.removeItem('ceypos-shop-data');
+  setIsCompleted(false);
+  setShopId('');
+  localStorage.removeItem('ceypos-shop-completed');
+  localStorage.removeItem('ceypos-shop-data');
+  localStorage.removeItem('ceypos-shop-id');
   };
 
   const contextValue: ShopWizardContextType = {
-    formData,
-    updateFormData,
-    currentStep,
-    totalSteps,
-    nextStep,
-    previousStep,
-    goToStep,
-    animationDirection,
-    isAnimating,
-    validateStep,
-    isStepCompleted,
-    canProceed: validateStep(currentStep),
-    completeWizard,
-    resetWizard, // Add reset function
-    isCompleted,
+  formData,
+  updateFormData,
+  currentStep,
+  totalSteps,
+  nextStep,
+  previousStep,
+  goToStep,
+  animationDirection,
+  isAnimating,
+  validateStep,
+  isStepCompleted,
+  canProceed: validateStep(currentStep),
+  completeWizard,
+  resetWizard, // Add reset function
+  isCompleted,
+  shopId,
   };
 
   return (

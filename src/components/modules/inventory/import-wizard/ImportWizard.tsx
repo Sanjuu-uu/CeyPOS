@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import axios from 'axios';
 import { motion, AnimatePresence } from 'framer-motion';
 import { WizardStepIndicator } from './WizardStepIndicator';
 import { TemplateDownload } from './TemplateDownload';
@@ -20,8 +21,12 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ onClose, onImportCom
     total: 0,
     successful: 0,
     errors: 0,
-    warnings: 0
+    warnings: 0,
+    backendError: null,
+    validationIssues: [],
   });
+  // Get shopId from ShopWizardContext/localStorage
+  const shopId = localStorage.getItem('ceypos-shop-id') || '';
 
   const steps = [
     'Download Template',
@@ -30,37 +35,50 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ onClose, onImportCom
     'Confirm Import'
   ];
 
-  const handleFileUpload = (file: File) => {
-    setUploadedFile(file);
-    // Simulate upload progress
-    setUploadProgress(0);
-    const interval = setInterval(() => {
-      setUploadProgress(prev => {
-        if (prev >= 100) {
-          clearInterval(interval);
-          return 100;
-        }
-        return prev + 10;
+  const handleFileUpload = async (file: File) => {
+  setUploadedFile(file);
+  setUploadProgress(0);
+  setValidationData({ total: 0, successful: 0, errors: 0, warnings: 0, backendError: null, validationIssues: [] });
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('shopId', shopId);
+      setUploadProgress(10);
+      const response = await axios.post('/api/inventory/upload', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+        onUploadProgress: (progressEvent) => {
+          if (progressEvent.total) {
+            setUploadProgress(Math.round((progressEvent.loaded * 100) / progressEvent.total));
+          }
+        },
       });
-    }, 300);
+      setUploadProgress(100);
+      setValidationData({
+        total: response.data.total || response.data.inserted || 0,
+        successful: response.data.successful || response.data.inserted || 0,
+        errors: response.data.errors || 0,
+        warnings: response.data.warnings || 0,
+        backendError: null,
+        validationIssues: response.data.validationIssues || [],
+      });
+    } catch (err: any) {
+      setUploadProgress(100);
+      setValidationData({
+        total: 0,
+        successful: 0,
+        errors: 1,
+        warnings: 0,
+        backendError: err?.response?.data?.error || 'Upload failed',
+        validationIssues: err?.response?.data?.validationIssues || [],
+      });
+    }
   };
 
-  const handleValidation = () => {
-    // Simulate validation results
-    setValidationData({
-      total: 248,
-      successful: 237,
-      errors: 7,
-      warnings: 4
-    });
-  };
+  // Remove handleValidation, validation is now backend-driven
 
   const nextStep = () => {
     if (currentStep < 4) {
       setCurrentStep(currentStep + 1);
-      if (currentStep === 2 && uploadedFile) {
-        handleValidation();
-      }
     }
   };
 
@@ -184,6 +202,9 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ onClose, onImportCom
             style={{ color: 'var(--gray--500)' }}
           >
             Step {currentStep} of {steps.length}
+            {validationData.backendError && (
+              <span className="text-red-500 ml-4">Error: {validationData.backendError}</span>
+            )}
           </div>
           
           {currentStep < 4 ? (

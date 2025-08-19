@@ -1,256 +1,185 @@
-// Mock database service using localStorage for demonstration
-// In a real application, this would use SQLite or another database solution
-
+// Real-time database sync client using REST for socket.io live updates
 import { Shop, Product, Sale, User } from '../types';
+import clientIo from 'socket.io-client';
 
-// Helper to generate unique IDs
-const generateId = () => Math.random().toString(36).substring(2, 10);
+const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:4000';
+let socket: any = null;
+let currentShopId: string | null = null;
 
-// Initialize local storage with sample data if empty
-const initializeDB = () => {
-  if (!localStorage.getItem('pos_shops')) {
-    const sampleShop: Shop = {
-      id: 'shop_1',
-      name: 'Natural Foods Market',
-      address: '123 Green St, Eco City',
-      contact: '+1 (555) 123-4567',
-    };
-    
-    const sampleUser: User = {
-      id: 'user_1',
-      name: 'John Doe',
-      email: 'john@naturalfoods.com',
-      role: 'admin',
-      shopId: 'shop_1',
-      permissions: ['all'],
-    };
-    
-    const sampleProducts: Product[] = [
-      {
-        id: 'prod_1',
-        shopId: 'shop_1',
-        name: 'Organic Apples',
-        category: 'Produce',
-        price: 2.99,
-        stock: 100,
-        barcode: '1234567890',
-        imageUrl: 'https://images.pexels.com/photos/1510392/pexels-photo-1510392.jpeg'
-      },
-      {
-        id: 'prod_2',
-        shopId: 'shop_1',
-        name: 'Whole Grain Bread',
-        category: 'Bakery',
-        price: 4.50,
-        stock: 30,
-        barcode: '2345678901',
-        imageUrl: 'https://images.pexels.com/photos/1775043/pexels-photo-1775043.jpeg'
-      },
-      {
-        id: 'prod_3',
-        shopId: 'shop_1',
-        name: 'Free-Range Eggs',
-        category: 'Dairy & Eggs',
-        price: 5.99,
-        stock: 50,
-        barcode: '3456789012',
-        imageUrl: 'https://images.pexels.com/photos/162712/egg-white-food-protein-162712.jpeg'
-      },
-      {
-        id: 'prod_4',
-        shopId: 'shop_1',
-        name: 'Organic Spinach',
-        category: 'Produce',
-        price: 3.49,
-        stock: 45,
-        barcode: '4567890123',
-        imageUrl: 'https://images.pexels.com/photos/2325843/pexels-photo-2325843.jpeg'
-      },
-      {
-        id: 'prod_5',
-        shopId: 'shop_1',
-        name: 'Raw Honey',
-        category: 'Pantry',
-        price: 8.99,
-        stock: 25,
-        barcode: '5678901234',
-        imageUrl: 'https://images.pexels.com/photos/1638280/pexels-photo-1638280.jpeg'
-      },
-      {
-        id: 'prod_6',
-        shopId: 'shop_1',
-        name: 'Quinoa',
-        category: 'Grains',
-        price: 6.99,
-        stock: 60,
-        barcode: '6789012345',
-        imageUrl: 'https://images.pexels.com/photos/7421203/pexels-photo-7421203.jpeg'
-      }
-    ];
-    
-    const sampleSales: Sale[] = [
-      {
-        id: 'sale_1',
-        shopId: 'shop_1',
-        customerInfo: {
-          name: 'Alice Johnson',
-          email: 'alice@example.com',
-          phone: '555-123-4567'
-        },
-        items: [
-          { ...sampleProducts[0], quantity: 2 },
-          { ...sampleProducts[2], quantity: 1 }
-        ],
-        total: 11.97,
-        paymentMethod: 'card',
-        timestamp: new Date(Date.now() - 3600000).toISOString()
-      },
-      {
-        id: 'sale_2',
-        shopId: 'shop_1',
-        items: [
-          { ...sampleProducts[1], quantity: 1 },
-          { ...sampleProducts[4], quantity: 1 }
-        ],
-        total: 13.49,
-        paymentMethod: 'cash',
-        timestamp: new Date(Date.now() - 7200000).toISOString()
-      }
-    ];
-    
-    localStorage.setItem('pos_shops', JSON.stringify([sampleShop]));
-    localStorage.setItem('pos_users', JSON.stringify([sampleUser]));
-    localStorage.setItem('pos_products', JSON.stringify(sampleProducts));
-    localStorage.setItem('pos_sales', JSON.stringify(sampleSales));
+// Simple event emitter so React components can subscribe to db changes
+const listeners: Record<string, Set<Function>> = {};
+function emit(event: string, payload?: any) {
+  const set = listeners[event];
+  if (!set) return;
+  for (const cb of Array.from(set)) {
+    try { cb(payload); } catch (e) { console.error('db listener error', e); }
   }
-};
+}
+function on(event: string, cb: Function) {
+  listeners[event] = listeners[event] || new Set();
+  listeners[event].add(cb);
+  return () => off(event, cb);
+}
+function off(event: string, cb: Function) {
+  listeners[event]?.delete(cb);
+}
 
-// Database API
+// Local in-memory caches to preserve existing API surface
+const shopsCache: Shop[] = [];
+const usersCache: User[] = [];
+const productsCache: Product[] = [];
+const salesCache: Sale[] = [];
+
+function toProductRow(r: any): Product {
+  return {
+    id: String(r.inventory_code || r.item_id || r.id || ''),
+    shopId: currentShopId ? `shop_${currentShopId}` : (r.shop_id ? `shop_${r.shop_id}` : 'shop_1'),
+    name: r.name,
+    category: r.category,
+    price: typeof r.price === 'number' ? r.price : Number(r.price || 0),
+    stock: typeof r.stock === 'number' ? r.stock : Number(r.stock || 0),
+    barcode: r.barcode_id,
+    imageUrl: r.image_url || r.imageUrl || '',
+  } as Product;
+}
+
+async function fetchInitialData(shopId: string) {
+  try {
+    const metaRes = await fetch(`${API_BASE}/api/shop/${shopId}/meta`);
+    if (metaRes.ok) {
+      const body = await metaRes.json();
+      const meta = body.meta || body;
+      shopsCache.length = 0;
+      shopsCache.push({ id: `shop_${shopId}`, name: meta.shop_name || 'Shop', address: meta.address || '' } as Shop);
+      emit('shopMeta', { shopId, meta });
+    }
+  } catch (e) {
+    console.warn('Failed to fetch shop meta', e);
+  }
+}
+
+function ensureSocket(shopId: string) {
+  if (socket && currentShopId === shopId) return socket;
+  if (socket) {
+    socket.disconnect();
+    socket = null;
+  }
+  socket = (clientIo as any)(API_BASE, { query: { shopId } });
+  currentShopId = shopId;
+
+  socket.on('connect', () => {
+    console.log('WS connected', socket?.id);
+    socket?.emit('getInventory');
+  });
+
+  socket.on('inventorySnapshot', (payload: any) => {
+    if (!payload || String(payload.shopId) !== String(shopId)) return;
+    productsCache.length = 0;
+    for (const r of payload.items) productsCache.push(toProductRow(r));
+    emit('inventorySnapshot', { shopId, items: productsCache.slice() });
+    emit('inventoryUpdated', { shopId, items: productsCache.slice() });
+  });
+
+  socket.on('inventoryUpdated', (payload: any) => {
+    if (!payload || String(payload.shopId) !== String(shopId)) return;
+    productsCache.length = 0;
+    for (const r of payload.items) productsCache.push(toProductRow(r));
+    emit('inventoryUpdated', { shopId, items: productsCache.slice() });
+  });
+
+  socket.on('connect_error', (err: any) => console.error('WS connect error', err));
+  socket.on('disconnect', (reason: any) => console.log('WS disconnected', reason));
+
+  return socket;
+}
+
 export const db = {
-  // Initialize the database
+  // Event API
+  on,
+  off,
+  // Initialization
   init: () => {
-    initializeDB();
+    // no-op for client
   },
-  
-  // Shop methods
+  connectWebSocket: async (shopId: string) => {
+    await fetchInitialData(shopId);
+    ensureSocket(shopId);
+  },
+  // Shops
   shops: {
-    getAll: (): Shop[] => {
-      return JSON.parse(localStorage.getItem('pos_shops') || '[]');
-    },
-    getById: (id: string): Shop | undefined => {
-      const shops = JSON.parse(localStorage.getItem('pos_shops') || '[]');
-      return shops.find((shop: Shop) => shop.id === id);
-    },
-    create: (shop: Omit<Shop, 'id'>): Shop => {
-      const newShop = { ...shop, id: `shop_${generateId()}` };
-      const shops = JSON.parse(localStorage.getItem('pos_shops') || '[]');
-      localStorage.setItem('pos_shops', JSON.stringify([...shops, newShop]));
+    getAll: (): Shop[] => shopsCache,
+    getById: (id: string): Shop | undefined => shopsCache.find((s) => s.id === id),
+    create: async (shop: Omit<Shop, 'id'> & { id?: string }): Promise<Shop> => {
+      const shopId = (shop as any).id?.replace(/^shop_/, '') || String(Math.floor(Date.now() / 1000));
+      await fetch(`${API_BASE}/api/shop/setup`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ shopId, formData: shop })
+      });
+      const newShop = { ...shop, id: `shop_${shopId}` } as Shop;
+      shopsCache.push(newShop);
+      emit('shopCreated', newShop);
       return newShop;
-    },
-    update: (shop: Shop): Shop => {
-      const shops = JSON.parse(localStorage.getItem('pos_shops') || '[]');
-      const updatedShops = shops.map((s: Shop) => (s.id === shop.id ? shop : s));
-      localStorage.setItem('pos_shops', JSON.stringify(updatedShops));
-      return shop;
     }
   },
-  
-  // User methods
   users: {
-    getAll: (): User[] => {
-      return JSON.parse(localStorage.getItem('pos_users') || '[]');
-    },
-    getById: (id: string): User | undefined => {
-      const users = JSON.parse(localStorage.getItem('pos_users') || '[]');
-      return users.find((user: User) => user.id === id);
-    },
-    getByShopId: (shopId: string): User[] => {
-      const users = JSON.parse(localStorage.getItem('pos_users') || '[]');
-      return users.filter((user: User) => user.shopId === shopId);
-    },
-    create: (user: Omit<User, 'id'>): User => {
-      const newUser = { ...user, id: `user_${generateId()}` };
-      const users = JSON.parse(localStorage.getItem('pos_users') || '[]');
-      localStorage.setItem('pos_users', JSON.stringify([...users, newUser]));
+    getAll: (): User[] => usersCache,
+    getById: (id: string): User | undefined => usersCache.find((u) => u.id === id),
+    getByShopId: (shopId: string): User[] => usersCache.filter((u) => u.shopId === shopId),
+    create: async (user: Omit<User, 'id'>): Promise<User> => {
+      const newUser = { ...user, id: `user_${Date.now()}` } as User;
+      usersCache.push(newUser);
+      emit('userCreated', newUser);
       return newUser;
     }
   },
-  
-  // Product methods
   products: {
-    getAll: (): Product[] => {
-      return JSON.parse(localStorage.getItem('pos_products') || '[]');
+    getAll: (): Product[] => productsCache,
+    getByShopId: (shopId: string): Product[] => productsCache.filter((p) => p.shopId === shopId),
+    getById: (id: string): Product | undefined => productsCache.find((p) => p.id === id),
+    create: async (product: Omit<Product, 'id' | 'shopId'> & { shopId?: string }): Promise<Product> => {
+      const shopId = product.shopId ? product.shopId.replace(/^shop_/, '') : currentShopId!;
+      ensureSocket(shopId as string)?.emit('upsertProduct', product);
+      const created: Product = { ...product, id: `prod_${Date.now()}`, shopId: `shop_${shopId}` } as Product;
+      productsCache.push(created);
+      emit('productCreated', created);
+      emit('inventoryUpdated', { shopId, items: productsCache.slice() });
+      return created;
     },
-    getByShopId: (shopId: string): Product[] => {
-      const products = JSON.parse(localStorage.getItem('pos_products') || '[]');
-      return products.filter((product: Product) => product.shopId === shopId);
-    },
-    getById: (id: string): Product | undefined => {
-      const products = JSON.parse(localStorage.getItem('pos_products') || '[]');
-      return products.find((product: Product) => product.id === id);
-    },
-    create: (product: Omit<Product, 'id'>): Product => {
-      const newProduct = { ...product, id: `prod_${generateId()}` };
-      const products = JSON.parse(localStorage.getItem('pos_products') || '[]');
-      localStorage.setItem('pos_products', JSON.stringify([...products, newProduct]));
-      return newProduct;
-    },
-    update: (product: Product): Product => {
-      const products = JSON.parse(localStorage.getItem('pos_products') || '[]');
-      const updatedProducts = products.map((p: Product) => 
-        p.id === product.id ? product : p
-      );
-      localStorage.setItem('pos_products', JSON.stringify(updatedProducts));
+    update: async (product: Product): Promise<Product> => {
+      const shopId = product.shopId ? product.shopId.replace(/^shop_/, '') : currentShopId!;
+      ensureSocket(shopId as string)?.emit('upsertProduct', product);
+      const idx = productsCache.findIndex((p) => p.id === product.id);
+      if (idx !== -1) productsCache[idx] = product;
+      emit('productUpdated', product);
+      emit('inventoryUpdated', { shopId, items: productsCache.slice() });
       return product;
     },
     updateStock: (productId: string, quantity: number): Product | undefined => {
-      const products = JSON.parse(localStorage.getItem('pos_products') || '[]');
-      const productIndex = products.findIndex((p: Product) => p.id === productId);
-      
-      if (productIndex === -1) return undefined;
-      
-      const product = products[productIndex];
-      const updatedProduct = {
-        ...product,
-        stock: Math.max(0, product.stock + quantity)
-      };
-      
-      products[productIndex] = updatedProduct;
-      localStorage.setItem('pos_products', JSON.stringify(products));
-      
-      return updatedProduct;
+      const idx = productsCache.findIndex((p) => p.id === productId);
+      if (idx === -1) return undefined;
+      productsCache[idx].stock = Math.max(0, productsCache[idx].stock + quantity);
+      ensureSocket(productsCache[idx].shopId.replace(/^shop_/, ''))?.emit('upsertProduct', productsCache[idx]);
+      emit('productUpdated', productsCache[idx]);
+      emit('inventoryUpdated', { shopId: productsCache[idx].shopId.replace(/^shop_/, ''), items: productsCache.slice() });
+      return productsCache[idx];
     }
   },
-  
-  // Sales methods
   sales: {
-    getAll: (): Sale[] => {
-      return JSON.parse(localStorage.getItem('pos_sales') || '[]');
-    },
-    getByShopId: (shopId: string): Sale[] => {
-      const sales = JSON.parse(localStorage.getItem('pos_sales') || '[]');
-      return sales.filter((sale: Sale) => sale.shopId === shopId);
-    },
-    getById: (id: string): Sale | undefined => {
-      const sales = JSON.parse(localStorage.getItem('pos_sales') || '[]');
-      return sales.find((sale: Sale) => sale.id === id);
-    },
-    create: (sale: Omit<Sale, 'id'>): Sale => {
-      const newSale = { 
-        ...sale, 
-        id: `sale_${generateId()}`,
-        timestamp: new Date().toISOString()
-      };
-      
-      // Update product stock
+    getAll: (): Sale[] => salesCache,
+    getByShopId: (shopId: string): Sale[] => salesCache.filter((s) => s.shopId === shopId),
+    getById: (id: string): Sale | undefined => salesCache.find((s) => s.id === id),
+    create: async (sale: Omit<Sale, 'id'>): Promise<Sale> => {
+      const newSale = { ...sale, id: `sale_${Date.now()}`, timestamp: new Date().toISOString() } as Sale;
+      salesCache.push(newSale);
+      emit('saleCreated', newSale);
+      // update stocks locally and via WS
       newSale.items.forEach(item => {
         db.products.updateStock(item.id, -item.quantity);
       });
-      
-      const sales = JSON.parse(localStorage.getItem('pos_sales') || '[]');
-      localStorage.setItem('pos_sales', JSON.stringify([...sales, newSale]));
-      
       return newSale;
     }
   }
 };
+
+export default db;

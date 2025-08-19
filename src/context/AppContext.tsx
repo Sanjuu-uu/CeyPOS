@@ -49,18 +49,42 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
     // Initialize database
     db.init();
 
-    // Set mock current user (first user in the database for demo)
-    const users = db.users.getAll();
-    if (users.length > 0) {
-      setCurrentUser(users[0]);
+    (async () => {
+      // Try to determine a shopId from existing user or localStorage
+      const users = db.users.getAll();
+      let shopId: string | null = null;
 
-      // Set current shop based on user's shop ID
-      const userShop = db.shops.getById(users[0].shopId);
-      if (userShop) {
-        setCurrentShop(userShop);
+      if (users.length > 0) {
+        setCurrentUser(users[0]);
+        shopId = users[0].shopId?.replace(/^shop_/, '') || null;
       }
-    }
+
+      if (!shopId) {
+        shopId = localStorage.getItem('ceypos-shop-id');
+      }
+
+      if (shopId) {
+        try {
+          // Connect websocket and fetch initial shop meta/inventory
+          await (db as any).connectWebSocket(shopId);
+
+          // Set currentShop from client cache (db.shops.getById expects full id)
+          const loadedShop = db.shops.getById(`shop_${shopId}`);
+          if (loadedShop) setCurrentShop(loadedShop);
+        } catch (e) {
+          console.warn('Failed to connect WebSocket for shop', shopId, e);
+        }
+      }
+    })();
   }, []);
+
+  // New effect: when currentShop changes, ensure websocket connected (keeps sync alive)
+  useEffect(() => {
+    if (currentShop) {
+      const rawShopId = currentShop.id.replace(/^shop_/, '');
+      (db as any).connectWebSocket(rawShopId).catch((e: any) => console.warn('WS connect failed', e));
+    }
+  }, [currentShop]);
 
   // Cart management functions
   const addToCart = (product: CartItem) => {

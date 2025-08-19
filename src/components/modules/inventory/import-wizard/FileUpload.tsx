@@ -18,16 +18,19 @@ export const FileUpload: React.FC<FileUploadProps> = ({
 
   const onDrop = useCallback((acceptedFiles: File[], rejectedFiles: any[]) => {
     setUploadError(null);
-    
     if (rejectedFiles.length > 0) {
-      setUploadError('Please upload a CSV file only');
+      setUploadError('Please upload an Excel (.xlsx) file only');
       return;
     }
-    
     if (acceptedFiles.length > 0) {
       const file = acceptedFiles[0];
-      if (file.size > 10 * 1024 * 1024) { // 10MB limit
+      if (file.size > 10 * 1024 * 1024) {
         setUploadError('File size must be less than 10MB');
+        return;
+      }
+      // Accept only .xlsx/.xls
+      if (!file.name.match(/\.xlsx?$/i)) {
+        setUploadError('Only Excel files (.xlsx, .xls) are allowed');
         return;
       }
       onFileUpload(file);
@@ -37,8 +40,8 @@ export const FileUpload: React.FC<FileUploadProps> = ({
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
     accept: {
-      'text/csv': ['.csv'],
-      'application/vnd.ms-excel': ['.csv']
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'],
+      'application/vnd.ms-excel': ['.xls'],
     },
     multiple: false,
     onDragEnter: () => setDragActive(true),
@@ -46,14 +49,15 @@ export const FileUpload: React.FC<FileUploadProps> = ({
   });
 
   const isUploading = uploadProgress > 0 && uploadProgress < 100;
-  const isCompleted = uploadProgress === 100;  return (
+  const isCompleted = uploadProgress === 100;
+  return (
     <div className="h-full flex flex-col items-center justify-center">
       <div className="w-full max-w-md">
         <h3 
           className="text-lg font-bold text-center mb-4"
           style={{ color: 'var(--gray--900)' }}
         >
-          Upload Your CSV File
+          Upload Your Excel File (.xlsx)
         </h3>
         
         {!uploadedFile ? (
@@ -65,13 +69,13 @@ export const FileUpload: React.FC<FileUploadProps> = ({
                 ? 'border-green-400 bg-green-50' 
                 : 'border-gray-300 hover:border-gray-400'
               }
-            `}style={{ 
+            `}
+            style={{ 
               borderRadius: 'var(--radius--12px)',
               backgroundColor: isDragActive ? '#c5f542/10' : 'transparent',
             }}
           >
             <input {...getInputProps()} />
-            
             <div 
               className="w-12 h-12 rounded-full mx-auto mb-3 flex items-center justify-center"
               style={{ 
@@ -84,27 +88,32 @@ export const FileUpload: React.FC<FileUploadProps> = ({
                 style={{ color: 'var(--gray--600)' }}
               />
             </div>
-            
             <p 
               className="text-base font-medium mb-2"
               style={{ color: 'var(--gray--900)' }}
             >
-              {isDragActive ? 'Drop your file here' : 'Drag & drop your CSV file here'}
+              {isDragActive ? 'Drop your file here' : 'Drag & drop your Excel (.xlsx) file here'}
             </p>
-            
             <p 
               className="text-sm mb-3"
               style={{ color: 'var(--gray--600)' }}
             >
               or click to browse files
             </p>
-              <button
+            <button
               type="button"
               className="button-outline"
             >
               Choose File
             </button>
-          </div>        ) : (
+            <div 
+              className="mt-4 text-xs text-center"
+              style={{ color: 'var(--gray--500)' }}
+            >
+              Supported format: Excel (.xlsx, .xls) • Maximum file size: 10MB
+            </div>
+          </div>
+        ) : (
           <div 
             className="p-4 border rounded-lg"
             style={{ 
@@ -125,22 +134,13 @@ export const FileUpload: React.FC<FileUploadProps> = ({
                   style={{ color: 'var(--gray--600)' }}
                 />
               </div>
-              
-              <div className="flex-1">
-                <p 
-                  className="font-medium text-sm"
-                  style={{ color: 'var(--gray--900)' }}
-                >
-                  {uploadedFile.name}
-                </p>
-                <p 
-                  className="text-xs"
-                  style={{ color: 'var(--gray--600)' }}
-                >
+              <div>
+                <p className="text-sm font-medium">{uploadedFile.name}</p>
+                <p className="text-xs" style={{ color: 'var(--gray--600)' }}>
                   {(uploadedFile.size / 1024).toFixed(1)} KB
                 </p>
               </div>
-                {isCompleted ? (
+              {isCompleted ? (
                 <CheckCircleIcon 
                   size={20} 
                   style={{ color: '#c5f542' }}
@@ -152,7 +152,6 @@ export const FileUpload: React.FC<FileUploadProps> = ({
                 />
               ) : null}
             </div>
-            
             {isUploading && (
               <div className="mb-3">
                 <div className="flex justify-between text-xs mb-1">
@@ -162,7 +161,8 @@ export const FileUpload: React.FC<FileUploadProps> = ({
                 <div 
                   className="w-full h-1.5 rounded-full"
                   style={{ backgroundColor: 'var(--gray--200)' }}
-                >                  <div 
+                >
+                  <div 
                     className="h-full rounded-full transition-all duration-300"
                     style={{ 
                       width: `${uploadProgress}%`,
@@ -172,7 +172,6 @@ export const FileUpload: React.FC<FileUploadProps> = ({
                 </div>
               </div>
             )}
-            
             {isCompleted && (
               <div 
                 className="text-xs p-2 rounded-lg"
@@ -185,8 +184,14 @@ export const FileUpload: React.FC<FileUploadProps> = ({
                 File uploaded successfully! Click Next to proceed with validation.
               </div>
             )}
+            <div 
+              className="mt-4 text-xs text-center"
+              style={{ color: 'var(--gray--500)' }}
+            >
+              Supported format: Excel (.xlsx, .xls) • Maximum file size: 10MB
+            </div>
           </div>
-        )}        
+        )}
         {uploadError && (
           <div 
             className="mt-3 p-3 rounded-lg flex items-center gap-2"
@@ -207,13 +212,6 @@ export const FileUpload: React.FC<FileUploadProps> = ({
             </p>
           </div>
         )}
-        
-        <div 
-          className="mt-4 text-xs text-center"
-          style={{ color: 'var(--gray--500)' }}
-        >
-          Supported format: CSV • Maximum file size: 10MB
-        </div>
       </div>
     </div>
   );

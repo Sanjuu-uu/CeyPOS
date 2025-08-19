@@ -1,0 +1,3 @@
+Server: each shop gets its own SQLite file (existing logic in db.js). WebSocket connections must include the shopId (query param or header). Server reads/writes the shop DB and sets WAL journal mode for concurrency. When inventory is changed (upload or WS-applied change), server broadcasts an update to all clients connected for that shop.
+
+Client: when AppContext finds a current shop, it calls db.connectWebSocket(shopId). The client WS requests a snapshot (getInventory) and receives inventorySnapshot and subsequent inventoryUpdated messages. The db module updates its in-memory cache and emits change events; UI components read via the same db.products.getByShopId(...) API as before and will reflect live changes.

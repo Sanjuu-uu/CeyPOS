@@ -6,22 +6,24 @@ interface TemplateDownloadProps {
 }
 
 export const TemplateDownload: React.FC<TemplateDownloadProps> = ({ onNext }) => {
-  const handleDownloadTemplate = () => {
-    // Create a sample CSV template
-    const csvContent = `SKU,Product Name,Category,Quantity,Unit Price,Supplier,Description
-ITEM001,Sample Product 1,Electronics,50,29.99,Supplier A,Sample description for product 1
-ITEM002,Sample Product 2,Clothing,25,15.99,Supplier B,Sample description for product 2
-ITEM003,Sample Product 3,Home & Garden,75,12.50,Supplier C,Sample description for product 3`;
-    
-    const blob = new Blob([csvContent], { type: 'text/csv' });
-    const url = window.URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = 'inventory_import_template.csv';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    window.URL.revokeObjectURL(url);
+  const handleDownloadTemplate = async () => {
+    try {
+      const res = await fetch('/api/inventory/template');
+      if (!res.ok) throw new Error('Failed to download template');
+      const buf = await res.arrayBuffer();
+      const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'inventory_template.xlsx';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('Template download failed', err);
+      alert('Failed to download template. Please try again or contact support.');
+    }
   };
 
   return (
@@ -56,7 +58,7 @@ ITEM003,Sample Product 3,Home & Garden,75,12.50,Supplier C,Sample description fo
           className="text-base mb-6 leading-relaxed"
           style={{ color: 'var(--gray--600)' }}
         >
-          To ensure your data is properly formatted, please download our CSV template. 
+          To ensure your data is properly formatted, please download our Excel (.xlsx) template. 
           This template includes all the required columns and sample data to guide you.
         </p>
         
@@ -68,7 +70,7 @@ ITEM003,Sample Product 3,Home & Garden,75,12.50,Supplier C,Sample description fo
             color: 'var(--gray--700)',
           }}
         >
-          <strong>Required columns:</strong> SKU, Product Name, Category, Quantity, Unit Price, Supplier, Description
+          <strong>Required columns:</strong> inventory_code, barcode_id, name, category, sku, price, stock, stock_last_month, restock_suggestion, image_url
         </div>
           <button
           onClick={handleDownloadTemplate}
@@ -81,7 +83,7 @@ ITEM003,Sample Product 3,Home & Garden,75,12.50,Supplier C,Sample description fo
           }}
         >
           <DownloadIcon size={20} />
-          Download Template
+          Download Template (.xlsx)
         </button>
       </div>
       
@@ -93,7 +95,7 @@ ITEM003,Sample Product 3,Home & Garden,75,12.50,Supplier C,Sample description fo
           color: 'var(--gray--600)',
         }}
       >
-        <strong>Tip:</strong> Make sure to fill in all required fields and save your file as a CSV format before uploading.
+        <strong>Tip:</strong> Make sure to fill in all required fields and keep the file as the provided Excel (.xlsx) format before uploading.
       </div>
       
       {onNext && (        <button

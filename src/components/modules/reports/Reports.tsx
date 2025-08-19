@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card } from '../../ui/Card';
 import { Button } from '../../ui/Button';
 import { Input } from '../../ui/Input';
@@ -18,10 +18,23 @@ export const Reports: React.FC = () => {
     start: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], // 30 days ago
     end: new Date().toISOString().split('T')[0] // today
   });
+  const [sales, setSales] = useState<any[]>([]);
+  const [products, setProducts] = useState<any[]>([]);
 
-  // Get sales data for the current shop
-  const sales = currentShop ? db.sales.getByShopId(currentShop.id) : [];
-  const products = currentShop ? db.products.getByShopId(currentShop.id) : [];
+  useEffect(() => {
+    if (!currentShop) {
+      setSales([]); setProducts([]);
+      return;
+    }
+    const shopId = currentShop.id;
+    setSales(db.sales.getByShopId(shopId));
+    setProducts(db.products.getByShopId(shopId));
+
+    const unsubSales = (db as any).on('saleCreated', () => setSales(db.sales.getByShopId(shopId)));
+    const unsubInv = (db as any).on('inventoryUpdated', () => setProducts(db.products.getByShopId(shopId)));
+
+    return () => { unsubSales(); unsubInv(); };
+  }, [currentShop]);
 
   // Filter sales by date range
   const filteredSales = sales.filter(sale => {

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card } from '../../ui/Card';
 import { ProductGrid } from './ProductGrid';
 import { ShoppingCart } from './ShoppingCart';
@@ -6,16 +6,38 @@ import { Search, Tag, Filter } from 'lucide-react';
 import { Input } from '../../ui/Input';
 import { db } from '../../../lib/db';
 import { useApp } from '../../../context/AppContext';
+import { Product } from '../../../types';
 
 export const POS: React.FC = () => {
   const { currentShop } = useApp();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
 
-  // Get all products for the current shop
-  const products = currentShop 
-    ? db.products.getByShopId(currentShop.id)
-    : [];
+  const [products, setProducts] = useState<Product[]>([]);
+
+  // Keep products in sync with server DB
+  useEffect(() => {
+    if (!currentShop) {
+      setProducts([]);
+      return;
+    }
+    const shopId = currentShop.id;
+    // initial load
+    setProducts(db.products.getByShopId(shopId));
+
+    const unsubInv = (db as any).on('inventoryUpdated', (payload: any) => {
+      if (!payload) return;
+      const payloadShopId = String(payload.shopId).replace(/^shop_/, '');
+      const cur = String(shopId).replace(/^shop_/, '');
+      if (payloadShopId === cur || String(payload.shopId) === shopId) {
+        setProducts(db.products.getByShopId(shopId));
+      }
+    });
+
+    return () => {
+      unsubInv();
+    };
+  }, [currentShop]);
 
   // Get all unique categories
   const categories = [...new Set(products.map(product => product.category))];
@@ -24,7 +46,7 @@ export const POS: React.FC = () => {
   const filteredProducts = products.filter(product => {
     const matchesSearch = searchTerm === '' || 
       product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      product.barcode.includes(searchTerm);
+      (product.barcode || '').includes(searchTerm);
     
     const matchesCategory = selectedCategory === null || 
       product.category === selectedCategory;
