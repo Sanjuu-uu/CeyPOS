@@ -12,6 +12,11 @@ const routes = {
     home: 'http://localhost:5173/',
     description: 'Main CeyPoS React application entry point'
   },
+  // Add home page route
+  homePage: {
+    main: 'http://localhost:5173/home',
+    description: 'Home landing page component'
+  },
   dashboard: {
     main: 'http://localhost:5173/dashboard',
     description: 'Central POS dashboard with KPI widgets and analytics',
@@ -60,6 +65,7 @@ function validateRoutes() {
   
   // Collect all routes
   allRoutes.push(routes.mainApp.home);
+  allRoutes.push(routes.homePage.main); // Add home page route
   allRoutes.push(routes.dashboard.main);
   allRoutes.push(routes.shopWizard.main);
   allRoutes.push(...routes.dashboard.modules);
@@ -75,6 +81,7 @@ function validateRoutes() {
 function displayQuickRoutes() {
   console.log(`   \x1b[34m${routes.shopWizard.main}\x1b[0m → Setup Wizard`);
   console.log(`   \x1b[34m${routes.dashboard.main}\x1b[0m → Dashboard`);
+  console.log(`   \x1b[34m${routes.homePage.main}\x1b[0m → Home`); // Add this line
   console.log(`   \x1b[33m📖 Read DEVELOPMENT_GUIDE.md for team workflow\x1b[0m`);
 }
 
@@ -90,6 +97,7 @@ function generateRoutingTests() {
   
   const testRoutes = [
     { name: 'Home', url: routes.mainApp.home, expected: 'Landing/Home page' },
+    { name: 'Home Page', url: routes.homePage.main, expected: 'Home component page' }, // Add this
     { name: 'Dashboard', url: routes.dashboard.main, expected: 'Dashboard with KPIs' },
     { name: 'Shop Wizard', url: routes.shopWizard.main, expected: 'Setup wizard' },
     { name: 'POS', url: routes.dashboard.modules[0], expected: 'POS interface' },
