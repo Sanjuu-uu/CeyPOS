@@ -1,59 +1,450 @@
-import React, { useState } from 'react';
-import { Card } from '../../ui/Card';
-import { Button } from '../../ui/Button';
-import { Trash2, Plus, Minus, CreditCard, X, ShoppingCart as ShoppingCartIcon } from 'lucide-react';
-import { useApp } from '../../../context/AppContext';
-import { db } from '../../../lib/db';
+import React, { useState } from "react";
+import { Card } from "../../ui/Card";
+import { Button } from "../../ui/Button";
+import {
+  Trash2,
+  Plus,
+  Minus,
+  CreditCard,
+  X,
+  ShoppingCart as ShoppingCartIcon,
+  Banknote,
+  QrCode,
+  Mail,
+  MessageSquare,
+  Printer,
+  ArrowLeft,
+} from "lucide-react";
+import { useApp } from "../../../context/AppContext";
+import { db } from "../../../lib/db";
+
+type PaymentMethod = "card" | "cash" | "qr";
+type ReceiptOption = "email" | "sms" | "print";
 
 export const ShoppingCart: React.FC = () => {
-  const { 
-    cart, 
-    removeFromCart, 
-    updateCartItemQuantity, 
-    clearCart, 
+  const {
+    cart,
+    removeFromCart,
+    updateCartItemQuantity,
+    clearCart,
     cartTotal,
     currentShop,
-    setCurrentModule
+    setCurrentModule,
   } = useApp();
-  
+
+  const [showCheckout, setShowCheckout] = useState(false);
+  const [selectedPaymentMethod, setSelectedPaymentMethod] =
+    useState<PaymentMethod>("card");
+  const [selectedReceiptOptions, setSelectedReceiptOptions] = useState<
+    ReceiptOption[]
+  >([]);
+
   const [customerInfo, setCustomerInfo] = useState({
-    name: '',
-    email: '',
-    phone: ''
+    name: "",
+    email: "",
+    phone: "",
   });
-  
+
+  // Payment method specific states
+  const [cardInfo, setCardInfo] = useState({
+    number: "",
+    expiry: "",
+    cvv: "",
+    name: "",
+  });
+
+  const [cashInfo, setCashInfo] = useState({
+    receivedAmount: "",
+  });
+
   const handleQuantityChange = (productId: string, change: number) => {
-    const item = cart.find(item => item.id === productId);
+    const item = cart.find((item) => item.id === productId);
     if (!item) return;
-    
+
     const newQuantity = Math.max(1, item.quantity + change);
     updateCartItemQuantity(productId, newQuantity);
   };
-  
-  const handleCheckout = async () => {
-  if (cart.length === 0 || !currentShop) return;
 
-  const newSale = {
-  shopId: currentShop.id,
-  customerInfo: customerInfo.name || customerInfo.email || customerInfo.phone ? customerInfo : undefined,
-  items: [...cart],
-  total: cartTotal,
-  paymentMethod: 'card' as const,
-  timestamp: new Date().toISOString() // ✅ Add this line
-};
+  const handleReceiptOptionToggle = (option: ReceiptOption) => {
+    setSelectedReceiptOptions((prev) =>
+      prev.includes(option)
+        ? prev.filter((o) => o !== option)
+        : [...prev, option]
+    );
+  };
 
-  try {
-    await db.sales.create(newSale); // ✅ FIXED
-    clearCart();
-    setCurrentModule('checkout');
-  } catch (error) {
-    console.error("Checkout failed:", error);
+  const calculateChange = () => {
+    const received = parseFloat(cashInfo.receivedAmount) || 0;
+    return Math.max(0, received - cartTotal);
+  };
+
+  const isPaymentValid = () => {
+    switch (selectedPaymentMethod) {
+      case "card":
+        return (
+          cardInfo.number && cardInfo.expiry && cardInfo.cvv && cardInfo.name
+        );
+      case "cash":
+        return parseFloat(cashInfo.receivedAmount) >= cartTotal;
+      case "qr":
+        return true; // QR code payment is always valid once selected
+      default:
+        return false;
+    }
+  };
+
+  const handleProceedToCheckout = () => {
+    if (cart.length === 0) return;
+    setShowCheckout(true);
+  };
+
+  const handleCompleteCheckout = async () => {
+    if (cart.length === 0 || !currentShop || !isPaymentValid()) return;
+
+    const sales = {
+      shopId: currentShop.id,
+      customerInfo:
+        customerInfo.name || customerInfo.email || customerInfo.phone
+          ? customerInfo
+          : undefined,
+      items: [...cart],
+      total: cartTotal,
+      paymentMethod: selectedPaymentMethod,
+      receiptOptions: selectedReceiptOptions,
+      paymentDetails: {
+        card:
+          selectedPaymentMethod === "card"
+            ? {
+                lastFour: cardInfo.number.slice(-4),
+                cardholderName: cardInfo.name,
+              }
+            : undefined,
+        cash:
+          selectedPaymentMethod === "cash"
+            ? {
+                received: parseFloat(cashInfo.receivedAmount),
+                change: calculateChange(),
+              }
+            : undefined,
+      },
+      timestamp: new Date().toISOString(),
+    };
+
+    try {
+      await db.sales.create(sales);
+      clearCart();
+      setShowCheckout(false);
+      // Reset form states
+      setCardInfo({ number: "", expiry: "", cvv: "", name: "" });
+      setCashInfo({ receivedAmount: "" });
+      setSelectedReceiptOptions([]);
+      setCustomerInfo({ name: "", email: "", phone: "" });
+      setCurrentModule("checkout");
+    } catch (error) {
+      console.error("Checkout failed:", error);
+    }
+  };
+
+  const handleBackToCart = () => {
+    setShowCheckout(false);
+  };
+
+  // If showing checkout screen
+  if (showCheckout) {
+    return (
+      <Card
+        title="Checkout"
+        className="h-full flex flex-col border border-gray-100"
+      >
+        <div className="flex-1 overflow-y-auto">
+          {/* Back Button */}
+          <Button
+            variant="outline"
+            onClick={handleBackToCart}
+            icon={<ArrowLeft size={16} />}
+            className="mb-4"
+          >
+            Back to Cart
+          </Button>
+
+          {/* Order Summary */}
+          <div className="mb-6 p-4 bg-gray-50 rounded-lg">
+            <h3 className="font-medium text-gray-800 mb-3">Order Summary</h3>
+            <div className="space-y-2">
+              {cart.map((item) => (
+                <div key={item.id} className="flex justify-between text-sm">
+                  <span>
+                    {item.name} × {item.quantity}
+                  </span>
+                  <span>${(item.price * item.quantity).toFixed(2)}</span>
+                </div>
+              ))}
+            </div>
+            <div className="border-t mt-3 pt-3 flex justify-between font-semibold">
+              <span>Total</span>
+              <span>${cartTotal.toFixed(2)}</span>
+            </div>
+          </div>
+
+          {/* Payment Methods */}
+          <div className="mb-6">
+            <h3 className="font-medium text-gray-800 mb-3">Payment Method</h3>
+            <div className="grid grid-cols-3 gap-2">
+              <button
+                onClick={() => setSelectedPaymentMethod("card")}
+                className={`p-4 border rounded-lg flex flex-col items-center space-y-2 ${
+                  selectedPaymentMethod === "card"
+                    ? "border-blue-500 bg-blue-50"
+                    : "border-gray-200 hover:border-gray-300"
+                }`}
+              >
+                <CreditCard size={24} />
+                <span className="text-sm">Card</span>
+              </button>
+
+              <button
+                onClick={() => setSelectedPaymentMethod("cash")}
+                className={`p-4 border rounded-lg flex flex-col items-center space-y-2 ${
+                  selectedPaymentMethod === "cash"
+                    ? "border-blue-500 bg-blue-50"
+                    : "border-gray-200 hover:border-gray-300"
+                }`}
+              >
+                <Banknote size={24} />
+                <span className="text-sm">Cash</span>
+              </button>
+
+              <button
+                onClick={() => setSelectedPaymentMethod("qr")}
+                className={`p-4 border rounded-lg flex flex-col items-center space-y-2 ${
+                  selectedPaymentMethod === "qr"
+                    ? "border-blue-500 bg-blue-50"
+                    : "border-gray-200 hover:border-gray-300"
+                }`}
+              >
+                <QrCode size={24} />
+                <span className="text-sm">QR Code</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Payment Method Details */}
+          {selectedPaymentMethod === "card" && (
+            <div className="mb-6 space-y-4">
+              <h4 className="font-medium text-gray-800">Card Details</h4>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Cardholder Name
+                </label>
+                <input
+                  type="text"
+                  value={cardInfo.name}
+                  onChange={(e) =>
+                    setCardInfo({ ...cardInfo, name: e.target.value })
+                  }
+                  placeholder="John Doe"
+                  className="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring focus:border-blue-300"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Card Number
+                </label>
+                <input
+                  type="text"
+                  value={cardInfo.number}
+                  onChange={(e) => {
+                    const value = e.target.value
+                      .replace(/\D/g, "")
+                      .slice(0, 16);
+                    const formattedValue = value.replace(
+                      /(\d{4})(?=\d)/g,
+                      "$1 "
+                    );
+                    setCardInfo({ ...cardInfo, number: value });
+                  }}
+                  placeholder="1234 5678 9012 3456"
+                  className="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring focus:border-blue-300"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Expiry Date
+                  </label>
+                  <input
+                    type="text"
+                    value={cardInfo.expiry}
+                    onChange={(e) => {
+                      const value = e.target.value
+                        .replace(/\D/g, "")
+                        .slice(0, 4);
+                      const formattedValue = value.replace(
+                        /(\d{2})(?=\d)/,
+                        "$1/"
+                      );
+                      setCardInfo({ ...cardInfo, expiry: formattedValue });
+                    }}
+                    placeholder="MM/YY"
+                    className="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring focus:border-blue-300"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    CVV
+                  </label>
+                  <input
+                    type="text"
+                    value={cardInfo.cvv}
+                    onChange={(e) => {
+                      const value = e.target.value
+                        .replace(/\D/g, "")
+                        .slice(0, 3);
+                      setCardInfo({ ...cardInfo, cvv: value });
+                    }}
+                    placeholder="123"
+                    className="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring focus:border-blue-300"
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {selectedPaymentMethod === "cash" && (
+            <div className="mb-6 space-y-4">
+              <h4 className="font-medium text-gray-800">Cash Payment</h4>
+              <div className="p-4 bg-gray-50 rounded-lg">
+                <div className="flex justify-between items-center mb-4">
+                  <span className="font-medium">Total Amount:</span>
+                  <span className="text-xl font-bold text-green-600">
+                    ${cartTotal.toFixed(2)}
+                  </span>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Amount Received
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={cashInfo.receivedAmount}
+                    onChange={(e) =>
+                      setCashInfo({
+                        ...cashInfo,
+                        receivedAmount: e.target.value,
+                      })
+                    }
+                    placeholder="Enter amount received"
+                    className="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring focus:border-blue-300"
+                  />
+                </div>
+                {cashInfo.receivedAmount && (
+                  <div className="mt-4 p-3 bg-white rounded border">
+                    <div className="flex justify-between items-center">
+                      <span className="font-medium">Change:</span>
+                      <span
+                        className={`text-xl font-bold ${
+                          calculateChange() >= 0
+                            ? "text-green-600"
+                            : "text-red-600"
+                        }`}
+                      >
+                        ${calculateChange().toFixed(2)}
+                      </span>
+                    </div>
+                    {calculateChange() < 0 && (
+                      <p className="text-sm text-red-600 mt-1">
+                        Amount received is insufficient
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {selectedPaymentMethod === "qr" && (
+            <div className="mb-6">
+              <h4 className="font-medium text-gray-800 mb-3">
+                QR Code Payment
+              </h4>
+              <div className="p-8 bg-gray-50 rounded-lg text-center">
+                <div className="w-32 h-32 bg-white border-2 border-gray-300 rounded-lg mx-auto mb-4 flex items-center justify-center">
+                  <QrCode size={80} className="text-gray-400" />
+                </div>
+                <p className="text-sm text-gray-600 mb-2">
+                  Scan this QR code to pay
+                </p>
+                <p className="font-semibold text-lg">${cartTotal.toFixed(2)}</p>
+                <div className="mt-4 p-3 bg-blue-50 rounded-lg">
+                  <p className="text-sm text-blue-800">
+                    Customer can scan with their mobile banking app or digital
+                    wallet
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Receipt Options */}
+          <div className="mb-6">
+            <h4 className="font-medium text-gray-800 mb-3">Receipt Options</h4>
+            <div className="space-y-2">
+              <label className="flex items-center space-x-3">
+                <input
+                  type="checkbox"
+                  checked={selectedReceiptOptions.includes("email")}
+                  onChange={() => handleReceiptOptionToggle("email")}
+                  className="rounded"
+                />
+                <Mail size={16} />
+                <span className="text-sm">Email Receipt</span>
+              </label>
+
+              <label className="flex items-center space-x-3">
+                <input
+                  type="checkbox"
+                  checked={selectedReceiptOptions.includes("sms")}
+                  onChange={() => handleReceiptOptionToggle("sms")}
+                  className="rounded"
+                />
+                <MessageSquare size={16} />
+                <span className="text-sm">SMS Receipt</span>
+              </label>
+
+              <label className="flex items-center space-x-3">
+                <input
+                  type="checkbox"
+                  checked={selectedReceiptOptions.includes("print")}
+                  onChange={() => handleReceiptOptionToggle("print")}
+                  className="rounded"
+                />
+                <Printer size={16} />
+                <span className="text-sm">Print Receipt</span>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        {/* Complete Checkout Button */}
+        <div className="mt-auto pt-4 border-t border-gray-100">
+          <Button
+            variant="primary"
+            fullWidth
+            disabled={!isPaymentValid()}
+            onClick={handleCompleteCheckout}
+          >
+            Complete Payment - ${cartTotal.toFixed(2)}
+          </Button>
+        </div>
+      </Card>
+    );
   }
-};
 
+  // Original cart view
   return (
-    <Card 
-      title="Shopping Cart" 
+    <Card
+      title="Shopping Cart"
       className="h-full flex flex-col border border-gray-100"
     >
       {/* Cart Items */}
@@ -61,13 +452,16 @@ export const ShoppingCart: React.FC = () => {
         {cart.length > 0 ? (
           <div className="space-y-4">
             {cart.map((item) => (
-              <div key={item.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+              <div
+                key={item.id}
+                className="flex items-center justify-between p-3 bg-gray-50 rounded-lg"
+              >
                 <div className="flex items-center space-x-3">
                   {/* Product Image Thumbnail */}
                   <div className="h-12 w-12 bg-white rounded border border-gray-200 flex-shrink-0 overflow-hidden">
                     {item.imageUrl ? (
-                      <img 
-                        src={item.imageUrl} 
+                      <img
+                        src={item.imageUrl}
                         alt={item.name}
                         className="w-full h-full object-cover"
                       />
@@ -77,13 +471,17 @@ export const ShoppingCart: React.FC = () => {
                       </div>
                     )}
                   </div>
-                  
+
                   <div>
-                    <h4 className="font-medium text-sm text-gray-800">{item.name}</h4>
-                    <p className="text-xs text-gray-500">${item.price.toFixed(2)}</p>
+                    <h4 className="font-medium text-sm text-gray-800">
+                      {item.name}
+                    </h4>
+                    <p className="text-xs text-gray-500">
+                      ${item.price.toFixed(2)}
+                    </p>
                   </div>
                 </div>
-                
+
                 <div className="flex items-center space-x-3">
                   {/* Quantity Controls */}
                   <div className="flex items-center">
@@ -93,7 +491,9 @@ export const ShoppingCart: React.FC = () => {
                     >
                       <Minus size={14} />
                     </button>
-                    <span className="mx-1 w-8 text-center text-sm font-medium">{item.quantity}</span>
+                    <span className="mx-1 w-8 text-center text-sm font-medium">
+                      {item.quantity}
+                    </span>
                     <button
                       onClick={() => handleQuantityChange(item.id, 1)}
                       className="p-1 text-gray-500 hover:text-gray-700"
@@ -101,7 +501,7 @@ export const ShoppingCart: React.FC = () => {
                       <Plus size={14} />
                     </button>
                   </div>
-                  
+
                   {/* Remove Button */}
                   <button
                     onClick={() => removeFromCart(item.id)}
@@ -120,12 +520,14 @@ export const ShoppingCart: React.FC = () => {
                 <ShoppingCartIcon size={48} />
               </div>
               <p className="text-gray-500">Your cart is empty</p>
-              <p className="text-sm text-gray-400 mt-1">Add items from the product grid</p>
+              <p className="text-sm text-gray-400 mt-1">
+                Add items from the product grid
+              </p>
             </div>
           </div>
         )}
       </div>
-      
+
       {/* Cart Total */}
       <div className="mt-auto pt-4 border-t border-gray-100">
         <div className="flex items-center justify-between mb-4">
@@ -136,32 +538,60 @@ export const ShoppingCart: React.FC = () => {
           <span className="text-gray-600">Tax</span>
           <span className="font-medium">$0.00</span>
         </div>
+        <div className="flex items-center justify-between mb-6">
+          <span className="text-gray-600">Discount</span>
+          <span className="font-medium">$0.00</span>
+        </div>
         <div className="flex items-center justify-between text-lg mb-6">
           <span className="font-medium">Total</span>
           <span className="font-semibold">${cartTotal.toFixed(2)}</span>
         </div>
-        
-        {/* Customer Email Input */}
+
+        {/* Customer Information */}
         <div className="mb-4">
-          <label className="block text-sm font-medium text-gray-700 mb-1">Customer Email</label>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Customer Name
+          </label>
+          <input
+            type="text"
+            value={customerInfo.name}
+            onChange={(e) =>
+              setCustomerInfo({ ...customerInfo, name: e.target.value })
+            }
+            placeholder="Enter customer name"
+            className="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring focus:border-blue-300"
+          />
+        </div>
+
+        <div className="mb-4">
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Customer Email
+          </label>
           <input
             type="email"
             value={customerInfo.email}
-            onChange={(e) => setCustomerInfo({ ...customerInfo, email: e.target.value })}
+            onChange={(e) =>
+              setCustomerInfo({ ...customerInfo, email: e.target.value })
+            }
             placeholder="example@email.com"
             className="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring focus:border-blue-300"
           />
         </div>
+
         <div className="mb-4">
-        <label className="block text-sm font-medium text-gray-700 mb-1">Customer Phone number</label>
-        <input
-          type="tel"
-          value={customerInfo.phone}
-          onChange={(e) => setCustomerInfo({ ...customerInfo, phone: e.target.value })}
-          placeholder="07X-XXXXXXX"
-          className="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring focus:border-blue-300"
-        />
-      </div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Customer Phone Number
+          </label>
+          <input
+            type="tel"
+            value={customerInfo.phone}
+            onChange={(e) =>
+              setCustomerInfo({ ...customerInfo, phone: e.target.value })
+            }
+            placeholder="07X-XXXXXXX"
+            className="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring focus:border-blue-300"
+          />
+        </div>
 
         {/* Action Buttons */}
         <div className="space-y-3">
@@ -170,7 +600,7 @@ export const ShoppingCart: React.FC = () => {
             fullWidth
             icon={<CreditCard size={16} />}
             disabled={cart.length === 0}
-            onClick={handleCheckout}
+            onClick={handleProceedToCheckout}
           >
             Proceed to Checkout
           </Button>
