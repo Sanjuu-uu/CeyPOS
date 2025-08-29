@@ -18,8 +18,28 @@ import {
 import { useApp } from "../../../context/AppContext";
 import { db } from "../../../lib/db";
 
-type PaymentMethod = "card" | "cash" | "qr";
+type PaymentMethod = "card" | "cash" | "mobile";
 type ReceiptOption = "email" | "sms" | "print";
+
+// Inline API helper function
+const postJSON = async (endpoint: string, data: any) => {
+  const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:4000";
+  const response = await fetch(`${API_BASE}${endpoint}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(data),
+  });
+
+  if (!response.ok) {
+    throw new Error(
+      `API request failed: ${response.status} ${response.statusText}`
+    );
+  }
+
+  return response.json();
+};
 
 export const ShoppingCart: React.FC = () => {
   const {
@@ -57,6 +77,10 @@ export const ShoppingCart: React.FC = () => {
     receivedAmount: "",
   });
 
+  // Add the saving state at the component level
+  const [saving, setSaving] = useState(false);
+
+  // Missing function definitions that are referenced in the JSX
   const handleQuantityChange = (productId: string, change: number) => {
     const item = cart.find((item) => item.id === productId);
     if (!item) return;
@@ -86,8 +110,8 @@ export const ShoppingCart: React.FC = () => {
         );
       case "cash":
         return parseFloat(cashInfo.receivedAmount) >= cartTotal;
-      case "qr":
-        return true; // QR code payment is always valid once selected
+      case "mobile":
+        return true; // Mobile/QR code payment is always valid once selected
       default:
         return false;
     }
@@ -99,42 +123,130 @@ export const ShoppingCart: React.FC = () => {
   };
 
   const handleCompleteCheckout = async () => {
-    if (cart.length === 0 || !currentShop || !isPaymentValid()) return;
+    if (cart.length === 0 || !currentShop || !isPaymentValid() || saving)
+      return;
 
-    const sales = {
-      shopId: currentShop.id,
-      customerInfo:
-        customerInfo.name || customerInfo.email || customerInfo.phone
-          ? customerInfo
-          : undefined,
-      items: [...cart],
-      total: cartTotal,
-      paymentMethod: selectedPaymentMethod,
-      receiptOptions: selectedReceiptOptions,
-      paymentDetails: {
-        card:
-          selectedPaymentMethod === "card"
-            ? {
-                lastFour: cardInfo.number.slice(-4),
-                cardholderName: cardInfo.name,
-              }
-            : undefined,
-        cash:
-          selectedPaymentMethod === "cash"
-            ? {
-                received: parseFloat(cashInfo.receivedAmount),
-                change: calculateChange(),
-              }
-            : undefined,
-      },
-      timestamp: new Date().toISOString(),
-    };
+    setSaving(true);
 
     try {
-      await db.sales.create(sales);
+      // Create the main sale record first
+      const newSale = {
+        shopId: currentShop.id,
+        customerInfo:
+          customerInfo.name || customerInfo.email || customerInfo.phone
+            ? customerInfo
+            : undefined,
+        items: [...cart],
+        total: cartTotal,
+        paymentMethod: selectedPaymentMethod,
+        receiptOptions: selectedReceiptOptions,
+        paymentDetails: {
+          card:
+            selectedPaymentMethod === "card"
+              ? {
+                  lastFour: cardInfo.number.slice(-4),
+                  cardholderName: cardInfo.name,
+                }
+              : undefined,
+          cash:
+            selectedPaymentMethod === "cash"
+              ? {
+                  received: parseFloat(cashInfo.receivedAmount),
+                  change: calculateChange(),
+                }
+              : undefined,
+        },
+        timestamp: new Date().toISOString(),
+      };
+
+      // Save the main sale record
+      const savedSale = await db.sales.create(newSale);
+
+      // Handle customer data if provided
+      if (customerInfo.name || customerInfo.email || customerInfo.phone) {
+        try {
+          const customerData: any = {
+            shopId: currentShop.id,
+            totalSpendDelta: cartTotal,
+          };
+
+          if (customerInfo.name.trim())
+            customerData.name = customerInfo.name.trim();
+          if (customerInfo.email.trim())
+            customerData.email = customerInfo.email.trim();
+          if (customerInfo.phone.trim())
+            customerData.phone = customerInfo.phone.trim();
+
+          await db.customers.upsert(customerData);
+        } catch (error) {
+          console.warn("Failed to save customer data:", error);
+        }
+      }
+
+      // Update daily sales
+      try {
+        db.daily_sales.addOrIncrement(
+          currentShop.id,
+          savedSale.timestamp,
+          cartTotal
+        );
+      } catch (error) {
+        console.warn("Failed to update daily sales:", error);
+      }
+
+      // Create transaction items
+      try {
+        const transactionItems = cart.map((item) => ({
+          saleId: savedSale.id,
+          shopId: currentShop.id,
+          productId: item.id,
+          name: item.name,
+          price: item.price,
+          quantity: item.quantity,
+          subtotal: item.price * item.quantity,
+        }));
+
+        await db.transaction_items.bulkCreate(transactionItems);
+      } catch (error) {
+        console.warn("Failed to save transaction items:", error);
+      }
+
+      // Send to server for additional processing (receipts, etc.)
+      try {
+        // Transform data to match backend expectations
+        const serverPayload = {
+          shopId: currentShop.id.replace(/^shop_/, ""), // Remove "shop_" prefix
+          customer:
+            customerInfo.name || customerInfo.email || customerInfo.phone
+              ? {
+                  name: customerInfo.name || null,
+                  email: customerInfo.email || null,
+                  phone: customerInfo.phone || null,
+                }
+              : {},
+          items: cart.map((item) => ({
+            item_id: null, // Let backend handle this
+            inventory_code: item.id,
+            name: item.name,
+            unit_price: item.price,
+            quantity: item.quantity,
+          })),
+          subtotal: cartTotal,
+          discount: 0,
+          tax: 0,
+          total: cartTotal,
+          paymentMethod: selectedPaymentMethod,
+          createdAt: savedSale.timestamp,
+        };
+
+        await postJSON("/api/sales/complete", serverPayload);
+      } catch (error) {
+        console.warn("Server notification failed:", error);
+      }
+
+      // Reset UI state on successful completion
       clearCart();
       setShowCheckout(false);
-      // Reset form states
       setCardInfo({ number: "", expiry: "", cvv: "", name: "" });
       setCashInfo({ receivedAmount: "" });
       setSelectedReceiptOptions([]);
@@ -142,6 +254,9 @@ export const ShoppingCart: React.FC = () => {
       setCurrentModule("checkout");
     } catch (error) {
       console.error("Checkout failed:", error);
+      alert("Payment failed. Please try again.");
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -215,9 +330,9 @@ export const ShoppingCart: React.FC = () => {
               </button>
 
               <button
-                onClick={() => setSelectedPaymentMethod("qr")}
+                onClick={() => setSelectedPaymentMethod("mobile")}
                 className={`p-4 border rounded-lg flex flex-col items-center space-y-2 ${
-                  selectedPaymentMethod === "qr"
+                  selectedPaymentMethod === "mobile"
                     ? "border-blue-500 bg-blue-50"
                     : "border-gray-200 hover:border-gray-300"
                 }`}
@@ -257,10 +372,6 @@ export const ShoppingCart: React.FC = () => {
                     const value = e.target.value
                       .replace(/\D/g, "")
                       .slice(0, 16);
-                    const formattedValue = value.replace(
-                      /(\d{4})(?=\d)/g,
-                      "$1 "
-                    );
                     setCardInfo({ ...cardInfo, number: value });
                   }}
                   placeholder="1234 5678 9012 3456"
@@ -363,7 +474,7 @@ export const ShoppingCart: React.FC = () => {
             </div>
           )}
 
-          {selectedPaymentMethod === "qr" && (
+          {selectedPaymentMethod === "mobile" && (
             <div className="mb-6">
               <h4 className="font-medium text-gray-800 mb-3">
                 QR Code Payment
@@ -431,10 +542,12 @@ export const ShoppingCart: React.FC = () => {
           <Button
             variant="primary"
             fullWidth
-            disabled={!isPaymentValid()}
+            disabled={!isPaymentValid() || saving}
             onClick={handleCompleteCheckout}
           >
-            Complete Payment - ${cartTotal.toFixed(2)}
+            {saving
+              ? "Processing..."
+              : `Complete Payment - $${cartTotal.toFixed(2)}`}
           </Button>
         </div>
       </Card>

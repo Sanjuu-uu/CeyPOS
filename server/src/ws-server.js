@@ -1,8 +1,13 @@
 // WebSocket server for real-time two-way sync per shop
-const { Server } = require('socket.io');
-const { createOrOpenShopDb, dbPathForShop, openDb, insertInventoryRows } = require('./utils/db');
-const fs = require('fs');
-const path = require('path');
+const { Server } = require("socket.io");
+const {
+  createOrOpenShopDb,
+  dbPathForShop,
+  openDb,
+  insertInventoryRows,
+} = require("./utils/db");
+const fs = require("fs");
+const path = require("path");
 
 let ioInstance;
 const watchers = new Map(); // shopId -> fs.FSWatcher
@@ -15,8 +20,9 @@ function safeParseProduct(p) {
     name: p.name || p.productName || null,
     category: p.category || null,
     sku: p.sku || null,
-    price: p.price == null || p.price === '' ? null : Number(p.price),
-    stock: p.stock == null || p.stock === '' ? 0 : Number(p.stock),
+    image_url: p.image_url || p.imageUrl || null,
+    price: p.price == null || p.price === "" ? null : Number(p.price),
+    stock: p.stock == null || p.stock === "" ? 0 : Number(p.stock),
     stock_last_month: p.stock_last_month || 0,
     restock_suggestion: p.restock_suggestion || 0,
     created_at: new Date().toISOString(),
@@ -26,10 +32,10 @@ function safeParseProduct(p) {
 
 function readInventory(db) {
   try {
-    const stmt = db.prepare('SELECT * FROM inventory');
+    const stmt = db.prepare("SELECT * FROM inventory");
     return Array.from(stmt.iterate());
   } catch (err) {
-    console.error('Failed to read inventory', err);
+    console.error("Failed to read inventory", err);
     return [];
   }
 }
@@ -38,17 +44,21 @@ function init(httpServer, opts = {}) {
   if (ioInstance) return ioInstance;
   const io = new Server(httpServer, {
     cors: {
-      origin: opts.corsOrigins || ['http://localhost:5173', 'http://127.0.0.1:5173'],
-      methods: ['GET', 'POST']
-    }
+      origin: opts.corsOrigins || [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+      ],
+      methods: ["GET", "POST"],
+    },
   });
   ioInstance = io;
 
-  io.on('connection', async (socket) => {
-    const shopId = socket.handshake.query?.shopId || socket.handshake.auth?.shopId;
+  io.on("connection", async (socket) => {
+    const shopId =
+      socket.handshake.query?.shopId || socket.handshake.auth?.shopId;
     if (!shopId) {
-      console.warn('Socket connection without shopId - disconnecting');
-      socket.emit('error', { message: 'shopId is required' });
+      console.warn("Socket connection without shopId - disconnecting");
+      socket.emit("error", { message: "shopId is required" });
       socket.disconnect(true);
       return;
     }
@@ -62,8 +72,8 @@ function init(httpServer, opts = {}) {
     try {
       db = createOrOpenShopDb(shopId);
     } catch (err) {
-      console.error('Failed to open shop DB for socket connection', err);
-      socket.emit('error', { message: 'Failed to open shop DB' });
+      console.error("Failed to open shop DB for socket connection", err);
+      socket.emit("error", { message: "Failed to open shop DB" });
       socket.disconnect(true);
       return;
     }
@@ -77,44 +87,51 @@ function init(httpServer, opts = {}) {
           try {
             const dbr = openDb(shopId);
             const inv = readInventory(dbr);
-            io.to(`shop_${shopId}`).emit('inventoryUpdated', { shopId, items: inv });
+            io.to(`shop_${shopId}`).emit("inventoryUpdated", {
+              shopId,
+              items: inv,
+            });
           } catch (e) {
-            console.error('Watcher read error:', e);
+            console.error("Watcher read error:", e);
           }
         });
         watchers.set(shopId, watcher);
       } catch (watchErr) {
-        console.warn('Failed to watch DB file for', shopId, watchErr);
+        console.warn("Failed to watch DB file for", shopId, watchErr);
       }
     }
 
     // Handle client requests
-    socket.on('getInventory', async (payload, cb) => {
+    socket.on("getInventory", async (payload, cb) => {
       try {
         const inv = readInventory(db);
-        socket.emit('inventorySnapshot', { shopId, items: inv });
-        if (typeof cb === 'function') cb({ ok: true, count: inv.length });
+        socket.emit("inventorySnapshot", { shopId, items: inv });
+        if (typeof cb === "function") cb({ ok: true, count: inv.length });
       } catch (err) {
-        console.error('getInventory error', err);
-        if (typeof cb === 'function') cb({ ok: false, error: String(err) });
+        console.error("getInventory error", err);
+        if (typeof cb === "function") cb({ ok: false, error: String(err) });
       }
     });
 
-    socket.on('upsertProduct', async (payload, cb) => {
+    socket.on("upsertProduct", async (payload, cb) => {
       try {
         const product = safeParseProduct(payload);
         insertInventoryRows(db, [product]);
         // Broadcast to all clients of this shop
         const inv = readInventory(db);
-        io.to(room).emit('inventoryUpdated', { shopId, items: inv, changed: product });
-        if (typeof cb === 'function') cb({ ok: true });
+        io.to(room).emit("inventoryUpdated", {
+          shopId,
+          items: inv,
+          changed: product,
+        });
+        if (typeof cb === "function") cb({ ok: true });
       } catch (err) {
-        console.error('upsertProduct error', err);
-        if (typeof cb === 'function') cb({ ok: false, error: String(err) });
+        console.error("upsertProduct error", err);
+        if (typeof cb === "function") cb({ ok: false, error: String(err) });
       }
     });
 
-    socket.on('disconnect', (reason) => {
+    socket.on("disconnect", (reason) => {
       console.log(`Socket ${socket.id} disconnected: ${reason}`);
     });
   });

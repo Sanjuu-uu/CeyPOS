@@ -17,7 +17,7 @@ app.use(express.json({ limit: "10mb" }));
 // Routes
 const inventoryRouter = require("./src/routes/inventory");
 const shopRouter = require("./src/routes/shop");
-const salesRoutes = require("./routes/sales");
+const salesRoutes = require("./src/routes/sales");
 
 app.get("/api/health", (req, res) => {
   res.json({ status: "ok" });

@@ -43,6 +43,7 @@ function initSchema(db) {
     timezone TEXT,
     created_at DATETIME
   );
+  
   CREATE TABLE IF NOT EXISTS shop_operating_hours (
     shop_id INTEGER NOT NULL,
     day TEXT NOT NULL,
@@ -51,11 +52,13 @@ function initSchema(db) {
     closed INTEGER DEFAULT 0,
     PRIMARY KEY (shop_id, day)
   );
+  
   CREATE TABLE IF NOT EXISTS shop_payment_methods (
     shop_id INTEGER NOT NULL,
     method TEXT NOT NULL,
     PRIMARY KEY (shop_id, method)
   );
+  
   CREATE TABLE IF NOT EXISTS inventory (
     item_id INTEGER PRIMARY KEY AUTOINCREMENT,
     inventory_code TEXT UNIQUE,
@@ -71,6 +74,7 @@ function initSchema(db) {
     created_at DATETIME,
     updated_at DATETIME
   );
+  
   CREATE TABLE IF NOT EXISTS customers (
     customer_id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT,
@@ -81,6 +85,7 @@ function initSchema(db) {
     last_visit DATETIME,
     created_at DATETIME
   );
+  
   CREATE TABLE IF NOT EXISTS transactions (
     transaction_id INTEGER PRIMARY KEY AUTOINCREMENT,
     receipt_id TEXT UNIQUE,
@@ -91,8 +96,10 @@ function initSchema(db) {
     tax DECIMAL(10,2),
     total DECIMAL(10,2),
     payment_method TEXT,
-    created_at DATETIME
+    created_at DATETIME,
+    FOREIGN KEY(customer_id) REFERENCES customers(customer_id)
   );
+  
   CREATE TABLE IF NOT EXISTS transaction_items (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     transaction_id INTEGER,
@@ -100,14 +107,21 @@ function initSchema(db) {
     inventory_code TEXT,
     quantity INTEGER,
     unit_price DECIMAL(10,2),
-    subtotal DECIMAL(10,2)
+    subtotal DECIMAL(10,2),
+    FOREIGN KEY(transaction_id) REFERENCES transactions(transaction_id),
+    FOREIGN KEY(item_id) REFERENCES inventory(item_id)
   );
+  
   CREATE TABLE IF NOT EXISTS daily_sales (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    shop_id INTEGER,
     date TEXT,
     total_sales DECIMAL(10,2),
     transactions_count INTEGER,
-    top_item TEXT
+    top_item TEXT,
+    UNIQUE(shop_id, date)
   );
+  
   CREATE TABLE IF NOT EXISTS inventory_forecast (
     item_id INTEGER PRIMARY KEY,
     item_name TEXT,
@@ -195,7 +209,9 @@ function upsertOperatingHours(db, shopId, operatingHours = {}) {
 
 function replacePaymentMethods(db, shopId, methods = []) {
   const del = db.prepare(`DELETE FROM shop_payment_methods WHERE shop_id = ?`);
-  const ins = db.prepare(`INSERT INTO shop_payment_methods (shop_id, method) VALUES (?, ?)`);
+  const ins = db.prepare(
+    `INSERT INTO shop_payment_methods (shop_id, method) VALUES (?, ?)`
+  );
   const txn = db.transaction((list) => {
     del.run(shopId);
     for (const m of list) ins.run(shopId, String(m));

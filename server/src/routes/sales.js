@@ -1,5 +1,5 @@
 const { Router } = require("express");
-const { openDb } = require("../db/db"); // adjust path if different
+const { openDb } = require("../utils/db"); // adjust path if different
 const router = Router();
 
 router.post("/complete", (req, res) => {
