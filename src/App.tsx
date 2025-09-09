@@ -3,7 +3,7 @@ import { MainLayout } from './components/layout/MainLayout';
 import { AppProvider } from './context/AppContext';
 import { ShopWizardProvider, useShopWizard } from './context/ShopWizardContext';
 import { ShopWizard } from './components/modules/ShopWizard';
-import Home from './pages/reacthome/home';
+import Home from './pages/home/home';
 
 function App() {
   // Set page title

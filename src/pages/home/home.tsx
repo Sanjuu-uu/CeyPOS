@@ -1,7 +1,7 @@
 import React from 'react';
 import { ArrowRight, Star, Users, Shield, TrendingUp, CreditCard, ShoppingCart, BarChart3 } from 'lucide-react';
-import Navigation from './components/Navigation';
-import Footer from './components/Footer'; // Add this import
+import Navigation from '../../pages/components/Navigation';
+import Footer from '../../pages/components/Footer'; // Add this import
 
 // Try multiple import methods for your Luvy background
 import backgroundImage1 from './images/footer-20background-1.png';

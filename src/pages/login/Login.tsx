@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Eye, EyeOff, Mail, Lock, ArrowRight } from 'lucide-react';
-import Navigation from './components/Navigation';
-import Footer from './components/Footer'; // Import the global footer
+import Navigation from '../components/Navigation';
+import Footer from '../components/Footer'; // Import the global footer
 
 const Login: React.FC = () => {
   const [showPassword, setShowPassword] = useState(false);
