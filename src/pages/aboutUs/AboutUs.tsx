@@ -1,7 +1,7 @@
 
 import { Users, Target, Zap, Shield, Cloud, BarChart3, CreditCard, Smartphone, TrendingUp, Globe, Award } from 'lucide-react';
-import Navigation from './components/Navigation';
-import Footer from './components/Footer';
+import Navigation from '../../pages/components/Navigation';
+import Footer from '../../pages/components/Footer';
 
 // Main About Us Component
 const AboutUs = () => {

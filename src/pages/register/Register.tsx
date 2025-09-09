@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Eye, EyeOff, Mail, Lock, User } from 'lucide-react';
-import Navigation from './components/Navigation';
-import Footer from './components/Footer'; // Add this import
+import Navigation from '../components/Navigation';
+import Footer from '../components/Footer'; // Add this import
 
 const Register: React.FC = () => {
   const [showPassword, setShowPassword] = useState(false);
