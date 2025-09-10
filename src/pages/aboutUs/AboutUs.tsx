@@ -1,78 +1,265 @@
-import React, { useState } from 'react';
+
 import { Users, Target, Zap, Shield, Cloud, BarChart3, CreditCard, Smartphone, TrendingUp, Globe, Award } from 'lucide-react';
 import Navigation from '../../pages/components/Navigation';
 import Footer from '../../pages/components/Footer';
 
 // Main About Us Component
-const AboutUs: React.FC = () => {
+const AboutUs = () => {
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
+      {/* Add CSS for flip cards and tiles */}
+      <style >{`
+        /* Original flip card styles */
+        .flip-card {
+          perspective: 1000px;
+        }
+        
+        .flip-card-inner {
+          position: relative;
+          width: 100%;
+          height: 100%;
+          text-align: center;
+          transition: transform 0.8s;
+          transform-style: preserve-3d;
+        }
+        
+        .flip-card:hover .flip-card-inner {
+          transform: rotateY(180deg);
+        }
+        
+        .flip-card-front, .flip-card-back {
+          position: absolute;
+          width: 100%;
+          height: 100%;
+          -webkit-backface-visibility: hidden;
+          backface-visibility: hidden;
+        }
+        
+        .flip-card-back {
+          transform: rotateY(180deg);
+        }
+
+        /* New tile flip card styles */
+        .flip-card-tile {
+          perspective: 1000px;
+          height: 240px;
+          min-width: 360px;
+        }
+        
+        .flip-card-tile-inner {
+          position: relative;
+          width: 100%;
+          height: 100%;
+          transition: transform 0.6s ease-in-out;
+          transform-style: preserve-3d;
+        }
+        
+        .flip-card-tile:hover .flip-card-tile-inner {
+          transform: rotateY(180deg);
+        }
+        
+        .flip-card-tile:hover {
+          transform: translateY(-4px);
+        }
+        
+        .tile-face {
+          position: absolute;
+          width: 100%;
+          height: 100%;
+          -webkit-backface-visibility: hidden;
+          backface-visibility: hidden;
+          background-color: #171A1F;
+          border: 1px solid #242A31;
+          border-radius: 20px;
+          padding: 32px 24px;
+          box-shadow: 0 8px 24px rgba(0,0,0,0.35), 0 1px 0 rgba(255,255,255,0.05) inset;
+          display: flex;
+          flex-direction: column;
+          justify-content: center;
+          align-items: center;
+          text-align: center;
+          transition: box-shadow 0.3s ease;
+        }
+        
+        .flip-card-tile-back {
+          transform: rotateY(180deg);
+        }
+        
+        .flip-card-tile:hover .tile-face {
+          box-shadow: 0 12px 32px rgba(0,0,0,0.45), 0 1px 0 rgba(255,255,255,0.05) inset;
+        }
+
+        @media (max-width: 1024px) {
+          .flip-card-tile {
+            min-width: auto;
+            height: 220px;
+          }
+        }
+      `}</style>
+
       {/* Navigation */}
       <Navigation />
 
       {/* Main Content */}
       <div className="relative overflow-hidden flex-1">
-        {/* Background Pattern */}
+        {/* Background Pattern with Curved Elements */}
         <div className="absolute inset-0 pointer-events-none">
-          <div className="absolute inset-0 bg-gradient-to-br from-gray-100 via-gray-50 to-gray-100 opacity-80"></div>
-          <div className="absolute top-0 left-0 w-96 h-96 bg-gradient-to-br from-gray-300 to-gray-400 rounded-full opacity-10 -translate-x-48 -translate-y-48"></div>
-          <div className="absolute bottom-0 right-0 w-96 h-96 bg-gradient-to-br from-gray-400 to-gray-500 rounded-full opacity-10 translate-x-48 translate-y-48"></div>
+          <div className="absolute inset-0 bg-gradient-to-br from-gray-50 via-gray-25 to-gray-50 opacity-90"></div>
+          <div className="absolute top-0 left-0 w-[500px] h-[500px] bg-gradient-to-br from-gray-200/30 to-gray-300/20 rounded-full opacity-40 -translate-x-64 -translate-y-64"></div>
+          <div className="absolute bottom-0 right-0 w-[600px] h-[600px] bg-gradient-to-tl from-gray-300/20 to-gray-400/10 rounded-full opacity-30 translate-x-64 translate-y-64"></div>
+          {/* Curved corner wave */}
+          <div className="absolute top-0 right-0 w-96 h-96">
+            <div className="absolute inset-0 bg-gradient-to-bl from-gray-200/20 via-transparent to-transparent rounded-bl-full opacity-50"></div>
+          </div>
         </div>
 
         <div className="relative z-10">
-          {/* Hero Section */}
-          <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
-            <div className="text-center mb-16">
-              <div className="inline-flex items-center bg-gradient-to-r from-gray-100 to-gray-200 text-gray-700 px-4 py-2 rounded-full text-xs font-medium mb-6">
-                CEYPOS About Us
-              </div>
-              <h1 className="text-4xl md:text-5xl font-black text-gray-900 mb-6">
-                We're On a Mission<br />
-                to Power<br />
-                Retailers
-              </h1>
-              <p className="text-gray-600 text-lg max-w-2xl mx-auto">
-                We democratize retail technology for small to medium-sized businesses. 
-                By eliminating traditional barriers, CEYPOS enables merchants to establish 
-                their digital storefront with minimal technical expertise.
-              </p>
-            </div>
-
-            {/* Stats Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-16">
-              <div className="bg-white rounded-2xl p-8 text-center shadow-sm border border-gray-200">
-                <div className="text-sm text-gray-500 mb-2">TRUSTED BY</div>
-                <div className="text-3xl font-bold text-gray-900 mb-2">500+</div>
-                <div className="text-gray-600">Retailers</div>
-              </div>
-              <div className="bg-white rounded-2xl p-8 text-center shadow-sm border border-gray-200">
-                <div className="text-sm text-gray-500 mb-2">PROCESSING</div>
-                <div className="text-3xl font-bold text-gray-900 mb-2">$2.5M</div>
-                <div className="text-gray-600">Transactions per Month</div>
-              </div>
-              <div className="bg-white rounded-2xl p-8 text-center shadow-sm border border-gray-200">
-                <div className="text-sm text-gray-500 mb-2">SUPPORTING</div>
-                <div className="text-3xl font-bold text-gray-900 mb-2">25k</div>
-                <div className="text-gray-600">Daily Transactions</div>
-              </div>
-            </div>
-
-            {/* Founder Quote */}
-            <div className="bg-white rounded-2xl p-8 max-w-4xl mx-auto mb-16 shadow-sm border border-gray-200">
-              <div className="flex items-start space-x-6">
-                {/* Profile Image Placeholder */}
-                <div className="w-16 h-16 bg-gradient-to-br from-gray-300 to-gray-400 rounded-full flex-shrink-0 flex items-center justify-center">
-                  {/* Image: CEO profile photo - 64x64px, professional headshot, business casual attire */}
-                  <Users className="w-8 h-8 text-white" />
+          {/* Hero Section with Side Stats */}
+          <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20">
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 items-start">
+              {/* Main Content - Left Side */}
+              <div className="lg:col-span-7 lg:pl-4">
+                <div className="inline-flex items-center bg-gray-50 text-gray-500 px-3 py-1 rounded-full text-xs font-medium mb-3 border border-gray-200">
+                  CEYPOS ABOUT US
                 </div>
-                <div className="flex-1">
-                  <p className="text-gray-700 text-lg mb-4 italic">
-                    "Traditional POS systems create barriers instead of opportunities. We built CEYPOS to change that - 
-                    making enterprise-grade retail technology accessible to every business owner, regardless of their 
-                    technical background or budget constraints."
-                  </p>
-                  <div className="text-gray-900 font-semibold">Alex Johnson</div>
-                  <div className="text-gray-600">Founder & CEO, CEYPOS</div>
+                
+                <h1 className="text-5xl lg:text-6xl xl:text-7xl font-black text-gray-900 mb-8 leading-[0.85] tracking-[-0.02em]">
+                  We're On a Mission<br />
+                  to Power Retailers
+                </h1>
+                
+                <p className="text-gray-500 text-base mb-10 max-w-lg leading-6 font-light">
+                  We democratize retail technology for small to medium-sized businesses. 
+                  By eliminating traditional barriers, CEYPOS enables merchants to establish 
+                  their digital storefront with minimal technical expertise.
+                </p>
+
+                {/* Founder Quote - Tightly Grouped */}
+                <div className="flex items-start space-x-4 max-w-2xl">
+                  {/* Profile Avatar - Rounded Square Card */}
+                  <div className="w-14 h-14 bg-white rounded-xl flex-shrink-0 flex items-center justify-center shadow-lg border border-gray-100 p-1">
+                    <div className="w-10 h-10 bg-gradient-to-br from-gray-100 to-gray-200 rounded-lg flex items-center justify-center">
+                      <Users className="w-5 h-5 text-gray-600" />
+                    </div>
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-gray-600 text-sm mb-3 leading-5 font-normal">
+                      "Traditional POS systems create barriers instead of opportunities. We built CEYPOS to change that—making enterprise-grade retail technology accessible to every business owner, regardless of their technical background or budget constraints."
+                    </p>
+                    <div className="space-y-0.5">
+                      <div className="text-gray-900 font-semibold text-sm">Alex Johnson</div>
+                      <div className="text-gray-400 text-sm font-light">Founder, <span className="font-semibold text-gray-900">CEYPOS</span></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Stats Cards - Right Side with Precise Spacing */}
+              <div className="lg:col-span-5 space-y-6">
+                <div className="bg-white/90 backdrop-blur-sm rounded-2xl p-6 text-center shadow-lg border border-gray-100/50 hover:shadow-xl transition-shadow duration-300">
+                  <div className="text-xs text-gray-400 mb-2 font-medium uppercase tracking-wider">USED BY</div>
+                  <div className="text-3xl font-bold text-gray-900 mb-2">11,000+</div>
+                  <div className="text-sm text-gray-500 font-medium">Creators</div>
+                </div>
+                
+                <div className="bg-white/90 backdrop-blur-sm rounded-2xl p-6 text-center shadow-lg border border-gray-100/50 hover:shadow-xl transition-shadow duration-300">
+                  <div className="text-xs text-gray-400 mb-2 font-medium uppercase tracking-wider">VALUE</div>
+                  <div className="text-3xl font-bold text-gray-900 mb-2">49M</div>
+                  <div className="text-sm text-gray-500 font-medium">Revenue per Year</div>
+                </div>
+                
+                <div className="bg-white/90 backdrop-blur-sm rounded-2xl p-6 text-center shadow-lg border border-gray-100/50 hover:shadow-xl transition-shadow duration-300">
+                  <div className="text-xs text-gray-400 mb-2 font-medium uppercase tracking-wider">TO SUPPORT</div>
+                  <div className="text-3xl font-bold text-gray-900 mb-2">8.5m</div>
+                  <div className="text-sm text-gray-500 font-medium">End Users</div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          {/* Foundation Section - Floating Black Board */}
+          <section className="bg-white py-24">
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+              
+              {/* Single Floating Board */}
+              <div className="relative mx-auto" style={{
+                width: '92%',
+                maxWidth: '1150px',
+                minHeight: '440px',
+                backgroundColor: '#111315',
+                borderRadius: '26px',
+                border: '1px solid #1E2227',
+                boxShadow: '0 12px 40px rgba(0,0,0,0.55), 0 2px 0 rgba(255,255,255,0.04) inset, 0 1px 0 rgba(255,255,255,0.06) inset',
+                backgroundImage: `radial-gradient(circle at 2px 2px, rgba(255,255,255,0.08) 1px, transparent 0)`,
+                backgroundSize: '18px 18px',
+                backgroundPosition: '20px 20px'
+              }}>
+                
+                {/* Board Content */}
+                <div className="p-12 sm:p-14">
+                  
+                  {/* Header */}
+                  <div className="text-center mb-12">
+                    <h2 className="text-3xl font-semibold text-gray-100 mb-6">
+                      Our Foundation
+                    </h2>
+                    <p className="text-gray-400 text-lg leading-relaxed max-w-2xl mx-auto">
+                      Built on clear mission and vision that drives everything we do
+                    </p>
+                  </div>
+
+                  {/* Mission & Vision Tiles Grid */}
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 lg:gap-10">
+                    
+                    {/* Mission Tile */}
+                    <div className="flip-card-tile">
+                      <div className="flip-card-tile-inner">
+                        {/* Front Face */}
+                        <div className="flip-card-tile-front tile-face">
+                          <div className="inline-flex items-center bg-gray-700 text-gray-200 px-3 py-1 rounded-full text-xs font-medium tracking-wider mb-6">
+                            OUR MISSION
+                          </div>
+                          <h3 className="text-xl font-bold text-gray-50 leading-snug text-center">
+                            "Empower retailers with seamless, affordable technology."
+                          </h3>
+                        </div>
+
+                        {/* Back Face */}
+                        <div className="flip-card-tile-back tile-face">
+                          <div className="flex items-center justify-center h-full">
+                            <p className="text-gray-300 text-base leading-7 text-center">
+                              "CEYPOS exists to remove technical and cost barriers in retail. We deliver simple, scalable tools that help SMBs run and grow—without complexity."
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Vision Tile */}
+                    <div className="flip-card-tile">
+                      <div className="flip-card-tile-inner">
+                        {/* Front Face */}
+                        <div className="flip-card-tile-front tile-face">
+                          <div className="inline-flex items-center bg-gray-700 text-gray-200 px-3 py-1 rounded-full text-xs font-medium tracking-wider mb-6">
+                            OUR VISION
+                          </div>
+                          <h3 className="text-xl font-bold text-gray-50 leading-snug text-center">
+                            "Redefine retail through innovation and inclusivity."
+                          </h3>
+                        </div>
+
+                        {/* Back Face */}
+                        <div className="flip-card-tile-back tile-face">
+                          <div className="flex items-center justify-center h-full">
+                            <p className="text-gray-300 text-base leading-7 text-center">
+                              "We see a future where every merchant—regardless of background—can access enterprise-grade retail tech. CEYPOS makes digital transformation effortless."
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                  </div>
                 </div>
               </div>
             </div>
@@ -94,7 +281,6 @@ const AboutUs: React.FC = () => {
                 {/* Mission Card */}
                 <div className="bg-gray-50 rounded-2xl p-8 border border-gray-200">
                   <div className="h-40 bg-gradient-to-br from-blue-100 to-blue-200 rounded-xl mb-6 flex items-center justify-center">
-                    {/* Image: Mission illustration - 320x160px, modern retail technology illustration */}
                     <Target className="w-16 h-16 text-blue-600" />
                   </div>
                   <h3 className="text-xl font-semibold text-gray-900 mb-4">Our Mission</h3>
@@ -107,7 +293,6 @@ const AboutUs: React.FC = () => {
                 {/* Vision Card */}
                 <div className="bg-gray-50 rounded-2xl p-8 border border-gray-200">
                   <div className="h-40 bg-gradient-to-br from-green-100 to-green-200 rounded-xl mb-6 flex items-center justify-center">
-                    {/* Image: Vision illustration - 320x160px, global connectivity and growth illustration */}
                     <Globe className="w-16 h-16 text-green-600" />
                   </div>
                   <h3 className="text-xl font-semibold text-gray-900 mb-4">Our Vision</h3>
@@ -192,7 +377,6 @@ const AboutUs: React.FC = () => {
               <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
                 <div className="bg-white rounded-2xl overflow-hidden shadow-sm border border-gray-200">
                   <div className="h-32 bg-gradient-to-br from-purple-100 to-purple-200 flex items-center justify-center">
-                    {/* Image: Cloud technology illustration - 400x128px, cloud computing visual */}
                     <Cloud className="w-16 h-16 text-purple-600" />
                   </div>
                   <div className="p-6">
@@ -206,7 +390,6 @@ const AboutUs: React.FC = () => {
 
                 <div className="bg-white rounded-2xl overflow-hidden shadow-sm border border-gray-200">
                   <div className="h-32 bg-gradient-to-br from-pink-100 to-pink-200 flex items-center justify-center">
-                    {/* Image: AI analytics dashboard - 400x128px, modern analytics interface */}
                     <BarChart3 className="w-16 h-16 text-pink-600" />
                   </div>
                   <div className="p-6">
@@ -220,7 +403,6 @@ const AboutUs: React.FC = () => {
 
                 <div className="bg-white rounded-2xl overflow-hidden shadow-sm border border-gray-200">
                   <div className="h-32 bg-gradient-to-br from-green-100 to-green-200 flex items-center justify-center">
-                    {/* Image: Payment processing illustration - 400x128px, secure payment visual */}
                     <CreditCard className="w-16 h-16 text-green-600" />
                   </div>
                   <div className="p-6">
@@ -383,9 +565,7 @@ const AboutUs: React.FC = () => {
           <section className="py-16">
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
               <div className="h-24 flex items-center justify-center mb-8">
-                {/* Decorative 3D element placeholder */}
                 <div className="w-16 h-16 bg-gradient-to-br from-gray-400 to-gray-600 rounded-xl transform rotate-12 opacity-80">
-                  {/* Image: 3D geometric shape - 64x64px, modern abstract design element */}
                 </div>
               </div>
               <p className="text-gray-600 max-w-2xl mx-auto">
