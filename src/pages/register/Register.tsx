@@ -1,11 +1,11 @@
-import React, { useState } from 'react';
-import { Eye, EyeOff, Mail, Lock, User } from 'lucide-react';
+import { useState } from 'react';
+import { Eye, EyeOff, Mail, Lock, User, ArrowRight } from 'lucide-react';
 import { useSignUp } from '@clerk/clerk-react';
 import { useNavigate } from 'react-router-dom';
 import Navigation from '../components/Navigation';
 import Footer from '../components/Footer';
 
-const Register: React.FC = () => {
+const Register = () => {
   const { isLoaded, signUp, setActive } = useSignUp();
   const navigate = useNavigate();
   
@@ -17,6 +17,7 @@ const Register: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const [step, setStep] = useState('register'); // 'register' | 'verify'
+  const [verificationCode, setVerificationCode] = useState('');
 
   // Clear error when user starts typing
   const clearError = () => {
@@ -67,11 +68,12 @@ const Register: React.FC = () => {
       } else if (result.status === 'missing_requirements') {
         // Email verification required
         console.log('Email verification required');
+        
+        // Prepare email verification with code strategy
+        await signUp.prepareEmailAddressVerification({ strategy: 'email_code' });
+        
         setStep('verify');
         setError('');
-        
-        // Don't try to prepare email verification here - let user handle it manually
-        // This avoids the email_code strategy error
       }
     } catch (err: any) {
       console.error('Registration error:', err);
@@ -88,14 +90,126 @@ const Register: React.FC = () => {
           errorMessage = 'Password must be at least 8 characters with letters and numbers.';
         } else if (message.includes('email_address_invalid')) {
           errorMessage = 'Please enter a valid email address.';
-        } else if (message.includes('captcha') || message.includes('CAPTCHA')) {
-          errorMessage = 'Security verification failed. Please try again.';
+        } else if (message.includes('captcha') || message.includes('CAPTCHA') || message.includes('bot protection')) {
+          errorMessage = 'Please complete the security verification and try again.';
         } else if (message.length > 0) {
           errorMessage = message;
         }
       }
       
       setError(errorMessage);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleVerifyCode = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (!isLoaded || !signUp) return;
+    
+    if (!verificationCode.trim()) {
+      setError('Please enter the verification code');
+      return;
+    }
+
+    setIsLoading(true);
+    setError('');
+
+    try {
+      console.log('Attempting to verify email with code:', verificationCode);
+      
+      // Attempt email verification
+      const result = await signUp.attemptEmailAddressVerification({
+        code: verificationCode.trim(),
+      });
+
+      console.log('Verification result:', result);
+      console.log('Status:', result.status);
+
+      if (result.status === 'complete') {
+        // Verification successful - sign in and redirect
+        await setActive({ session: result.createdSessionId });
+        navigate('/shop-wizard');
+      } else if (result.status === 'missing_requirements') {
+        // Check what fields are missing and try to complete them
+        console.log('Missing requirements after verification:', result.missingFields);
+        
+        // Try to update with the full name if we have it
+        if (fullName.trim()) {
+          try {
+            const nameParts = fullName.trim().split(' ');
+            const firstName = nameParts[0] || '';
+            const lastName = nameParts.slice(1).join(' ') || '';
+            
+            const updateResult = await signUp.update({
+              firstName: firstName,
+              lastName: lastName,
+            });
+            
+            console.log('Update result:', updateResult);
+            
+            if (updateResult.status === 'complete') {
+              await setActive({ session: updateResult.createdSessionId });
+              navigate('/shop-wizard');
+              return;
+            }
+          } catch (updateError) {
+            console.log('Update error:', updateError);
+          }
+        }
+        
+        // If we can't complete the signup, redirect to login
+        setError('Email verified successfully! Your account has been created. Please sign in with your credentials.');
+        setTimeout(() => navigate('/login'), 3000);
+      } else {
+        // Handle other statuses
+        console.log('Unexpected verification status:', result.status);
+        setError('Email verification completed. Please sign in with your email and password.');
+        setTimeout(() => navigate('/login'), 2000);
+      }
+    } catch (err: any) {
+      console.error('Verification error:', err);
+      
+      let errorMessage = 'Invalid verification code. Please try again.';
+      
+      if (err.errors && err.errors.length > 0) {
+        const firstError = err.errors[0];
+        const message = firstError.message || firstError.longMessage || '';
+        
+        if (message.includes('invalid') || message.includes('incorrect')) {
+          errorMessage = 'Invalid verification code. Please check your email and try again.';
+        } else if (message.includes('expired')) {
+          errorMessage = 'Verification code has expired. Please request a new code.';
+        } else if (message.includes('already verified') || message.includes('already exists')) {
+          errorMessage = 'Account already exists. Please sign in with your credentials.';
+          setTimeout(() => navigate('/login'), 2000);
+        } else if (message.length > 0) {
+          errorMessage = message;
+        }
+      }
+      
+      setError(errorMessage);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleResendCode = async () => {
+    if (!isLoaded || !signUp) return;
+    
+    setIsLoading(true);
+    setError('');
+
+    try {
+      await signUp.prepareEmailAddressVerification({ strategy: 'email_code' });
+      setError('');
+      // Show success message temporarily
+      setError('New verification code sent to your email!');
+      setTimeout(() => setError(''), 3000);
+    } catch (err: any) {
+      console.error('Resend error:', err);
+      setError('Failed to resend verification code. Please try again.');
     } finally {
       setIsLoading(false);
     }
@@ -116,6 +230,21 @@ const Register: React.FC = () => {
     }
   };
 
+  const handleAppleSignUp = async () => {
+    if (!isLoaded || !signUp) return;
+    
+    try {
+      await signUp.authenticateWithRedirect({
+        strategy: 'oauth_apple',
+        redirectUrl: '/shop-wizard',
+        redirectUrlComplete: '/shop-wizard',
+      });
+    } catch (err: any) {
+      console.error('Apple signup error:', err);
+      setError('Failed to sign up with Apple. Please try again.');
+    }
+  };
+
   // Email verification step
   if (step === 'verify') {
     return (
@@ -125,31 +254,106 @@ const Register: React.FC = () => {
         <div className="relative overflow-hidden flex-1">
           <div className="absolute inset-0 pointer-events-none">
             <div className="absolute inset-0 bg-gradient-to-br from-gray-100 via-gray-50 to-gray-100 opacity-80"></div>
+            <div className="absolute top-0 left-0 w-96 h-96 bg-gradient-to-br from-gray-300 to-gray-400 rounded-full opacity-10 -translate-x-48 -translate-y-48"></div>
+            <div className="absolute bottom-0 right-0 w-96 h-96 bg-gradient-to-br from-gray-400 to-gray-500 rounded-full opacity-10 translate-x-48 translate-y-48"></div>
           </div>
 
           <div className="relative z-10 min-h-full flex items-center justify-center px-6 py-12">
             <div className="w-full max-w-md">
-              <div className="p-8 text-center">
-                <div className="inline-flex items-center bg-gradient-to-r from-gray-100 to-gray-200 text-gray-700 px-4 py-2 rounded-full text-xs font-medium mb-4">
-                  Email Verification
+              <div className="p-8">
+                <div className="text-center mb-8">
+                  <div className="inline-flex items-center bg-gradient-to-r from-gray-100 to-gray-200 text-gray-700 px-4 py-2 rounded-full text-xs font-medium mb-4">
+                    Email Verification
+                  </div>
+                  <h1 className="text-2xl font-black text-gray-900 mb-4">Enter Verification Code</h1>
+                  <p className="text-gray-600 text-sm mb-6">
+                    We've sent a 6-digit verification code to <strong>{email}</strong>. 
+                    Please enter the code below to complete your registration.
+                  </p>
                 </div>
-                <h1 className="text-2xl font-black text-gray-900 mb-4">Check Your Email</h1>
-                <p className="text-gray-600 text-sm mb-6">
-                  We've sent a verification link to <strong>{email}</strong>. 
-                  Please check your email and click the link to complete your registration.
-                </p>
+
+                {/* Error Message */}
+                {error && (
+                  <div className={`mb-6 p-3 border rounded-lg text-sm ${
+                    error.includes('sent') 
+                      ? 'bg-green-50 border-green-200 text-green-600' 
+                      : 'bg-red-50 border-red-200 text-red-600'
+                  }`}>
+                    {error}
+                  </div>
+                )}
+
+                {/* Verification Form */}
+                <form onSubmit={handleVerifyCode} className="space-y-5">
+                  <div>
+                    <label htmlFor="verificationCode" className="block text-sm font-medium text-gray-700 mb-2">
+                      Verification Code
+                    </label>
+                    <div className="relative">
+                      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                        <Mail className="h-4 w-4 text-gray-400" />
+                      </div>
+                      <input
+                        id="verificationCode"
+                        type="text"
+                        value={verificationCode}
+                        onChange={(e) => { setVerificationCode(e.target.value); clearError(); }}
+                        className="block w-full px-4 py-3 border border-gray-300 rounded-full focus:outline-none focus:ring-2 focus:ring-gray-500 focus:border-transparent text-xl text-center tracking-[0.75em] font-mono bg-gray-50"
+                        placeholder=""
+                        maxLength={6}
+                        autoComplete="one-time-code"
+                        style={{ 
+                          textAlign: 'center',
+                          letterSpacing: '0.75em',
+                          paddingLeft: '0.375em'
+                        }}
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={isLoading || !isLoaded}
+                    className="w-full bg-black hover:bg-gray-800 disabled:bg-gray-400 text-white py-3 px-4 rounded-full font-medium transition-all duration-300 flex items-center justify-center text-sm"
+                  >
+                    {isLoading ? (
+                      <>
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                        Verifying...
+                      </>
+                    ) : (
+                      <>
+                        Verify & Complete Registration
+                        <ArrowRight className="ml-2 h-4 w-4" />
+                      </>
+                    )}
+                  </button>
+                </form>
                 
-                <div className="space-y-4">
+                <div className="mt-6 text-center space-y-4">
                   <p className="text-xs text-gray-500">
-                    Didn't receive the email? Check your spam folder or try registering again.
+                    Didn't receive the code? Check your spam folder.
                   </p>
                   
                   <button
-                    onClick={() => setStep('register')}
-                    className="text-gray-900 hover:text-gray-700 font-medium text-sm"
+                    type="button"
+                    onClick={handleResendCode}
+                    disabled={isLoading}
+                    className="text-gray-900 hover:text-gray-700 font-medium text-sm disabled:text-gray-400"
                   >
-                    ← Back to registration
+                    Resend verification code
                   </button>
+                  
+                  <div className="pt-2 border-t border-gray-200">
+                    <button
+                      type="button"
+                      onClick={() => { setStep('register'); setVerificationCode(''); setError(''); }}
+                      className="text-gray-600 hover:text-gray-800 text-sm"
+                    >
+                      ← Back to registration
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -305,6 +509,11 @@ const Register: React.FC = () => {
                 </button>
               </form>
 
+              {/* CAPTCHA Widget - Required for custom flows */}
+              <div className="my-4 flex justify-center">
+                <div id="clerk-captcha"></div>
+              </div>
+
               {/* Divider */}
               <div className="relative my-6">
                 <div className="absolute inset-0 flex items-center">
@@ -315,8 +524,8 @@ const Register: React.FC = () => {
                 </div>
               </div>
 
-              {/* Social Register Button */}
-              <div className="mb-6">
+              {/* Social Register Buttons */}
+              <div className="mb-6 space-y-3">
                 <button 
                   type="button"
                   onClick={handleGoogleSignUp}
@@ -330,6 +539,18 @@ const Register: React.FC = () => {
                     <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
                   </svg>
                   Continue with Google
+                </button>
+
+                <button 
+                  type="button"
+                  onClick={handleAppleSignUp}
+                  disabled={!isLoaded || isLoading}
+                  className="w-full flex items-center justify-center px-4 py-3 bg-black border border-black rounded-full hover:bg-gray-800 disabled:bg-gray-400 transition-colors text-sm text-white"
+                >
+                  <svg className="w-4 h-4 mr-3" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/>
+                  </svg>
+                  Continue with Apple
                 </button>
               </div>
 

@@ -1,11 +1,11 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { Eye, EyeOff, Mail, Lock, ArrowRight } from 'lucide-react';
 import { useSignIn } from '@clerk/clerk-react';
 import { useNavigate } from 'react-router-dom';
 import Navigation from '../components/Navigation';
 import Footer from '../components/Footer';
 
-const Login: React.FC = () => {
+const Login = () => {
   const { isLoaded, signIn, setActive } = useSignIn();
   const navigate = useNavigate();
   
@@ -15,30 +15,151 @@ const Login: React.FC = () => {
   const [rememberMe, setRememberMe] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
+  const [step, setStep] = useState('login'); // 'login' | 'verify'
+  const [verificationCode, setVerificationCode] = useState('');
 
-  const handleSubmit = async () => {
+  // Clear error when user starts typing
+  const clearError = () => {
+    if (error) setError('');
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
     if (!isLoaded || !signIn) return;
+
+    if (!email.trim()) {
+      setError('Please enter your email address');
+      return;
+    }
+
+    if (!password.trim()) {
+      setError('Please enter your password');
+      return;
+    }
 
     setIsLoading(true);
     setError('');
 
     try {
       const result = await signIn.create({
-        identifier: email,
+        identifier: email.trim(),
         password: password,
       });
 
       if (result.status === 'complete') {
         await setActive({ session: result.createdSessionId });
-        // Redirect to dashboard after successful login
         navigate('/dashboard');
+      } else if (result.status === 'needs_first_factor') {
+        // Handle cases where additional verification is needed
+        setStep('verify');
+        setError('Please check your email for a verification code to complete sign in.');
       } else {
         console.error('Sign in not complete:', result);
         setError('Login failed. Please try again.');
       }
     } catch (err: any) {
       console.error('Login error:', err);
-      setError(err.errors?.[0]?.message || 'Invalid email or password');
+      
+      let errorMessage = 'Invalid email or password';
+      
+      if (err.errors && err.errors.length > 0) {
+        const firstError = err.errors[0];
+        const message = firstError.message || firstError.longMessage || '';
+        
+        if (message.includes('password') && message.includes('incorrect')) {
+          errorMessage = 'Incorrect password. Please try again.';
+        } else if (message.includes('identifier') || message.includes('not found')) {
+          errorMessage = 'Account not found. Please check your email or register.';
+        } else if (message.includes('too many')) {
+          errorMessage = 'Too many login attempts. Please try again later.';
+        } else if (message.length > 0) {
+          errorMessage = message;
+        }
+      }
+      
+      setError(errorMessage);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleVerifyCode = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (!isLoaded || !signIn) return;
+    
+    if (!verificationCode.trim()) {
+      setError('Please enter the verification code');
+      return;
+    }
+
+    setIsLoading(true);
+    setError('');
+
+    try {
+      console.log('Attempting to verify email with code:', verificationCode);
+      
+      // Attempt email verification
+      const result = await signIn.attemptFirstFactor({
+        strategy: 'email_code',
+        code: verificationCode.trim(),
+      });
+
+      console.log('Verification result:', result);
+
+      if (result.status === 'complete') {
+        // Verification successful - sign in and redirect
+        await setActive({ session: result.createdSessionId });
+        navigate('/dashboard');
+      } else {
+        setError('Verification incomplete. Please try again.');
+      }
+    } catch (err: any) {
+      console.error('Verification error:', err);
+      
+      let errorMessage = 'Invalid verification code. Please try again.';
+      
+      if (err.errors && err.errors.length > 0) {
+        const firstError = err.errors[0];
+        const message = firstError.message || firstError.longMessage || '';
+        
+        if (message.includes('invalid') || message.includes('incorrect')) {
+          errorMessage = 'Invalid verification code. Please check your email and try again.';
+        } else if (message.includes('expired')) {
+          errorMessage = 'Verification code has expired. Please request a new code.';
+        } else if (message.length > 0) {
+          errorMessage = message;
+        }
+      }
+      
+      setError(errorMessage);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleResendCode = async () => {
+    if (!isLoaded || !signIn) return;
+    
+    setIsLoading(true);
+    setError('');
+
+    try {
+      // For login verification, we need to restart the sign-in process
+      // This is a simpler approach that avoids the emailAddressId complexity
+      const result = await signIn.create({
+        identifier: email.trim(),
+        password: password,
+      });
+      
+      if (result.status === 'needs_first_factor') {
+        setError('New verification code sent to your email!');
+        setTimeout(() => setError(''), 3000);
+      }
+    } catch (err: any) {
+      console.error('Resend error:', err);
+      setError('Failed to resend verification code. Please try again.');
     } finally {
       setIsLoading(false);
     }
@@ -54,15 +175,135 @@ const Login: React.FC = () => {
     });
   };
 
-  const handleFacebookSignIn = () => {
+  const handleAppleSignIn = () => {
     if (!isLoaded || !signIn) return;
     
     signIn.authenticateWithRedirect({
-      strategy: 'oauth_facebook',
+      strategy: 'oauth_apple',
       redirectUrl: '/dashboard',
       redirectUrlComplete: '/dashboard',
     });
   };
+
+  // Email verification step
+  if (step === 'verify') {
+    return (
+      <div className="min-h-screen bg-gray-50 flex flex-col">
+        <Navigation />
+        
+        <div className="relative overflow-hidden flex-1">
+          <div className="absolute inset-0 pointer-events-none">
+            <div className="absolute inset-0 bg-gradient-to-br from-gray-100 via-gray-50 to-gray-100 opacity-80"></div>
+            <div className="absolute top-0 left-0 w-96 h-96 bg-gradient-to-br from-gray-300 to-gray-400 rounded-full opacity-10 -translate-x-48 -translate-y-48"></div>
+            <div className="absolute bottom-0 right-0 w-96 h-96 bg-gradient-to-br from-gray-400 to-gray-500 rounded-full opacity-10 translate-x-48 translate-y-48"></div>
+          </div>
+
+          <div className="relative z-10 min-h-full flex items-center justify-center px-6 py-12">
+            <div className="w-full max-w-md">
+              <div className="p-8">
+                <div className="text-center mb-8">
+                  <div className="inline-flex items-center bg-gradient-to-r from-gray-100 to-gray-200 text-gray-700 px-4 py-2 rounded-full text-xs font-medium mb-4">
+                    Email Verification
+                  </div>
+                  <h1 className="text-2xl font-black text-gray-900 mb-4">Enter Verification Code</h1>
+                  <p className="text-gray-600 text-sm mb-6">
+                    We've sent a 6-digit verification code to <strong>{email}</strong>. 
+                    Please enter the code below to complete your login.
+                  </p>
+                </div>
+
+                {/* Error Message */}
+                {error && (
+                  <div className={`mb-6 p-3 border rounded-lg text-sm ${
+                    error.includes('sent') 
+                      ? 'bg-green-50 border-green-200 text-green-600' 
+                      : 'bg-red-50 border-red-200 text-red-600'
+                  }`}>
+                    {error}
+                  </div>
+                )}
+
+                {/* Verification Form */}
+                <form onSubmit={handleVerifyCode} className="space-y-5">
+                  <div>
+                    <label htmlFor="verificationCode" className="block text-sm font-medium text-gray-700 mb-2">
+                      Verification Code
+                    </label>
+                    <div className="relative">
+                      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                        <Mail className="h-4 w-4 text-gray-400" />
+                      </div>
+                      <input
+                        id="verificationCode"
+                        type="text"
+                        value={verificationCode}
+                        onChange={(e) => { setVerificationCode(e.target.value); clearError(); }}
+                        className="block w-full px-4 py-3 border border-gray-300 rounded-full focus:outline-none focus:ring-2 focus:ring-gray-500 focus:border-transparent text-xl text-center tracking-[0.75em] font-mono bg-gray-50"
+                        placeholder="1 2 3 4 5 6"
+                        maxLength={6}
+                        autoComplete="one-time-code"
+                        style={{ 
+                          textAlign: 'center',
+                          letterSpacing: '0.75em',
+                          paddingLeft: '0.375em'
+                        }}
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={isLoading || !isLoaded}
+                    className="w-full bg-black hover:bg-gray-800 disabled:bg-gray-400 text-white py-3 px-4 rounded-full font-medium transition-all duration-300 flex items-center justify-center text-sm"
+                  >
+                    {isLoading ? (
+                      <>
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                        Verifying...
+                      </>
+                    ) : (
+                      <>
+                        Verify & Sign In
+                        <ArrowRight className="ml-2 h-4 w-4" />
+                      </>
+                    )}
+                  </button>
+                </form>
+                
+                <div className="mt-6 text-center space-y-4">
+                  <p className="text-xs text-gray-500">
+                    Didn't receive the code? Check your spam folder.
+                  </p>
+                  
+                  <button
+                    type="button"
+                    onClick={handleResendCode}
+                    disabled={isLoading}
+                    className="text-gray-900 hover:text-gray-700 font-medium text-sm disabled:text-gray-400"
+                  >
+                    Resend verification code
+                  </button>
+                  
+                  <div className="pt-2 border-t border-gray-200">
+                    <button
+                      type="button"
+                      onClick={() => { setStep('login'); setVerificationCode(''); setError(''); }}
+                      className="text-gray-600 hover:text-gray-800 text-sm"
+                    >
+                      ← Back to login
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        <Footer />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
@@ -100,7 +341,7 @@ const Login: React.FC = () => {
                   </div>
                 )}
 
-                {/* Social Login Buttons - Make oval shaped with white background */}
+                {/* Social Login Buttons */}
                 <div className="space-y-3 mb-6">
                   <button 
                     onClick={handleGoogleSignIn}
@@ -117,14 +358,14 @@ const Login: React.FC = () => {
                   </button>
                   
                   <button 
-                    onClick={handleFacebookSignIn}
+                    onClick={handleAppleSignIn}
                     disabled={!isLoaded}
-                    className="w-full flex items-center justify-center px-4 py-3 bg-white border border-gray-300 rounded-full hover:bg-gray-50 disabled:bg-gray-100 transition-colors text-sm"
+                    className="w-full flex items-center justify-center px-4 py-3 bg-black border border-black rounded-full hover:bg-gray-800 disabled:bg-gray-400 transition-colors text-sm text-white"
                   >
-                    <svg className="w-4 h-4 mr-3" fill="#1877F2" viewBox="0 0 24 24">
-                      <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
+                    <svg className="w-4 h-4 mr-3" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/>
                     </svg>
-                    Continue with Facebook
+                    Continue with Apple
                   </button>
                 </div>
 
@@ -139,7 +380,7 @@ const Login: React.FC = () => {
                 </div>
 
                 {/* Login Form */}
-                <div className="space-y-5">
+                <form onSubmit={handleSubmit} className="space-y-5">
                   {/* Email Field */}
                   <div>
                     <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-2">
@@ -153,9 +394,10 @@ const Login: React.FC = () => {
                         id="email"
                         type="email"
                         value={email}
-                        onChange={(e) => setEmail(e.target.value)}
+                        onChange={(e) => { setEmail(e.target.value); clearError(); }}
                         className="block w-full pl-10 pr-3 py-2.5 border border-gray-300 rounded-full focus:outline-none focus:ring-2 focus:ring-gray-500 focus:border-transparent text-sm"
                         placeholder="example@gmail.com"
+                        autoComplete="email"
                         required
                       />
                     </div>
@@ -174,9 +416,10 @@ const Login: React.FC = () => {
                         id="password"
                         type={showPassword ? 'text' : 'password'}
                         value={password}
-                        onChange={(e) => setPassword(e.target.value)}
+                        onChange={(e) => { setPassword(e.target.value); clearError(); }}
                         className="block w-full pl-10 pr-10 py-2.5 border border-gray-300 rounded-full focus:outline-none focus:ring-2 focus:ring-gray-500 focus:border-transparent text-sm"
                         placeholder="min 8 character"
+                        autoComplete="current-password"
                         required
                       />
                       <button
@@ -214,8 +457,7 @@ const Login: React.FC = () => {
 
                   {/* Submit Button - Black oval shape */}
                   <button
-                    type="button"
-                    onClick={handleSubmit}
+                    type="submit"
                     disabled={isLoading || !isLoaded}
                     className="w-full bg-black hover:bg-gray-800 disabled:bg-gray-400 text-white py-3 px-4 rounded-full font-medium transition-all duration-300 flex items-center justify-center text-sm"
                   >
@@ -231,7 +473,7 @@ const Login: React.FC = () => {
                       </>
                     )}
                   </button>
-                </div>
+                </form>
 
                 {/* Sign Up Link */}
                 <p className="mt-6 text-center text-sm text-gray-600">
