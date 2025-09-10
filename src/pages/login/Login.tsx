@@ -1,17 +1,67 @@
 import React, { useState } from 'react';
 import { Eye, EyeOff, Mail, Lock, ArrowRight } from 'lucide-react';
+import { useSignIn } from '@clerk/clerk-react';
+import { useNavigate } from 'react-router-dom';
 import Navigation from '../components/Navigation';
-import Footer from '../components/Footer'; // Import the global footer
+import Footer from '../components/Footer';
 
 const Login: React.FC = () => {
+  const { isLoaded, signIn, setActive } = useSignIn();
+  const navigate = useNavigate();
+  
   const [showPassword, setShowPassword] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [rememberMe, setRememberMe] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState('');
 
-  const handleSubmit = () => {
-    // Handle login logic here
-    console.log('Login attempt:', { email, password, rememberMe });
+  const handleSubmit = async () => {
+    if (!isLoaded || !signIn) return;
+
+    setIsLoading(true);
+    setError('');
+
+    try {
+      const result = await signIn.create({
+        identifier: email,
+        password: password,
+      });
+
+      if (result.status === 'complete') {
+        await setActive({ session: result.createdSessionId });
+        // Redirect to dashboard after successful login
+        navigate('/dashboard');
+      } else {
+        console.error('Sign in not complete:', result);
+        setError('Login failed. Please try again.');
+      }
+    } catch (err: any) {
+      console.error('Login error:', err);
+      setError(err.errors?.[0]?.message || 'Invalid email or password');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleGoogleSignIn = () => {
+    if (!isLoaded || !signIn) return;
+    
+    signIn.authenticateWithRedirect({
+      strategy: 'oauth_google',
+      redirectUrl: '/dashboard',
+      redirectUrlComplete: '/dashboard',
+    });
+  };
+
+  const handleFacebookSignIn = () => {
+    if (!isLoaded || !signIn) return;
+    
+    signIn.authenticateWithRedirect({
+      strategy: 'oauth_facebook',
+      redirectUrl: '/dashboard',
+      redirectUrlComplete: '/dashboard',
+    });
   };
 
   return (
@@ -43,9 +93,20 @@ const Login: React.FC = () => {
                   <p className="text-gray-600 text-sm">Sign in to access your dashboard</p>
                 </div>
 
+                {/* Error Message */}
+                {error && (
+                  <div className="mb-6 p-3 bg-red-50 border border-red-200 rounded-lg text-red-600 text-sm">
+                    {error}
+                  </div>
+                )}
+
                 {/* Social Login Buttons - Make oval shaped with white background */}
                 <div className="space-y-3 mb-6">
-                  <button className="w-full flex items-center justify-center px-4 py-3 bg-white border border-gray-300 rounded-full hover:bg-gray-50 transition-colors text-sm">
+                  <button 
+                    onClick={handleGoogleSignIn}
+                    disabled={!isLoaded}
+                    className="w-full flex items-center justify-center px-4 py-3 bg-white border border-gray-300 rounded-full hover:bg-gray-50 disabled:bg-gray-100 transition-colors text-sm"
+                  >
                     <svg className="w-4 h-4 mr-3" viewBox="0 0 24 24">
                       <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
                       <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
@@ -55,7 +116,11 @@ const Login: React.FC = () => {
                     Continue with Google
                   </button>
                   
-                  <button className="w-full flex items-center justify-center px-4 py-3 bg-white border border-gray-300 rounded-full hover:bg-gray-50 transition-colors text-sm">
+                  <button 
+                    onClick={handleFacebookSignIn}
+                    disabled={!isLoaded}
+                    className="w-full flex items-center justify-center px-4 py-3 bg-white border border-gray-300 rounded-full hover:bg-gray-50 disabled:bg-gray-100 transition-colors text-sm"
+                  >
                     <svg className="w-4 h-4 mr-3" fill="#1877F2" viewBox="0 0 24 24">
                       <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
                     </svg>
@@ -151,10 +216,20 @@ const Login: React.FC = () => {
                   <button
                     type="button"
                     onClick={handleSubmit}
-                    className="w-full bg-black hover:bg-gray-800 text-white py-3 px-4 rounded-full font-medium transition-all duration-300 flex items-center justify-center text-sm"
+                    disabled={isLoading || !isLoaded}
+                    className="w-full bg-black hover:bg-gray-800 disabled:bg-gray-400 text-white py-3 px-4 rounded-full font-medium transition-all duration-300 flex items-center justify-center text-sm"
                   >
-                    Submit
-                    <ArrowRight className="ml-2 h-4 w-4" />
+                    {isLoading ? (
+                      <>
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                        Signing In...
+                      </>
+                    ) : (
+                      <>
+                        Submit
+                        <ArrowRight className="ml-2 h-4 w-4" />
+                      </>
+                    )}
                   </button>
                 </div>
 

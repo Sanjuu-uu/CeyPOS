@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { ClerkProvider, useAuth, useUser } from '@clerk/clerk-react';
 import { MainLayout } from './components/layout/MainLayout';
 import { AppProvider } from './context/AppContext';
 import { ShopWizardProvider, useShopWizard } from './context/ShopWizardContext';
@@ -9,45 +10,11 @@ import Login from './pages/login/Login';
 import Register from './pages/register/Register';
 import AboutUs from './pages/aboutUs/AboutUs';
 
-// Auth Context for managing authentication state
-interface AuthContextType {
-  isAuthenticated: boolean;
-  login: () => void;
-  logout: () => void;
-}
+// Get Clerk publishable key from environment
+const clerkPubKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
 
-const AuthContext = React.createContext<AuthContextType | null>(null);
-
-function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [isAuthenticated, setIsAuthenticated] = useState(() => {
-    // Check if user is already logged in (localStorage, token, etc.)
-    return localStorage.getItem('ceypos-authenticated') === 'true';
-  });
-
-  const login = () => {
-    localStorage.setItem('ceypos-authenticated', 'true');
-    setIsAuthenticated(true);
-  };
-
-  const logout = () => {
-    localStorage.removeItem('ceypos-authenticated');
-    localStorage.removeItem('ceypos-shop-completed'); // Also clear shop completion
-    setIsAuthenticated(false);
-  };
-
-  return (
-    <AuthContext.Provider value={{ isAuthenticated, login, logout }}>
-      {children}
-    </AuthContext.Provider>
-  );
-}
-
-function useAuth() {
-  const context = React.useContext(AuthContext);
-  if (!context) {
-    throw new Error('useAuth must be used within AuthProvider');
-  }
-  return context;
+if (!clerkPubKey) {
+  throw new Error("Missing Clerk Publishable Key");
 }
 
 // Pre-Authentication App (Marketing/Landing pages)
@@ -84,6 +51,7 @@ function PostAuthApp() {
 }
 
 function PostAuthContent() {
+  const { user } = useUser();
   const { isCompleted } = useShopWizard();
   const [currentPath, setCurrentPath] = useState(window.location.pathname);
   
@@ -97,18 +65,24 @@ function PostAuthContent() {
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
 
+  // Check if user has completed shop wizard
+  const hasCompletedShopWizard = () => {
+    if (!user) return false;
+    
+    // Check user metadata for shop completion
+    const shopCompleted = user.publicMetadata?.shopCompleted === true;
+    return shopCompleted || isCompleted || localStorage.getItem('ceypos-shop-completed') === 'true';
+  };
+
   // Check if we need to redirect to shop wizard
   useEffect(() => {
     if (currentPath === '/') {
-      if (!isCompleted) {
-        const shopCompleted = localStorage.getItem('ceypos-shop-completed') === 'true';
-        if (!shopCompleted) {
-          window.history.replaceState(null, '', '/shop-wizard');
-          setCurrentPath('/shop-wizard');
-        }
+      if (!hasCompletedShopWizard()) {
+        window.history.replaceState(null, '', '/shop-wizard');
+        setCurrentPath('/shop-wizard');
       }
     }
-  }, [currentPath, isCompleted]);
+  }, [currentPath, user, isCompleted]);
 
   return (
     <Routes>
@@ -122,7 +96,7 @@ function PostAuthContent() {
       <Route 
         path="/" 
         element={
-          isCompleted || localStorage.getItem('ceypos-shop-completed') === 'true' 
+          hasCompletedShopWizard()
             ? <MainLayout /> 
             : <Navigate to="/shop-wizard" replace />
         } 
@@ -156,22 +130,31 @@ function App() {
   }, []);
 
   return (
-    <AuthProvider>
+    <ClerkProvider publishableKey={clerkPubKey}>
       <Router>
         <AppRouter />
       </Router>
-    </AuthProvider>
+    </ClerkProvider>
   );
 }
 
 function AppRouter() {
-  const { isAuthenticated } = useAuth();
+  const { isSignedIn, isLoaded } = useAuth();
+  
+  // Show loading while Clerk is loading
+  if (!isLoaded) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gray-900 mx-auto"></div>
+          <p className="mt-4 text-gray-600">Loading...</p>
+        </div>
+      </div>
+    );
+  }
   
   // Show different app based on authentication status
-  return isAuthenticated ? <PostAuthApp /> : <PreAuthApp />;
+  return isSignedIn ? <PostAuthApp /> : <PreAuthApp />;
 }
 
 export default App;
-
-// Export the useAuth hook for use in other components
-export { useAuth };

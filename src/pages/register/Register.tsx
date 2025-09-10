@@ -1,28 +1,172 @@
 import React, { useState } from 'react';
 import { Eye, EyeOff, Mail, Lock, User } from 'lucide-react';
+import { useSignUp } from '@clerk/clerk-react';
+import { useNavigate } from 'react-router-dom';
 import Navigation from '../components/Navigation';
-import Footer from '../components/Footer'; // Add this import
+import Footer from '../components/Footer';
 
 const Register: React.FC = () => {
+  const { isLoaded, signUp, setActive } = useSignUp();
+  const navigate = useNavigate();
+  
   const [showPassword, setShowPassword] = useState(false);
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [acceptPolicy, setAcceptPolicy] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [step, setStep] = useState('register'); // 'register' | 'verify'
 
-  const handleSubmit = () => {
-    // Handle registration logic here
-    console.log('Registration attempt:', { fullName, email, password, acceptPolicy });
+  // Clear error when user starts typing
+  const clearError = () => {
+    if (error) setError('');
   };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (!isLoaded || !signUp) {
+      console.log('Clerk not loaded yet');
+      return;
+    }
+    
+    if (!acceptPolicy) {
+      setError('Please accept the Privacy Policy to continue');
+      return;
+    }
+
+    if (!email.trim()) {
+      setError('Please enter your email address');
+      return;
+    }
+
+    if (password.length < 8) {
+      setError('Password must be at least 8 characters long');
+      return;
+    }
+
+    setIsLoading(true);
+    setError('');
+
+    try {
+      console.log('Starting registration...');
+      
+      // Simple registration with just email and password
+      const result = await signUp.create({
+        emailAddress: email.trim(),
+        password: password,
+      });
+      
+      console.log('Registration result:', result);
+
+      if (result.status === 'complete') {
+        // Registration complete - sign in and redirect
+        await setActive({ session: result.createdSessionId });
+        navigate('/shop-wizard');
+      } else if (result.status === 'missing_requirements') {
+        // Email verification required
+        console.log('Email verification required');
+        setStep('verify');
+        setError('');
+        
+        // Don't try to prepare email verification here - let user handle it manually
+        // This avoids the email_code strategy error
+      }
+    } catch (err: any) {
+      console.error('Registration error:', err);
+      
+      let errorMessage = 'Registration failed. Please try again.';
+      
+      if (err.errors && err.errors.length > 0) {
+        const firstError = err.errors[0];
+        const message = firstError.message || firstError.longMessage || '';
+        
+        if (message.includes('email address is taken') || message.includes('email_address_taken')) {
+          errorMessage = 'This email address is already registered. Please try logging in instead.';
+        } else if (message.includes('password')) {
+          errorMessage = 'Password must be at least 8 characters with letters and numbers.';
+        } else if (message.includes('email_address_invalid')) {
+          errorMessage = 'Please enter a valid email address.';
+        } else if (message.includes('captcha') || message.includes('CAPTCHA')) {
+          errorMessage = 'Security verification failed. Please try again.';
+        } else if (message.length > 0) {
+          errorMessage = message;
+        }
+      }
+      
+      setError(errorMessage);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleGoogleSignUp = async () => {
+    if (!isLoaded || !signUp) return;
+    
+    try {
+      await signUp.authenticateWithRedirect({
+        strategy: 'oauth_google',
+        redirectUrl: '/shop-wizard',
+        redirectUrlComplete: '/shop-wizard',
+      });
+    } catch (err: any) {
+      console.error('Google signup error:', err);
+      setError('Failed to sign up with Google. Please try again.');
+    }
+  };
+
+  // Email verification step
+  if (step === 'verify') {
+    return (
+      <div className="min-h-screen bg-gray-50 flex flex-col">
+        <Navigation />
+        
+        <div className="relative overflow-hidden flex-1">
+          <div className="absolute inset-0 pointer-events-none">
+            <div className="absolute inset-0 bg-gradient-to-br from-gray-100 via-gray-50 to-gray-100 opacity-80"></div>
+          </div>
+
+          <div className="relative z-10 min-h-full flex items-center justify-center px-6 py-12">
+            <div className="w-full max-w-md">
+              <div className="p-8 text-center">
+                <div className="inline-flex items-center bg-gradient-to-r from-gray-100 to-gray-200 text-gray-700 px-4 py-2 rounded-full text-xs font-medium mb-4">
+                  Email Verification
+                </div>
+                <h1 className="text-2xl font-black text-gray-900 mb-4">Check Your Email</h1>
+                <p className="text-gray-600 text-sm mb-6">
+                  We've sent a verification link to <strong>{email}</strong>. 
+                  Please check your email and click the link to complete your registration.
+                </p>
+                
+                <div className="space-y-4">
+                  <p className="text-xs text-gray-500">
+                    Didn't receive the email? Check your spam folder or try registering again.
+                  </p>
+                  
+                  <button
+                    onClick={() => setStep('register')}
+                    className="text-gray-900 hover:text-gray-700 font-medium text-sm"
+                  >
+                    ← Back to registration
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        <Footer />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
-      {/* Navigation */}
       <Navigation />
 
-      {/* Main Content */}
       <div className="relative overflow-hidden flex-1">
-        {/* Background Pattern - Black shade */}
+        {/* Background Pattern */}
         <div className="absolute inset-0 pointer-events-none">
           <div className="absolute inset-0 bg-gradient-to-br from-gray-100 via-gray-50 to-gray-100 opacity-80"></div>
           <div className="absolute top-0 left-0 w-96 h-96 bg-gradient-to-br from-gray-300 to-gray-400 rounded-full opacity-10 -translate-x-48 -translate-y-48"></div>
@@ -30,7 +174,6 @@ const Register: React.FC = () => {
         </div>
 
         <div className="relative z-10 min-h-full flex items-center justify-center px-6 py-12">
-          {/* Single Column Layout - Centered Form */}
           <div className="w-full max-w-md">
             <div className="p-8">
               {/* Header */}
@@ -42,8 +185,15 @@ const Register: React.FC = () => {
                 <p className="text-gray-600 text-sm">Create your account to get started</p>
               </div>
 
+              {/* Error Message */}
+              {error && (
+                <div className="mb-6 p-3 bg-red-50 border border-red-200 rounded-lg text-red-600 text-sm">
+                  {error}
+                </div>
+              )}
+
               {/* Register Form */}
-              <div className="space-y-5">
+              <form onSubmit={handleSubmit} className="space-y-5">
                 {/* Full Name Field */}
                 <div>
                   <label htmlFor="fullName" className="block text-sm font-medium text-gray-700 mb-2">
@@ -57,10 +207,10 @@ const Register: React.FC = () => {
                       id="fullName"
                       type="text"
                       value={fullName}
-                      onChange={(e) => setFullName(e.target.value)}
+                      onChange={(e) => { setFullName(e.target.value); clearError(); }}
                       className="block w-full pl-10 pr-3 py-2.5 border border-gray-300 rounded-full focus:outline-none focus:ring-2 focus:ring-gray-500 focus:border-transparent text-sm"
                       placeholder="John Smith"
-                      required
+                      autoComplete="name"
                     />
                   </div>
                 </div>
@@ -78,9 +228,10 @@ const Register: React.FC = () => {
                       id="email"
                       type="email"
                       value={email}
-                      onChange={(e) => setEmail(e.target.value)}
+                      onChange={(e) => { setEmail(e.target.value); clearError(); }}
                       className="block w-full pl-10 pr-3 py-2.5 border border-gray-300 rounded-full focus:outline-none focus:ring-2 focus:ring-gray-500 focus:border-transparent text-sm"
                       placeholder="example@gmail.com"
+                      autoComplete="email"
                       required
                     />
                   </div>
@@ -99,9 +250,11 @@ const Register: React.FC = () => {
                       id="password"
                       type={showPassword ? 'text' : 'password'}
                       value={password}
-                      onChange={(e) => setPassword(e.target.value)}
+                      onChange={(e) => { setPassword(e.target.value); clearError(); }}
                       className="block w-full pl-10 pr-10 py-2.5 border border-gray-300 rounded-full focus:outline-none focus:ring-2 focus:ring-gray-500 focus:border-transparent text-sm"
                       placeholder="min 8 character"
+                      autoComplete="new-password"
+                      minLength={8}
                       required
                     />
                     <button
@@ -128,23 +281,31 @@ const Register: React.FC = () => {
                     className="h-4 w-4 text-gray-600 focus:ring-gray-500 border-gray-300 rounded"
                   />
                   <label htmlFor="privacy-policy" className="ml-2 block text-sm text-gray-700">
+                    I accept the{' '}
                     <a href="#" className="text-gray-900 hover:text-gray-700 font-medium">
                       Privacy Policy
                     </a>
                   </label>
                 </div>
 
-                {/* Create Account Button - Black oval shape */}
+                {/* Create Account Button */}
                 <button
-                  type="button"
-                  onClick={handleSubmit}
-                  className="w-full bg-black hover:bg-gray-800 text-white py-3 px-4 rounded-full font-medium transition-all duration-300 flex items-center justify-center text-sm"
+                  type="submit"
+                  disabled={isLoading || !isLoaded}
+                  className="w-full bg-black hover:bg-gray-800 disabled:bg-gray-400 text-white py-3 px-4 rounded-full font-medium transition-all duration-300 flex items-center justify-center text-sm"
                 >
-                  Create an Account
+                  {isLoading ? (
+                    <>
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                      Creating Account...
+                    </>
+                  ) : (
+                    'Create an Account'
+                  )}
                 </button>
-              </div>
+              </form>
 
-              {/* Divider - Fix the "or" positioning */}
+              {/* Divider */}
               <div className="relative my-6">
                 <div className="absolute inset-0 flex items-center">
                   <div className="w-full border-t border-gray-300"></div>
@@ -154,9 +315,14 @@ const Register: React.FC = () => {
                 </div>
               </div>
 
-              {/* Social Register Button - Make oval shaped with white background */}
+              {/* Social Register Button */}
               <div className="mb-6">
-                <button className="w-full flex items-center justify-center px-4 py-3 bg-white border border-gray-300 rounded-full hover:bg-gray-50 transition-colors text-sm">
+                <button 
+                  type="button"
+                  onClick={handleGoogleSignUp}
+                  disabled={!isLoaded || isLoading}
+                  className="w-full flex items-center justify-center px-4 py-3 bg-white border border-gray-300 rounded-full hover:bg-gray-50 disabled:bg-gray-100 transition-colors text-sm"
+                >
                   <svg className="w-4 h-4 mr-3" viewBox="0 0 24 24">
                     <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
                     <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
@@ -179,7 +345,6 @@ const Register: React.FC = () => {
         </div>
       </div>
 
-      {/* Global Footer */}
       <Footer />
     </div>
   );

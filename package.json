@@ -16,6 +16,7 @@
     "reinstall": "npm run clean && npm install"
   },
   "dependencies": {
+    "@clerk/clerk-react": "^5.46.2",
     "@clerk/nextjs": "^6.31.10",
     "@types/react-router-dom": "^5.3.3",
     "axios": "^1.11.0",
