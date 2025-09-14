@@ -3,10 +3,6 @@ import { ArrowRight, Star, Users, Shield, TrendingUp, CreditCard, ShoppingCart, 
 import Navigation from '../../pages/components/Navigation';
 import Footer from '../../pages/components/Footer'; // Add this import
 
-// Try multiple import methods for your Luvy background
-import backgroundImage1 from './images/footer-20background-1.png';
-import backgroundImage2 from './images/footer-20background.png';
-import backgroundImage3 from './images/footer-20background-p-2000.png';
 
 const Home: React.FC = () => {
   return (
