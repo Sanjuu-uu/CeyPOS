@@ -33,8 +33,8 @@ import {
   Timer
 } from 'lucide-react';
 import { useApp } from '../../../context/AppContext';
-import { PaymentSummary } from './PaymentSummary';
-import { PaymentConfirmation } from './PaymentConfirmation';
+// import { PaymentSummary } from './PaymentSummary';
+// import { PaymentConfirmation } from './PaymentConfirmation';
 
 export const Import: React.FC = () => {
   const { currentShop } = useApp();
@@ -210,34 +210,34 @@ export const Import: React.FC = () => {
   // ─── Render Logic ────────────────────────────────────────────────────
 
   // Payment flows
-  if (paymentStep === 'payment' && lastPayload) {
-    return (
-      <PaymentSummary
-        promotionName={lastPayload.promotionName}
-        isFastFlash={lastPayload.isFastFlash}
-        scheduleDate={lastPayload.scheduleDate}
-        scheduleTime={lastPayload.scheduleTime}
-        audience={lastPayload.audience}
-        sendWhatsApp={lastPayload.sendWhatsApp}
-        sendEmail={lastPayload.sendEmail}
-        cost={lastPayload.cost}
-        onPay={handlePay}
-        onBack={() => setPaymentStep('form')}
-      />
-    );
-  }
+  // if (paymentStep === 'payment' && lastPayload) {
+  //   return (
+  //     <PaymentSummary
+  //       promotionName={lastPayload.promotionName}
+  //       isFastFlash={lastPayload.isFastFlash}
+  //       scheduleDate={lastPayload.scheduleDate}
+  //       scheduleTime={lastPayload.scheduleTime}
+  //       audience={lastPayload.audience}
+  //       sendWhatsApp={lastPayload.sendWhatsApp}
+  //       sendEmail={lastPayload.sendEmail}
+  //       cost={lastPayload.cost}
+  //       onPay={handlePay}
+  //       onBack={() => setPaymentStep('form')}
+  //     />
+  //   );
+  // }
 
-  if (paymentStep === 'confirmation' && lastPayload) {
-    return (
-      <PaymentConfirmation
-        isFastFlash={lastPayload.isFastFlash}
-        scheduleDate={lastPayload.scheduleDate}
-        scheduleTime={lastPayload.scheduleTime}
-        onNewPromotion={handleNewPromotion}
-        onViewHistory={handleViewHistory}
-      />
-    );
-  }
+  // if (paymentStep === 'confirmation' && lastPayload) {
+  //   return (
+  //     <PaymentConfirmation
+  //       isFastFlash={lastPayload.isFastFlash}
+  //       scheduleDate={lastPayload.scheduleDate}
+  //       scheduleTime={lastPayload.scheduleTime}
+  //       onNewPromotion={handleNewPromotion}
+  //       onViewHistory={handleViewHistory}
+  //     />
+  //   );
+  // }
 
   // Main interface
   return (
