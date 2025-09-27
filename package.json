@@ -5,9 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "node scripts/route-preview.js --quick && vite",
-    "start": "concurrently \"npm:server\" \"npm:client\"",
     "server": "cd server && npm run dev",
     "client": "vite",
+    "start": "concurrently \"npm:server\" \"npm:client\"",
     "routes": "node scripts/route-preview.js",
     "build": "vite build",
     "lint": "eslint .",
