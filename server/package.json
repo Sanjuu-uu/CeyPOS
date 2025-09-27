@@ -6,9 +6,7 @@
   "type": "commonjs",
   "scripts": {
     "build": "npm --prefix client ci --omit=dev && npm --prefix client run build",
-    "start": "node server/index.js",
-    "server": "node server/index.js",
-    "client": "npm --prefix client run dev"
+    "start": "node server/index.js"
   },
   "dependencies": {
     "better-sqlite3": "^9.4.3",
