@@ -8,7 +8,7 @@ const path = require("path");
 const app = express();
 const PORT = process.env.PORT || 8080;
 
-/* CORS */
+/* ---------- Middleware ---------- */
 app.use(
   cors({
     origin: [
@@ -22,11 +22,20 @@ app.use(
 );
 app.use(express.json({ limit: "10mb" }));
 
-/* ✅ Serve React build (client/dist) */
+/* ---------- Serve React Build ---------- */
 const staticDir = path.join(__dirname, "../client/dist");
 app.use(express.static(staticDir));
 
-/* ---------- API ROUTES ---------- */
+/* Favicon (prevents 502) */
+app.get("/favicon.ico", (req, res) => {
+  res.sendFile(path.join(staticDir, "favicon.ico"), (err) => {
+    if (err) {
+      res.status(204).end(); // no favicon, but don't throw 502
+    }
+  });
+});
+
+/* ---------- API Routes ---------- */
 const inventoryRouter = require("./src/routes/inventory");
 const shopRouter = require("./src/routes/shop");
 const salesRoutes = require("./src/routes/sales");
@@ -39,12 +48,12 @@ app.use("/api/inventory", inventoryRouter);
 app.use("/api/shop", shopRouter);
 app.use("/api/sales", salesRoutes);
 
-/* ✅ SPA fallback AFTER API routes */
+/* ---------- SPA Fallback ---------- */
 app.get("*", (req, res) => {
   res.sendFile(path.join(staticDir, "index.html"));
 });
 
-/* ---------- HTTP + WS ---------- */
+/* ---------- HTTP + WebSocket ---------- */
 const server = http.createServer(app);
 const ws = require("./src/ws-server");
 ws.init(server, {
@@ -57,5 +66,5 @@ ws.init(server, {
 });
 
 server.listen(PORT, () => {
-  console.log(`Server listening on port ${PORT}`);
+  console.log(`✅ Server listening on port ${PORT}`);
 });
