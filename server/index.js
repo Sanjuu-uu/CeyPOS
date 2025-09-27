@@ -8,7 +8,12 @@ const PORT = process.env.PORT || 4000;
 
 app.use(
   cors({
-    origin: ["http://localhost:5173", "http://127.0.0.1:5173"],
+    origin: [
+      "http://localhost:5173",
+      "http://127.0.0.1:5173",
+      "https://ceypossolutions.com",
+      "https://www.ceypossolutions.com",
+    ],
     credentials: true,
   })
 );
@@ -31,7 +36,12 @@ app.use("/api/sales", salesRoutes);
 const server = http.createServer(app);
 const ws = require("./src/ws-server");
 ws.init(server, {
-  corsOrigins: ["http://localhost:5173", "http://127.0.0.1:5173"],
+  corsOrigins: [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "https://ceypossolutions.com",
+    "https://www.ceypossolutions.com",
+  ],
 });
 
 server.listen(PORT, () => {
