@@ -3,8 +3,9 @@ require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
 const http = require("http");
+const path = require("path");
 const app = express();
-const PORT = process.env.PORT || 4000;
+const PORT = process.env.PORT || 8080;
 
 app.use(
   cors({
@@ -31,6 +32,19 @@ app.get("/api/health", (req, res) => {
 app.use("/api/inventory", inventoryRouter);
 app.use("/api/shop", shopRouter);
 app.use("/api/sales", salesRoutes);
+
+// Serve static files from the dist directory (built frontend)
+app.use(express.static(path.join(__dirname, "../dist")));
+
+// Handle client-side routing - serve index.html for all non-API routes
+app.get("*", (req, res) => {
+  // Don't serve index.html for API routes
+  if (req.path.startsWith("/api/")) {
+    return res.status(404).json({ error: "API route not found" });
+  }
+
+  res.sendFile(path.join(__dirname, "../dist/index.html"));
+});
 
 // Create HTTP server and attach socket.io-based WS server
 const server = http.createServer(app);
