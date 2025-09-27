@@ -4,6 +4,7 @@ const express = require("express");
 const cors = require("cors");
 const http = require("http");
 const path = require("path");
+const fs = require("fs");
 const app = express();
 const PORT = process.env.PORT || 8080;
 
@@ -34,16 +35,40 @@ app.use("/api/shop", shopRouter);
 app.use("/api/sales", salesRoutes);
 
 // Serve static files from the dist directory (built frontend)
-app.use(express.static(path.join(__dirname, "../dist")));
+const distPath = path.join(__dirname, "../dist");
+console.log("Looking for dist directory at:", distPath);
+
+// Check if dist directory exists
+if (fs.existsSync(distPath)) {
+  console.log("✓ Found dist directory, serving static files");
+  app.use(express.static(distPath));
+} else {
+  console.log("✗ Dist directory not found, static files will not be served");
+}
 
 // Handle client-side routing - serve index.html for all non-API routes
-app.get("*", (req, res) => {
-  // Don't serve index.html for API routes
-  if (req.path.startsWith("/api/")) {
-    return res.status(404).json({ error: "API route not found" });
-  }
+app.get(/^(?!\/api).*/, (req, res) => {
+  const indexPath = path.join(distPath, "index.html");
 
-  res.sendFile(path.join(__dirname, "../dist/index.html"));
+  if (fs.existsSync(indexPath)) {
+    res.sendFile(indexPath, (err) => {
+      if (err) {
+        console.error("Error serving index.html:", err);
+        res.status(500).send("Internal Server Error");
+      }
+    });
+  } else {
+    console.error("index.html not found at:", indexPath);
+    res
+      .status(404)
+      .send("Frontend not found - please ensure the application is built");
+  }
+});
+
+// Global error handler
+app.use((err, req, res, next) => {
+  console.error("Unhandled error:", err);
+  res.status(500).json({ error: "Internal Server Error" });
 });
 
 // Create HTTP server and attach socket.io-based WS server
@@ -60,4 +85,13 @@ ws.init(server, {
 
 server.listen(PORT, () => {
   console.log(`Server listening on port ${PORT}`);
+});
+
+// Handle uncaught exceptions and unhandled rejections
+process.on("uncaughtException", (err) => {
+  console.error("Uncaught Exception:", err);
+});
+
+process.on("unhandledRejection", (reason, promise) => {
+  console.error("Unhandled Rejection at:", promise, "reason:", reason);
 });
