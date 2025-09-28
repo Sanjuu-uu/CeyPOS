@@ -1,10 +1,13 @@
 // /opt/ceypos/server/index.js
-require("dotenv").config();
-const express = require("express");
-const cors = require("cors");
-const http = require("http");
-const path = require("path");
-const fs = require("fs");
+import dotenv from 'dotenv';
+dotenv.config();
+import express from 'express';
+import cors from 'cors';
+import http from 'http';
+import path from 'path';
+import fs from 'fs';
+import { processUserQuestion } from '../mcp-server/mcp.js';
+
 const app = express();
 const PORT = process.env.PORT || 8080;
 
@@ -38,10 +41,9 @@ app.use(
 app.use(express.json({ limit: "10mb" }));
 
 // Routes
-const inventoryRouter = require("./src/routes/inventory");
-const shopRouter = require("./src/routes/shop");
-const salesRoutes = require("./src/routes/sales");
-const { processUserQuestion } = require("../mcp-server/mcp");
+import inventoryRouter from "./src/routes/inventory.js";
+import shopRouter from "./src/routes/shop.js";
+import salesRoutes from "./src/routes/sales.js";
 
 app.get("/api/health", (req, res) => {
   res.json({ status: "ok" });
@@ -66,7 +68,7 @@ app.use("/api/shop", shopRouter);
 app.use("/api/sales", salesRoutes);
 
 // Serve static files from the dist directory (built frontend)
-const distPath = path.join(__dirname, "../dist");
+const distPath = path.join(process.cwd(), "../dist");
 console.log("Looking for dist directory at:", distPath);
 
 // Check if dist directory exists
@@ -104,8 +106,8 @@ app.use((err, req, res, next) => {
 
 // Create HTTP server and attach socket.io-based WS server
 const server = http.createServer(app);
-const ws = require("./src/ws-server");
-ws.init(server, {
+import { init } from "./src/ws-server.js";
+init(server, {
   corsOrigins: [
     "http://localhost:5173",
     "http://127.0.0.1:5173",

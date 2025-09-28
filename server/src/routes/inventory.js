@@ -1,7 +1,7 @@
-const express = require("express");
-const multer = require("multer");
-const ExcelJS = require("exceljs");
-const { createOrOpenShopDb, insertInventoryRows } = require("../utils/db");
+import express from "express";
+import multer from "multer";
+import ExcelJS from "exceljs";
+import { createOrOpenShopDb, insertInventoryRows } from "../utils/db.js";
 
 const router = express.Router();
 const upload = multer({
@@ -283,4 +283,4 @@ router.get("/template", async (req, res) => {
   }
 });
 
-module.exports = router;
+export default router;

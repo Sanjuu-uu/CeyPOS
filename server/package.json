@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "description": "CeyPOS back-end",
   "main": "index.js",
-  "type": "commonjs",
+  "type": "module",
   "scripts": {
     "start": "node index.js",
     "dev": "node index.js"

@@ -1,5 +1,5 @@
-const { Router } = require("express");
-const { openDb } = require("../utils/db"); // adjust path if different
+import { Router } from "express";
+import { openDb } from "../utils/db.js"; // adjust path if different
 const router = Router();
 
 router.post("/complete", (req, res) => {
@@ -177,4 +177,4 @@ function cryptoRandom() {
   );
 }
 
-module.exports = router;
+export default router;

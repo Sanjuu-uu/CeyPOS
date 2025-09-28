@@ -1,12 +1,12 @@
-const express = require("express");
-const {
+import express from "express";
+import {
   createOrOpenShopDb,
   dbPathForShop,
   upsertShopMeta,
   upsertOperatingHours,
   replacePaymentMethods,
   openDb,
-} = require("../utils/db");
+} from "../utils/db.js";
 
 const router = express.Router();
 
@@ -84,4 +84,4 @@ router.get("/:shopId/meta", (req, res) => {
   }
 });
 
-module.exports = router;
+export default router;

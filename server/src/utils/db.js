@@ -1,8 +1,8 @@
-const path = require("path");
-const fs = require("fs");
-const Database = require("better-sqlite3");
+import path from "path";
+import fs from "fs";
+import Database from "better-sqlite3";
 
-const DB_DIR = process.env.RAILWAY_VOLUME_MOUNT_PATH || path.resolve(__dirname, "../../../database");
+const DB_DIR = process.env.RAILWAY_VOLUME_MOUNT_PATH || path.resolve(process.cwd(), "../../../database");
 
 function ensureDbDir() {
   if (!fs.existsSync(DB_DIR)) {
@@ -249,7 +249,7 @@ function insertInventoryRows(db, rows) {
   txn(rows);
 }
 
-module.exports = {
+export {
   dbPathForShop,
   createOrOpenShopDb,
   openDb,

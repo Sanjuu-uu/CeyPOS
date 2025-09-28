@@ -1,13 +1,13 @@
 // WebSocket server for real-time two-way sync per shop
-const { Server } = require("socket.io");
-const {
+import { Server } from "socket.io";
+import {
   createOrOpenShopDb,
   dbPathForShop,
   openDb,
   insertInventoryRows,
-} = require("./utils/db");
-const fs = require("fs");
-const path = require("path");
+} from "./utils/db.js";
+import fs from "fs";
+import path from "path";
 
 let ioInstance;
 const watchers = new Map(); // shopId -> fs.FSWatcher
@@ -161,4 +161,4 @@ function init(httpServer, opts = {}) {
   return io;
 }
 
-module.exports = { init };
+export { init };

@@ -1,5 +1,6 @@
-const OpenAI = require('openai');
-require('dotenv').config();
+import OpenAI from 'openai';
+import dotenv from 'dotenv';
+dotenv.config();
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -325,9 +326,10 @@ async function executeTool(name, args, shopId) {
   }
 
   // Handle database query tools
-  const db = require('../server/src/utils/db');
-  const Database = require('better-sqlite3');
-  const path = require('path');
+  const db = await import('../server/src/utils/db.js');
+  const Database = (await import('better-sqlite3')).default;
+  const path = await import('path');
+  const fs = await import('fs');
 
   const dbPath = db.dbPathForShop(shopId);
   const connection = new Database(dbPath, { readonly: true });
@@ -342,6 +344,4 @@ async function executeTool(name, args, shopId) {
   }
 }
 
-module.exports = {
-  processUserQuestion
-};
+export { processUserQuestion };
