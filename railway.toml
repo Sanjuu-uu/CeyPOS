@@ -1,8 +1,11 @@
 [build]
 builder = "NIXPACKS"
-buildCommand = "npm install && npm run build"
+
+[build.nixpacks]
+node_version = "18"
 
 [deploy]
+buildCommand = "npm install && npm run build"
 startCommand = "npm start"
 healthcheckPath = "/api/health"
 healthcheckTimeout = 300
