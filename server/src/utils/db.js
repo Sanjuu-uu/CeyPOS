@@ -2,7 +2,7 @@ const path = require("path");
 const fs = require("fs");
 const Database = require("better-sqlite3");
 
-const DB_DIR = path.resolve(__dirname, "../../../database");
+const DB_DIR = process.env.RAILWAY_VOLUME_MOUNT_PATH || path.resolve(__dirname, "../../../database");
 
 function ensureDbDir() {
   if (!fs.existsSync(DB_DIR)) {
