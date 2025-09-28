@@ -28,16 +28,6 @@ jobs:
     
     - name: Build main application
       run: npm run build
-    
-    - name: Install admin interface dependencies
-      run: |
-        cd system-administration-monitoring
-        npm ci
-    
-    - name: Build admin interface
-      run: |
-        cd system-administration-monitoring
-        npm run build
 
   deploy:
     needs: test
