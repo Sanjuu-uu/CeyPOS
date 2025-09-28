@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "description": "AI-driven MCP server for CeyPoS",
   "main": "index.js",
+  "type": "module",
   "scripts": {
     "start": "npx tsx index.ts",
     "dev": "npx tsx --watch index.ts"
