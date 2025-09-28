@@ -62,8 +62,8 @@ const Navigation: React.FC = () => {
                 >
                   Login
                 </button>
-                <a href="/contact" className="bg-[#D8FA50] hover:bg-[#C5F542] text-gray-900 font-semibold text-sm px-5 py-1.5 rounded-full transition-all duration-200 shadow-sm">
-                  Let's Talk
+                <a href="/register" className="bg-[#D8FA50] hover:bg-[#C5F542] text-gray-900 font-semibold text-sm px-5 py-1.5 rounded-full transition-all duration-200 shadow-sm">
+                  Let's Start
                 </a>
               </div>
               
