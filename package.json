@@ -4,17 +4,16 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "dev": "node scripts/route-preview.js --quick && vite",
-    "start": "concurrently \"npm:server\" \"npm:mcp\" \"npm:client\"",
+    "dev": "node scripts/route-preview.js --quick && concurrently \"npm:server\" \"npm:client\"",
+    "dev:full": "node scripts/route-preview.js --quick && concurrently \"npm:server\" \"npm:mcp\" \"npm:client\"",
+    "start": "npm run server",
     "server": "cd server && npm run dev",
     "mcp": "cd mcp-server && npm start",
     "client": "vite",
     "routes": "node scripts/route-preview.js",
     "build": "vite build",
     "lint": "eslint .",
-    "preview": "vite preview",
-    "clean": "rm -rf node_modules dist",
-    "reinstall": "npm run clean && npm install"
+    "preview": "vite preview"
   },
   "dependencies": {
     "@clerk/clerk-react": "^5.46.2",

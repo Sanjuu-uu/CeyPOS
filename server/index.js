@@ -10,12 +10,28 @@ const PORT = process.env.PORT || 8080;
 
 app.use(
   cors({
-    origin: [
-      "http://localhost:5173",
-      "http://127.0.0.1:5173",
-      "https://ceypossolutions.com",
-      "https://www.ceypossolutions.com",
-    ],
+    origin: function (origin, callback) {
+      // Allow requests with no origin (mobile apps, curl, etc.)
+      if (!origin) return callback(null, true);
+
+      const allowedOrigins = [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "https://ceypossolutions.com",
+        "https://www.ceypossolutions.com",
+      ];
+
+      // In production, allow Railway domains
+      if (process.env.NODE_ENV === "production") {
+        if (origin.includes("railway.app") || allowedOrigins.includes(origin)) {
+          return callback(null, true);
+        }
+      } else if (allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+
+      return callback(new Error("Not allowed by CORS"));
+    },
     credentials: true,
   })
 );

@@ -42,11 +42,33 @@ function readInventory(db) {
 
 function init(httpServer, opts = {}) {
   if (ioInstance) return ioInstance;
+  
+  // Handle CORS origins - support both array and function
+  let corsOrigin = opts.corsOrigins;
+  if (Array.isArray(corsOrigin)) {
+    corsOrigin = (origin, callback) => {
+      if (!origin) return callback(null, true);
+      
+      // In production, allow Railway domains
+      if (process.env.NODE_ENV === "production" && origin && origin.includes("railway.app")) {
+        return callback(null, true);
+      }
+      
+      if (corsOrigin.includes(origin)) {
+        return callback(null, true);
+      }
+      
+      return callback(new Error("Not allowed by CORS"));
+    };
+  }
+  
   const io = new Server(httpServer, {
     cors: {
-      origin: opts.corsOrigins || [
+      origin: corsOrigin || [
         "http://localhost:5173",
         "http://127.0.0.1:5173",
+        "https://ceypossolutions.com",
+        "https://www.ceypossolutions.com"
       ],
       methods: ["GET", "POST"],
     },

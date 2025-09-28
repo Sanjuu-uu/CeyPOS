@@ -358,7 +358,12 @@ CeyPoS/
 
 | Command | Description |
 |---------|-------------|
-| `npm run dev` | Start development server (port 5173) |
+| `npm run dev` | Start development server with client and server (port 5173 & 8080) |
+| `npm run dev:full` | Start full development with client, server, and MCP server |
+| `npm start` | Start production server only (Railway compatible) |
+| `npm run server` | Start backend server only |
+| `npm run client` | Start frontend Vite dev server only |
+| `npm run mcp` | Start MCP AI server only |
 | `npm run build` | Build for production |
 | `npm run preview` | Preview production build |
 | `npm run lint` | Run ESLint code quality checks |
@@ -597,6 +602,7 @@ npm run build
 
 ### Deployment Options
 
+- **Railway**: Recommended - uses GitHub integration with `railway.toml` config
 - **Vercel**: Zero-config deployment for Vite projects
 - **Netlify**: Static site hosting with form handling
 - **AWS S3**: Static website hosting
