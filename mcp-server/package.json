@@ -1,0 +1,21 @@
+{
+  "name": "ceypos-mcp-server",
+  "version": "1.0.0",
+  "description": "AI-driven MCP server for CeyPoS",
+  "main": "index.js",
+  "scripts": {
+    "start": "npx tsx index.ts",
+    "dev": "npx tsx --watch index.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.18.0",
+    "sqlite3": "^5.1.6",
+    "dotenv": "^16.4.5",
+    "openai": "^4.52.7"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.1"
+  },
+  "author": "Ceynode",
+  "license": "MIT"
+}

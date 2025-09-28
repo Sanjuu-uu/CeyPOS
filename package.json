@@ -5,8 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "node scripts/route-preview.js --quick && vite",
-    "start": "concurrently \"npm:server\" \"npm:client\"",
+    "start": "concurrently \"npm:server\" \"npm:mcp\" \"npm:client\"",
     "server": "cd server && npm run dev",
+    "mcp": "cd mcp-server && npm start",
     "client": "vite",
     "routes": "node scripts/route-preview.js",
     "build": "vite build",
