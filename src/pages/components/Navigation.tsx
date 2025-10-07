@@ -12,8 +12,12 @@ const Navigation: React.FC = () => {
   };
 
   const handleLoginClick = () => {
-    // For now, just redirect using window.location
     window.location.href = '/login';
+    closeMobileMenu();
+  };
+
+  const handleRegisterClick = () => {
+    window.location.href = '/register'; // Link to signup page
     closeMobileMenu();
   };
 
@@ -25,18 +29,12 @@ const Navigation: React.FC = () => {
             {/* Logo Section */}
             <div className="flex items-center">
               <a href="/" className="flex items-center">
-                {/* Temporary Logo - Replace with actual CeyPOS logo */}
-                <img 
-                  src="https://images.unsplash.com/photo-1611224923853-80b023f02d71?w=94&h=24&fit=crop&crop=center" 
-                  alt="CeyPOS Logo" 
-                  width="94" 
-                  height="24"
-                  className="h-6 w-auto"
-                />
+                {/* 🔥 FIX: Using Text Placeholder Logo */}
+                <span className="text-xl font-bold text-slate-900">CeyPOS</span> 
               </a>
             </div>
 
-            {/* Desktop Navigation Links */}
+            {/* Desktop Navigation Links (remains the same) */}
             <nav className="hidden md:flex items-center space-x-8">
               <a href="/about" className="text-gray-700 hover:text-gray-900 font-medium text-sm transition-colors duration-200">
                 About
@@ -52,10 +50,9 @@ const Navigation: React.FC = () => {
               </a>
             </nav>
 
-            {/* Right Side Buttons */}
+            {/* Right Side Buttons (remains the same) */}
             <div className="flex items-center space-x-3">
               <div className="hidden md:flex items-center space-x-3">
-                {/* Login Button */}
                 <button
                   onClick={handleLoginClick}
                   className="text-gray-700 hover:text-gray-900 font-medium text-sm px-4 py-1.5 rounded-full border border-gray-200 hover:border-gray-300 transition-all duration-200 cursor-pointer"
@@ -82,25 +79,19 @@ const Navigation: React.FC = () => {
       </nav>
 
       {/* Mobile Menu Overlay */}
-      <div className={`fixed inset-0 z-40 md:hidden transition-all duration-300 ${isMobileMenuOpen ? 'visible opacity-100' : 'invisible opacity-0'}`}>
+      <div className={`fixed inset-0 z-[100] md:hidden transition-all duration-300 ${isMobileMenuOpen ? 'visible opacity-100' : 'invisible opacity-0'}`}>
         {/* Background Overlay */}
         <div 
           className={`absolute inset-0 bg-black transition-opacity duration-300 ${isMobileMenuOpen ? 'bg-opacity-50' : 'bg-opacity-0'}`}
           onClick={closeMobileMenu}
         ></div>
         
-        {/* Mobile Menu Content */}
+        {/* Mobile Menu Content - 🔥 FIXED: Simplified and cleaned up the content structure */}
         <div className={`absolute top-0 left-0 right-0 bg-white shadow-lg transform transition-transform duration-300 ${isMobileMenuOpen ? 'translate-y-0' : '-translate-y-full'}`}>
-          {/* Mobile Menu Header */}
-          <div className="border-b border-gray-100 px-6 py-4">
-            <div className="flex justify-between items-center">
-              <img 
-                src="https://images.unsplash.com/photo-1611224923853-80b023f02d71?w=94&h=24&fit=crop&crop=center" 
-                alt="CeyPOS Logo" 
-                width="94" 
-                height="24"
-                className="h-6 w-auto"
-              />
+          
+          {/* Mobile Menu Header - Cleaned up to show only one logo and one close button */}
+          <div className="border-b border-gray-100 px-6 py-4 flex justify-between items-center h-16">
+              <span className="text-xl font-bold text-slate-900">CeyPOS</span>
               <button 
                 onClick={closeMobileMenu}
                 className="w-8 h-8 flex items-center justify-center rounded-full bg-gray-100 hover:bg-gray-200 transition-colors"
@@ -109,40 +100,15 @@ const Navigation: React.FC = () => {
                   <path d="M12 4L4 12M4 4L12 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
                 </svg>
               </button>
-            </div>
           </div>
 
           {/* Mobile Navigation Links */}
           <div className="px-6 py-6">
             <div className="space-y-6">
-              <a 
-                href="/about" 
-                onClick={closeMobileMenu}
-                className="block text-gray-900 hover:text-gray-600 font-medium text-lg transition-colors duration-200"
-              >
-                About
-              </a>
-              <a 
-                href="/features" 
-                onClick={closeMobileMenu}
-                className="block text-gray-900 hover:text-gray-600 font-medium text-lg transition-colors duration-200"
-              >
-                Features
-              </a>
-              <a 
-                href="/pricing" 
-                onClick={closeMobileMenu}
-                className="block text-gray-900 hover:text-gray-600 font-medium text-lg transition-colors duration-200"
-              >
-                Pricing
-              </a>
-              <a 
-                href="/support" 
-                onClick={closeMobileMenu}
-                className="block text-gray-900 hover:text-gray-600 font-medium text-lg transition-colors duration-200"
-              >
-                Support
-              </a>
+              <a onClick={closeMobileMenu} href="/about" className="block text-gray-900 hover:text-gray-600 font-medium text-lg transition-colors duration-200">About</a>
+              <a onClick={closeMobileMenu} href="/features" className="block text-gray-900 hover:text-gray-600 font-medium text-lg transition-colors duration-200">Features</a>
+              <a onClick={closeMobileMenu} href="/pricing" className="block text-gray-900 hover:text-gray-600 font-medium text-lg transition-colors duration-200">Pricing</a>
+              <a onClick={closeMobileMenu} href="/support" className="block text-gray-900 hover:text-gray-600 font-medium text-lg transition-colors duration-200">Support</a>
             </div>
 
             {/* Mobile Menu Buttons */}
@@ -154,13 +120,13 @@ const Navigation: React.FC = () => {
               >
                 Login
               </button>
-              <a 
-                href="/contact" 
-                onClick={closeMobileMenu}
+              {/* 🔥 FIXED: Button text and function for 'Let's Start' */}
+              <button 
+                onClick={handleRegisterClick}
                 className="block w-full text-center bg-[#D8FA50] hover:bg-[#C5F542] text-gray-900 font-semibold text-sm px-5 py-3 rounded-full transition-all duration-200 shadow-sm"
               >
-                Let's Talk
-              </a>
+                Let's Start
+              </button>
             </div>
           </div>
         </div>
