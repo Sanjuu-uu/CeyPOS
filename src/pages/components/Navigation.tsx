@@ -1,9 +1,7 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 
 const Navigation: React.FC = () => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const navigate = useNavigate();
 
   const toggleMobileMenu = () => {
     setIsMobileMenuOpen(!isMobileMenuOpen);
@@ -14,7 +12,6 @@ const Navigation: React.FC = () => {
   };
 
   const handleLoginClick = () => {
-    // For now, just redirect using window.location
     window.location.href = '/login';
     closeMobileMenu();
   };
@@ -62,8 +59,8 @@ const Navigation: React.FC = () => {
                 >
                   Login
                 </button>
-                <a href="/contact" className="bg-[#D8FA50] hover:bg-[#C5F542] text-gray-900 font-semibold text-sm px-5 py-1.5 rounded-full transition-all duration-200 shadow-sm">
-                  Let's Talk
+                <a href="/register" className="bg-[#D8FA50] hover:bg-[#C5F542] text-gray-900 font-semibold text-sm px-5 py-1.5 rounded-full transition-all duration-200 shadow-sm">
+                  Let's Start
                 </a>
               </div>
               
@@ -123,9 +120,9 @@ const Navigation: React.FC = () => {
               >
                 Login
               </button>
-              <a 
-                href="/contact" 
-                onClick={closeMobileMenu}
+              {/* 🔥 FIXED: Button text and function for 'Let's Start' */}
+              <button 
+                onClick={handleRegisterClick}
                 className="block w-full text-center bg-[#D8FA50] hover:bg-[#C5F542] text-gray-900 font-semibold text-sm px-5 py-3 rounded-full transition-all duration-200 shadow-sm"
               >
                 Let's Start
