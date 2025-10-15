@@ -23,7 +23,7 @@ type ReceiptOption = "email" | "sms" | "print";
 
 // Inline API helper function
 const postJSON = async (endpoint: string, data: any) => {
-  const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:4000";
+  const API_BASE = import.meta.env.VITE_API_BASE || "";
   const response = await fetch(`${API_BASE}${endpoint}`, {
     method: "POST",
     headers: {

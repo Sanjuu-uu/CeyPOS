@@ -46,6 +46,7 @@ function init(httpServer, opts = {}) {
   // Handle CORS origins - support both array and function
   let corsOrigin = opts.corsOrigins;
   if (Array.isArray(corsOrigin)) {
+    const allowedOrigins = corsOrigin;
     corsOrigin = (origin, callback) => {
       if (!origin) return callback(null, true);
       
@@ -54,7 +55,7 @@ function init(httpServer, opts = {}) {
         return callback(null, true);
       }
       
-      if (corsOrigin.includes(origin)) {
+      if (allowedOrigins.includes(origin)) {
         return callback(null, true);
       }
       
@@ -89,10 +90,18 @@ function init(httpServer, opts = {}) {
     socket.join(room);
     console.log(`Socket ${socket.id} joined room ${room}`);
 
-    // ensure DB exists and schema initialized
+    // ensure DB exists and schema initialized - only for existing shops
     let db;
     try {
-      db = createOrOpenShopDb(shopId);
+      // Only open if database already exists, don't create new ones
+      if (!dbExists(shopId)) {
+        console.warn(`Shop database does not exist for ${shopId} - disconnecting`);
+        socket.emit("error", { message: "Shop database not found. Please complete shop setup first." });
+        socket.disconnect(true);
+        return;
+      }
+      
+      db = openDb(shopId);
     } catch (err) {
       console.error("Failed to open shop DB for socket connection", err);
       socket.emit("error", { message: "Failed to open shop DB" });

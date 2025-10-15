@@ -62,8 +62,9 @@ const Register = () => {
       console.log('Registration result:', result);
 
       if (result.status === 'complete') {
-        // Registration complete - sign in and redirect
+        // Registration complete - always redirect to shop wizard for new users
         await setActive({ session: result.createdSessionId });
+        // Use navigate for client-side routing after authentication
         navigate('/shop-wizard');
       } else if (result.status === 'missing_requirements') {
         // Email verification required
@@ -128,8 +129,9 @@ const Register = () => {
       console.log('Status:', result.status);
 
       if (result.status === 'complete') {
-        // Verification successful - sign in and redirect
+        // Verification successful - redirect to shop wizard for new users
         await setActive({ session: result.createdSessionId });
+        // Use navigate for client-side routing after authentication with delay
         navigate('/shop-wizard');
       } else if (result.status === 'missing_requirements') {
         // Check what fields are missing and try to complete them
@@ -151,7 +153,7 @@ const Register = () => {
             
             if (updateResult.status === 'complete') {
               await setActive({ session: updateResult.createdSessionId });
-              navigate('/shop-wizard');
+              setTimeout(() => navigate('/shop-wizard'), 500);
               return;
             }
           } catch (updateError) {
@@ -161,7 +163,7 @@ const Register = () => {
         
         // If we can't complete the signup, redirect to login
         setError('Email verified successfully! Your account has been created. Please sign in with your credentials.');
-        setTimeout(() => navigate('/login'), 3000);
+        setTimeout(() => navigate('/login'), 2000);
       } else {
         // Handle other statuses
         console.log('Unexpected verification status:', result.status);
@@ -221,8 +223,8 @@ const Register = () => {
     try {
       await signUp.authenticateWithRedirect({
         strategy: 'oauth_google',
-        redirectUrl: '/shop-wizard',
-        redirectUrlComplete: '/shop-wizard',
+        redirectUrl: '/',
+        redirectUrlComplete: '/',
       });
     } catch (err: any) {
       console.error('Google signup error:', err);
@@ -236,8 +238,8 @@ const Register = () => {
     try {
       await signUp.authenticateWithRedirect({
         strategy: 'oauth_apple',
-        redirectUrl: '/shop-wizard',
-        redirectUrlComplete: '/shop-wizard',
+        redirectUrl: '/',
+        redirectUrlComplete: '/',
       });
     } catch (err: any) {
       console.error('Apple signup error:', err);

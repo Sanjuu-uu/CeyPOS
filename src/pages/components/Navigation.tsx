@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 
 const Navigation: React.FC = () => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const navigate = useNavigate();
 
   const toggleMobileMenu = () => {
     setIsMobileMenuOpen(!isMobileMenuOpen);
@@ -12,8 +14,14 @@ const Navigation: React.FC = () => {
   };
 
   const handleLoginClick = () => {
-    // For now, just redirect using window.location
-    window.location.href = '/login';
+    // Use React Router navigation
+    navigate('/login');
+    closeMobileMenu();
+  };
+
+  const handleRegisterClick = () => {
+    // Use React Router navigation
+    navigate('/register');
     closeMobileMenu();
   };
 
@@ -61,6 +69,13 @@ const Navigation: React.FC = () => {
                   className="text-gray-700 hover:text-gray-900 font-medium text-sm px-4 py-1.5 rounded-full border border-gray-200 hover:border-gray-300 transition-all duration-200 cursor-pointer"
                 >
                   Login
+                </button>
+                {/* Register Button */}
+                <button
+                  onClick={handleRegisterClick}
+                  className="bg-gray-900 hover:bg-gray-800 text-white font-medium text-sm px-4 py-1.5 rounded-full transition-all duration-200 cursor-pointer"
+                >
+                  Register
                 </button>
                 <a href="/contact" className="bg-[#D8FA50] hover:bg-[#C5F542] text-gray-900 font-semibold text-sm px-5 py-1.5 rounded-full transition-all duration-200 shadow-sm">
                   Let's Talk
@@ -153,6 +168,13 @@ const Navigation: React.FC = () => {
                 className="block w-full text-center text-gray-700 hover:text-gray-900 font-medium text-sm px-4 py-3 rounded-full border border-gray-200 hover:border-gray-300 transition-all duration-200"
               >
                 Login
+              </button>
+              {/* Mobile Register Button */}
+              <button 
+                onClick={handleRegisterClick}
+                className="block w-full text-center bg-gray-900 hover:bg-gray-800 text-white font-medium text-sm px-4 py-3 rounded-full transition-all duration-200"
+              >
+                Register
               </button>
               <a 
                 href="/contact" 

@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { useShopWizard } from '../../../context/ShopWizardContext';
+import { useNavigate } from 'react-router-dom';
 import './styles/ShopWizard.css';
 
 const cardVariants = {
@@ -9,10 +10,6 @@ const cardVariants = {
     y: 0,
     opacity: 1,
     scale: 1,
-    transition: {
-      duration: 0.6,
-      ease: [0.25, 0.1, 0.25, 1],
-    },
   },
 };
 
@@ -37,24 +34,12 @@ const checkmarkVariants = {
   animate: {
     scale: 1,
     rotate: 0,
-    transition: {
-      duration: 0.6,
-      delay: 0.3,
-      type: 'spring',
-      stiffness: 200,
-      damping: 10,
-    },
   },
 };
 
 const pulseVariants = {
   animate: {
     scale: [1, 1.05, 1],
-    transition: {
-      duration: 2,
-      repeat: Infinity,
-      ease: 'easeInOut',
-    },
   },
 };
 
@@ -80,8 +65,9 @@ const Confetti: React.FC<{ index: number }> = ({ index }) => {
 };
 
 export const ShopWizardStep6: React.FC = () => {
-  const { formData, completeWizard } = useShopWizard();
-  const [showConfetti, setShowConfetti] = useState(true);
+  const { completeWizard } = useShopWizard();
+  const [showConfetti] = useState(true);
+  const navigate = useNavigate();
 
   useEffect(() => {
     // Auto complete wizard when this step loads
@@ -90,8 +76,7 @@ export const ShopWizardStep6: React.FC = () => {
 
   const handleGoToDashboard = () => {
     // Navigate to dashboard immediately
-    window.history.pushState(null, '', '/dashboard');
-    window.dispatchEvent(new PopStateEvent('popstate'));
+    navigate('/dashboard');
   };
 
   return (

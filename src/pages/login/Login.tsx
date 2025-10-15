@@ -4,6 +4,7 @@ import { useSignIn } from '@clerk/clerk-react';
 import { useNavigate } from 'react-router-dom';
 import Navigation from '../components/Navigation';
 import Footer from '../components/Footer';
+import { generateShopId } from '../../lib/api';
 
 const Login = () => {
   const { isLoaded, signIn, setActive } = useSignIn();
@@ -48,8 +49,27 @@ const Login = () => {
       });
 
       if (result.status === 'complete') {
-        await setActive({ session: result.createdSessionId });
-        navigate('/dashboard');
+        // Validate database exists for this user
+        const userEmail = email.trim().toLowerCase();
+        const shopId = generateShopId(userEmail);
+        
+        try {
+          const response = await fetch(`/api/shop/${shopId}/exists`);
+          const data = await response.json();
+          
+          if (response.ok && data.exists && data.hasMetadata) {
+            // Database exists and has shop metadata - user has completed setup
+            await setActive({ session: result.createdSessionId });
+            navigate('/dashboard');
+          } else {
+            // Database doesn't exist or has no metadata - redirect to shop wizard
+            setError('Welcome! Please complete your shop setup.');
+            setTimeout(() => navigate('/shop-wizard'), 3000);
+          }
+        } catch (dbError) {
+          console.error('Database validation error:', dbError);
+          setError('Unable to validate account. Please try again.');
+        }
       } else if (result.status === 'needs_first_factor') {
         // Handle cases where additional verification is needed
         setStep('verify');
@@ -109,9 +129,27 @@ const Login = () => {
       console.log('Verification result:', result);
 
       if (result.status === 'complete') {
-        // Verification successful - sign in and redirect
-        await setActive({ session: result.createdSessionId });
-        navigate('/dashboard');
+        // Verification successful - validate database exists
+        const userEmail = email.trim().toLowerCase();
+        const shopId = generateShopId(userEmail);
+        
+        try {
+          const response = await fetch(`/api/shop/${shopId}/exists`);
+          const data = await response.json();
+          
+          if (response.ok && data.exists && data.hasMetadata) {
+            // Database exists and has shop metadata - user has completed setup
+            await setActive({ session: result.createdSessionId });
+            navigate('/dashboard');
+          } else {
+            // Database doesn't exist or has no metadata - redirect to shop wizard
+            setError('Welcome! Please complete your shop setup.');
+            setTimeout(() => navigate('/shop-wizard'), 3000);
+          }
+        } catch (dbError) {
+          console.error('Database validation error:', dbError);
+          setError('Unable to validate account. Please try again.');
+        }
       } else {
         setError('Verification incomplete. Please try again.');
       }
@@ -165,24 +203,34 @@ const Login = () => {
     }
   };
 
-  const handleGoogleSignIn = () => {
+  const handleGoogleSignIn = async () => {
     if (!isLoaded || !signIn) return;
     
-    signIn.authenticateWithRedirect({
-      strategy: 'oauth_google',
-      redirectUrl: '/dashboard',
-      redirectUrlComplete: '/dashboard',
-    });
+    try {
+      await signIn.authenticateWithRedirect({
+        strategy: 'oauth_google',
+        redirectUrl: '/',
+        redirectUrlComplete: '/',
+      });
+    } catch (err: any) {
+      console.error('Google signup error:', err);
+      setError('Failed to sign up with Google. Please try again.');
+    }
   };
 
-  const handleAppleSignIn = () => {
+  const handleAppleSignIn = async () => {
     if (!isLoaded || !signIn) return;
     
-    signIn.authenticateWithRedirect({
-      strategy: 'oauth_apple',
-      redirectUrl: '/dashboard',
-      redirectUrlComplete: '/dashboard',
-    });
+    try {
+      await signIn.authenticateWithRedirect({
+        strategy: 'oauth_apple',
+        redirectUrl: '/',
+        redirectUrlComplete: '/',
+      });
+    } catch (err: any) {
+      console.error('Apple signup error:', err);
+      setError('Failed to sign up with Apple. Please try again.');
+    }
   };
 
   // Email verification step

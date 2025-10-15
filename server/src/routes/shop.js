@@ -6,6 +6,8 @@ import {
   upsertOperatingHours,
   replacePaymentMethods,
   openDb,
+  openDbIfExists,
+  dbExists,
 } from "../utils/db.js";
 
 const router = express.Router();
@@ -72,7 +74,7 @@ router.get("/:shopId/meta", (req, res) => {
   try {
     const { shopId } = req.params;
     if (!shopId) return res.status(400).json({ error: "shopId is required" });
-    const db = openDb(shopId);
+    const db = createOrOpenShopDb(shopId);
     const meta = db.prepare("SELECT * FROM shop_meta WHERE shop_id = ?").get(shopId);
     const hours = db.prepare("SELECT day, open, close, closed FROM shop_operating_hours WHERE shop_id = ? ORDER BY day").all(shopId);
     const methods = db.prepare("SELECT method FROM shop_payment_methods WHERE shop_id = ?").all(shopId).map((r) => r.method);
@@ -81,6 +83,37 @@ router.get("/:shopId/meta", (req, res) => {
   } catch (err) {
     console.error("GET /shop/:shopId/meta error", err);
     res.status(500).json({ error: "Failed to read shop data", detail: String(err.message || err) });
+  }
+});
+
+// Check if shop database exists without creating it
+router.get("/:shopId/exists", (req, res) => {
+  try {
+    const { shopId } = req.params;
+    if (!shopId) return res.status(400).json({ error: "shopId is required" });
+    
+    const exists = dbExists(shopId);
+    if (!exists) {
+      return res.json({ exists: false });
+    }
+    
+    // If exists, check if it has shop metadata (completed setup) without creating DB
+    const db = openDbIfExists(shopId);
+    if (!db) {
+      return res.json({ exists: false });
+    }
+    
+    const meta = db.prepare("SELECT * FROM shop_meta WHERE shop_id = ?").get(shopId);
+    db.close();
+    
+    res.json({ 
+      exists: true, 
+      hasMetadata: !!meta,
+      meta: meta || null
+    });
+  } catch (err) {
+    console.error("GET /shop/:shopId/exists error", err);
+    res.status(500).json({ error: "Failed to check shop existence", detail: String(err.message || err) });
   }
 });
 

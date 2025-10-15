@@ -1,10 +1,56 @@
-import React from 'react';
-import { ArrowRight, Star, Users, Shield, TrendingUp, CreditCard, ShoppingCart, BarChart3 } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { ArrowRight, Star, Users, Shield, TrendingUp, CreditCard, ShoppingCart, BarChart3, LogOut } from 'lucide-react';
+import { useAuth, useUser } from '@clerk/clerk-react';
+import { useNavigate } from 'react-router-dom';
 import Navigation from '../../pages/components/Navigation';
-import Footer from '../../pages/components/Footer'; // Add this import
+import Footer from '../../pages/components/Footer';
 
 
 const Home: React.FC = () => {
+  const { isSignedIn, signOut } = useAuth();
+  const { user } = useUser();
+  const navigate = useNavigate();
+  const [hasCompletedSetup, setHasCompletedSetup] = useState(false);
+
+  useEffect(() => {
+    if (isSignedIn && user) {
+      // Check if user has completed shop setup
+      const shopCompleted = user.unsafeMetadata?.shopCompleted === true || 
+                           localStorage.getItem('ceypos-shop-completed') === 'true';
+      setHasCompletedSetup(shopCompleted);
+    }
+  }, [isSignedIn, user]);
+
+  const handleGetStarted = () => {
+    if (isSignedIn) {
+      if (hasCompletedSetup) {
+        navigate('/dashboard');
+      } else {
+        navigate('/shop-wizard');
+      }
+    } else {
+      navigate('/register');
+    }
+  };
+
+  const handleSignIn = () => {
+    if (isSignedIn) {
+      // If already signed in, go to appropriate page
+      if (hasCompletedSetup) {
+        navigate('/dashboard');
+      } else {
+        navigate('/shop-wizard');
+      }
+    } else {
+      navigate('/login');
+    }
+  };
+
+  const handleSignOut = async () => {
+    await signOut();
+    navigate('/');
+  };
+
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
       {/* Global Navigation Component */}
@@ -56,12 +102,32 @@ const Home: React.FC = () => {
                         placeholder="Enter your email"
                         className="flex-1 px-4 py-3 border border-gray-300 rounded-l-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
                       />
-                      <button className="bg-gradient-to-r from-green-500 to-blue-600 hover:from-green-600 hover:to-blue-700 text-white px-6 py-3 rounded-r-lg transition-all duration-300 font-semibold flex items-center">
-                        Get Started
+                      <button 
+                        onClick={handleGetStarted}
+                        className="bg-gradient-to-r from-green-500 to-blue-600 hover:from-green-600 hover:to-blue-700 text-white px-6 py-3 rounded-r-lg transition-all duration-300 font-semibold flex items-center"
+                      >
+                        {isSignedIn ? (hasCompletedSetup ? 'Go to Dashboard' : 'Continue Setup') : 'Get Started'}
                         <ArrowRight className="ml-2" size={18} />
                       </button>
                     </div>
                   </div>
+                  {isSignedIn && (
+                    <div className="flex gap-4">
+                      <button 
+                        onClick={handleSignIn}
+                        className="text-gray-600 hover:text-gray-800 font-medium"
+                      >
+                        {hasCompletedSetup ? 'Dashboard' : 'Continue Setup'}
+                      </button>
+                      <button 
+                        onClick={handleSignOut}
+                        className="text-gray-600 hover:text-gray-800 font-medium flex items-center"
+                      >
+                        <LogOut className="mr-1" size={16} />
+                        Sign Out
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
               

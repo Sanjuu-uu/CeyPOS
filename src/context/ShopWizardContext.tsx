@@ -1,4 +1,6 @@
-import React, { createContext, useContext, useState, ReactNode, useCallback } from 'react';
+import React, { createContext, useContext, useState, ReactNode, useCallback, useMemo } from 'react';
+import { useClerk, useUser } from '@clerk/clerk-react';
+import { generateShopId } from '../lib/api';
 
 // Define the complete shop form data interface
 export interface ShopFormData {
@@ -61,7 +63,7 @@ export interface ShopWizardContextType {
   canProceed: boolean;
 
   // Wizard completion
-  completeWizard: () => void;
+  completeWizard: () => Promise<string>; // Return shopId
   isCompleted: boolean;
   resetWizard: () => void;
 
@@ -109,7 +111,9 @@ const defaultFormData: ShopFormData = {
 const ShopWizardContext = createContext<ShopWizardContextType | undefined>(undefined);
 
 // Provider component
-export const ShopWizardProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
+export const ShopWizardProvider: React.FC<{ children: ReactNode, userId?: string, userEmail?: string }> = ({ children, userId: propUserId, userEmail: propUserEmail }) => {
+  const clerk = useClerk();
+  const { user } = useUser();
   // Check localStorage for existing shop setup on initialization
   const [isCompleted, setIsCompleted] = useState(() => {
     if (typeof window !== 'undefined') {
@@ -122,13 +126,21 @@ export const ShopWizardProvider: React.FC<{ children: ReactNode }> = ({ children
   const [currentStep, setCurrentStep] = useState(1);
   const [animationDirection, setAnimationDirection] = useState<AnimationDirection>('next');
   const [isAnimating, setIsAnimating] = useState(false);
-  // Persisted shopId for this session
-  const [shopId, setShopId] = useState(() => localStorage.getItem('ceypos-shop-id') || '');
+  // Persisted shopId for this session - use email-based ID for consistency
+  const [shopId, setShopId] = useState(() => {
+    if (propUserEmail) {
+      return generateShopId(propUserEmail);
+    }
+    if (propUserId) {
+      return `user_${propUserId}`;
+    }
+    return localStorage.getItem('ceypos-shop-id') || '';
+  });
   const totalSteps = 6;
 
-  const updateFormData = (stepData: Partial<ShopFormData>) => {
+  const updateFormData = useCallback((stepData: Partial<ShopFormData>) => {
     setFormData(prev => ({ ...prev, ...stepData }));
-  };
+  }, []);
 
   const nextStep = useCallback(() => {
     if (currentStep < totalSteps) {
@@ -163,7 +175,7 @@ export const ShopWizardProvider: React.FC<{ children: ReactNode }> = ({ children
     }
   };
 
-  const validateStep = (step: number): boolean => {
+  const validateStep = useCallback((step: number): boolean => {
     switch (step) {
       case 1: // Shop Details
         return !!(formData.shopName && formData.ownerName && formData.email && formData.phone && formData.shopType);
@@ -174,44 +186,84 @@ export const ShopWizardProvider: React.FC<{ children: ReactNode }> = ({ children
       case 4: // Shop Settings
         return !!(formData.currency && formData.timezone && formData.paymentMethods.length > 0);
       case 5: // Review & Confirm
-        return validateStep(1) && validateStep(2) && validateStep(3) && validateStep(4);
+        return !!(formData.shopName && formData.ownerName && formData.email && formData.phone && formData.shopType) &&
+               !!(formData.address && formData.city && formData.state && formData.zipCode && formData.country) &&
+               !!(formData.businessLicense && formData.taxId && formData.registrationNumber) &&
+               !!(formData.currency && formData.timezone && formData.paymentMethods.length > 0);
       default:
         return false;
     }
-  };
+  }, [formData]);
 
-  const isStepCompleted = (step: number): boolean => {
+  const isStepCompleted = useCallback((step: number): boolean => {
     return validateStep(step);
-  };
+  }, [validateStep]);
 
-  const completeWizard = async () => {
+  const completeWizard = async (): Promise<string> => {
     try {
-      // Determine or create a shopId, persist for reuse
-      let _shopId = localStorage.getItem('ceypos-shop-id');
-      if (!_shopId) {
-        _shopId = String(Math.floor(Date.now() / 1000));
-        localStorage.setItem('ceypos-shop-id', _shopId);
+      // Use email-based shopId for consistency across login/register
+      let _shopId = shopId;
+      if (!_shopId && propUserEmail) {
+        _shopId = generateShopId(propUserEmail);
       }
-      setShopId(_shopId);
+      if (!_shopId && propUserId) {
+        _shopId = `user_${propUserId}`;
+      }
+      if (!_shopId) {
+        _shopId = localStorage.getItem('ceypos-shop-id') || '';
+      }
+      if (!_shopId) {
+        // Final fallback - should not happen with proper user data
+        _shopId = String(Math.floor(Date.now() / 1000));
+      }
 
-      // Persist to backend SQLite
-      await fetch('http://localhost:4000/api/shop/setup', {
+      setShopId(_shopId);
+      localStorage.setItem('ceypos-shop-id', _shopId);
+
+      // Persist to backend SQLite - this creates the database file
+      const response = await fetch('/api/shop/setup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ shopId: _shopId, formData }),
-      }).catch(() => {/* ignore if server not running */});
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to setup shop: ${response.statusText}`);
+      }
 
       setIsCompleted(true);
       localStorage.setItem('ceypos-shop-completed', 'true');
       localStorage.setItem('ceypos-shop-data', JSON.stringify(formData));
-      console.log('Shop created:', { shopId: _shopId, formData });
+      console.log('Shop created successfully:', { shopId: _shopId, formData });
 
-      setTimeout(() => {
-        window.history.pushState(null, '', '/dashboard');
-        window.dispatchEvent(new PopStateEvent('popstate'));
-      }, 2000);
+      // Update Clerk user metadata to mark shop as completed
+      if (user) {
+        try {
+          await clerk.user?.update({
+            unsafeMetadata: {
+              ...user.unsafeMetadata,
+              shopCompleted: true,
+              shopId: _shopId,
+              shopName: formData.shopName,
+              ownerName: formData.ownerName,
+              email: formData.email,
+              phone: formData.phone,
+              shopType: formData.shopType,
+              businessLicense: formData.businessLicense,
+              taxId: formData.taxId,
+              registrationNumber: formData.registrationNumber,
+            },
+          });
+        } catch (error) {
+          console.warn('Failed to update user metadata:', error);
+        }
+      }
+
+      // Navigation is handled by the component that calls completeWizard
+      return _shopId;
     } catch (e) {
       console.error('Failed to complete wizard', e);
+      throw e;
     }
   };
 
@@ -223,6 +275,8 @@ export const ShopWizardProvider: React.FC<{ children: ReactNode }> = ({ children
   localStorage.removeItem('ceypos-shop-data');
   localStorage.removeItem('ceypos-shop-id');
   };
+
+  const canProceed = useMemo(() => validateStep(currentStep), [validateStep, currentStep]);
 
   const contextValue: ShopWizardContextType = {
   formData,
@@ -236,7 +290,7 @@ export const ShopWizardProvider: React.FC<{ children: ReactNode }> = ({ children
   isAnimating,
   validateStep,
   isStepCompleted,
-  canProceed: validateStep(currentStep),
+  canProceed,
   completeWizard,
   resetWizard, // Add reset function
   isCompleted,

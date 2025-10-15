@@ -2,7 +2,7 @@ import path from "path";
 import fs from "fs";
 import Database from "better-sqlite3";
 
-const DB_DIR = process.env.RAILWAY_VOLUME_MOUNT_PATH || path.resolve(process.cwd(), "../../../database");
+const DB_DIR = process.env.RAILWAY_VOLUME_MOUNT_PATH || path.resolve(process.cwd(), "../database");
 
 function ensureDbDir() {
   if (!fs.existsSync(DB_DIR)) {
@@ -22,10 +22,22 @@ function openDb(shopId) {
   return db;
 }
 
+function dbExists(shopId) {
+  const p = dbPathForShop(shopId);
+  return fs.existsSync(p);
+}
+
+function openDbIfExists(shopId) {
+  if (!dbExists(shopId)) {
+    return null;
+  }
+  return openDb(shopId);
+}
+
 function initSchema(db) {
   const ddl = `
   CREATE TABLE IF NOT EXISTS shop_meta (
-    shop_id INTEGER PRIMARY KEY,
+    shop_id TEXT PRIMARY KEY,
     shop_name TEXT,
     owner_name TEXT,
     owner_email TEXT,
@@ -45,7 +57,7 @@ function initSchema(db) {
   );
   
   CREATE TABLE IF NOT EXISTS shop_operating_hours (
-    shop_id INTEGER NOT NULL,
+    shop_id TEXT NOT NULL,
     day TEXT NOT NULL,
     open TEXT,
     close TEXT,
@@ -54,7 +66,7 @@ function initSchema(db) {
   );
   
   CREATE TABLE IF NOT EXISTS shop_payment_methods (
-    shop_id INTEGER NOT NULL,
+    shop_id TEXT NOT NULL,
     method TEXT NOT NULL,
     PRIMARY KEY (shop_id, method)
   );
@@ -114,7 +126,7 @@ function initSchema(db) {
   
   CREATE TABLE IF NOT EXISTS daily_sales (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    shop_id INTEGER,
+    shop_id TEXT,
     date TEXT,
     total_sales DECIMAL(10,2),
     transactions_count INTEGER,
@@ -253,6 +265,8 @@ export {
   dbPathForShop,
   createOrOpenShopDb,
   openDb,
+  openDbIfExists,
+  dbExists,
   initSchema,
   insertInventoryRows,
   upsertShopMeta,

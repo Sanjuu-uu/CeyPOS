@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { ModuleName, User, Shop, CartItem } from '../types';
 import { db } from '../lib/db';
+import { generateShopId } from '../lib/api';
 
 interface AppContextType {
   currentModule: ModuleName;
@@ -27,8 +28,9 @@ interface AppContextType {
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
-export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
+export const AppProvider: React.FC<{ children: React.ReactNode, userEmail?: string }> = ({
   children,
+  userEmail,
 }) => {
   const [currentModule, setCurrentModule] = useState<ModuleName>('dashboard');
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
@@ -50,15 +52,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
     db.init();
 
     (async () => {
-      // Try to determine a shopId from existing user or localStorage
-      const users = db.users.getAll();
+      // Try to determine a shopId from userEmail, existing user, or localStorage
       let shopId: string | null = null;
 
-      if (users.length > 0) {
-        setCurrentUser(users[0]);
-        shopId = users[0].shopId?.replace(/^shop_/, '') || null;
+      // First priority: derive from userEmail (for newly created shops)
+      if (userEmail) {
+        shopId = generateShopId(userEmail);
       }
 
+      // Second priority: check existing users in cache
+      if (!shopId) {
+        const users = db.users.getAll();
+        if (users.length > 0) {
+          setCurrentUser(users[0]);
+          shopId = users[0].shopId?.replace(/^shop_/, '') || null;
+        }
+      }
+
+      // Third priority: localStorage
       if (!shopId) {
         shopId = localStorage.getItem('ceypos-shop-id');
       }
@@ -76,9 +87,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
         }
       }
     })();
-  }, []);
-
-  // New effect: when currentShop changes, ensure websocket connected (keeps sync alive)
+  }, [userEmail]);  // New effect: when currentShop changes, ensure websocket connected (keeps sync alive)
   useEffect(() => {
     if (currentShop) {
       const rawShopId = currentShop.id.replace(/^shop_/, '');
