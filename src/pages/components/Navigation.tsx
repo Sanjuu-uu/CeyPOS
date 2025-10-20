@@ -131,7 +131,6 @@ const Navigation: React.FC = () => {
           </div>
         </div>
       </div>
-
       {/* Prevent body scroll when mobile menu is open */}
       {isMobileMenuOpen && (
         <style>{`
