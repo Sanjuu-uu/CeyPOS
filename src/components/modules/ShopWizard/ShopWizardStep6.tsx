@@ -65,19 +65,167 @@ const Confetti: React.FC<{ index: number }> = ({ index }) => {
 };
 
 export const ShopWizardStep6: React.FC = () => {
-  const { completeWizard } = useShopWizard();
+  const {
+    completeWizard,
+    isSaving,
+    completionError,
+    clearCompletionError,
+  } = useShopWizard();
   const [showConfetti] = useState(true);
+  const [hasTriggeredCompletion, setHasTriggeredCompletion] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
-    // Auto complete wizard when this step loads
-    completeWizard();
-  }, [completeWizard]);
+    if (hasTriggeredCompletion) {
+      return;
+    }
+
+    setHasTriggeredCompletion(true);
+    let cancelled = false;
+
+    (async () => {
+      try {
+        await completeWizard();
+      } catch (error) {
+        if (!cancelled) {
+          console.error('Shop completion failed', error);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [completeWizard, hasTriggeredCompletion]);
 
   const handleGoToDashboard = () => {
     // Navigate to dashboard immediately
     navigate('/dashboard');
   };
+
+  const handleRetry = () => {
+    clearCompletionError();
+    setHasTriggeredCompletion(false);
+  };
+
+  if (completionError) {
+    return (
+      <div className="h-full flex items-center justify-center relative overflow-hidden">
+        <motion.div
+          variants={cardVariants}
+          initial="initial"
+          animate="animate"
+          className="relative z-20 w-full max-w-3xl"
+          style={{ fontFamily: 'Inter, system-ui, -apple-system, sans-serif' }}
+        >
+          <div
+            style={{
+              background: 'rgba(255, 255, 255, 0.95)',
+              backdropFilter: 'blur(12px)',
+              borderRadius: '24px',
+              boxShadow: '0 20px 40px rgba(0, 0, 0, 0.12)',
+              border: '1px solid var(--red--200, #fecaca)',
+              padding: '40px 36px',
+            }}
+          >
+            <div className="flex flex-col items-center text-center space-y-6">
+              <motion.div
+                initial={{ scale: 0.9, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                transition={{ duration: 0.3 }}
+                style={{
+                  width: '72px',
+                  height: '72px',
+                  borderRadius: '50%',
+                  background: 'rgba(239, 68, 68, 0.1)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: '#ef4444',
+                }}
+              >
+                <svg
+                  style={{ width: '32px', height: '32px' }}
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M12 9v4m0 4h.01M4.93 4.93l14.14 14.14M9.17 9.17l5.66 5.66M4.93 19.07l14.14-14.14"
+                  />
+                </svg>
+              </motion.div>
+
+              <div>
+                <h2
+                  style={{
+                    color: 'var(--gray--900)',
+                    fontSize: '28px',
+                    fontWeight: 600,
+                    marginBottom: '12px',
+                  }}
+                >
+                  We couldn’t finish setting up your shop
+                </h2>
+                <p
+                  style={{
+                    color: 'var(--gray--600)',
+                    fontSize: '15px',
+                    lineHeight: 1.6,
+                    maxWidth: '520px',
+                    margin: '0 auto',
+                  }}
+                >
+                  {completionError}
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center justify-center gap-3">
+                <button
+                  type="button"
+                  onClick={handleRetry}
+                  disabled={isSaving}
+                  className="button-primary"
+                  style={{
+                    padding: '12px 22px',
+                    borderRadius: 'var(--radius--12px)',
+                    backgroundColor: 'var(--gray--900)',
+                    color: 'white',
+                    border: 'none',
+                    fontSize: '14px',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    opacity: isSaving ? 0.7 : 1,
+                  }}
+                >
+                  {isSaving ? 'Retrying...' : 'Try again'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => window.open('mailto:support@ceypossolutions.com')}
+                  className="button-outline"
+                  style={{
+                    padding: '12px 22px',
+                    borderRadius: 'var(--radius--12px)',
+                    border: '1px solid var(--gray--200)',
+                    fontSize: '14px',
+                    fontWeight: 600,
+                    color: 'var(--gray--800)',
+                    background: 'white',
+                  }}
+                >
+                  Contact support
+                </button>
+              </div>
+            </div>
+          </div>
+        </motion.div>
+      </div>
+    );
+  }
 
   return (
     <div className="h-full flex items-center justify-center relative overflow-hidden">
@@ -88,7 +236,8 @@ export const ShopWizardStep6: React.FC = () => {
             <Confetti key={index} index={index} />
           ))}
         </div>
-      )}      <motion.div
+      )}
+      <motion.div
         variants={cardVariants}
         initial="initial"
         animate="animate"
@@ -206,10 +355,12 @@ export const ShopWizardStep6: React.FC = () => {
                   fontFamily: 'Inter, sans-serif',
                   fontSize: '14px',
                   fontWeight: 600,
-                  color: 'var(--gray--900)'
+                  color: 'var(--gray--900)',
+                  opacity: isSaving ? 0.8 : 1,
                 }}
+                disabled={isSaving}
               >
-                Go to Dashboard
+                {isSaving ? 'Finalizing...' : 'Go to Dashboard'}
               </button>
               <button 
                 onClick={() => window.open('/help', '_blank')}

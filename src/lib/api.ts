@@ -16,14 +16,3 @@ export async function postJSON<T = any>(
   }
   return data as T;
 }
-
-/**
- * Generate a consistent shop ID from user email
- * This ensures all components use the same logic for shop identification
- */
-export function generateShopId(email: string): string {
-  if (!email || typeof email !== 'string') {
-    throw new Error('Valid email is required to generate shop ID');
-  }
-  return `user_${email.toLowerCase().replace(/[^a-zA-Z0-9]/g, '_')}`;
-}

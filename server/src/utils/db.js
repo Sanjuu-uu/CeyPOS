@@ -2,7 +2,9 @@ import path from "path";
 import fs from "fs";
 import Database from "better-sqlite3";
 
-const DB_DIR = process.env.RAILWAY_VOLUME_MOUNT_PATH || path.resolve(process.cwd(), "../database");
+const DB_DIR =
+  process.env.RAILWAY_VOLUME_MOUNT_PATH ||
+  path.resolve(process.cwd(), "../database");
 
 function ensureDbDir() {
   if (!fs.existsSync(DB_DIR)) {
@@ -10,28 +12,95 @@ function ensureDbDir() {
   }
 }
 
-function dbPathForShop(shopId) {
+function sanitizeForFilename(value = "") {
+  return String(value)
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9@._+-]/g, "_");
+}
+
+function candidateDbFilenames(shopId) {
+  const base = String(shopId).replace(/\.db$/i, "");
+  const primary = `${base}.db`;
+  const legacy = `shop_${base}.db`;
+  return [primary, legacy];
+}
+
+function resolveExistingDbPath(shopId) {
   ensureDbDir();
-  return path.join(DB_DIR, `shop_${shopId}.db`);
+  for (const fileName of candidateDbFilenames(shopId)) {
+    const fullPath = path.join(DB_DIR, fileName);
+    if (fs.existsSync(fullPath)) {
+      return fullPath;
+    }
+  }
+  return null;
+}
+
+function dbPathForShop(shopId, { allowCreate = false } = {}) {
+  ensureDbDir();
+  if (allowCreate) {
+    const base = String(shopId).replace(/\.db$/i, "");
+    return path.join(DB_DIR, `${base}.db`);
+  }
+  const resolved = resolveExistingDbPath(shopId);
+  if (resolved) {
+    return resolved;
+  }
+  return path.join(DB_DIR, `${String(shopId).replace(/\.db$/i, "")}.db`);
+}
+
+function getDbFileName(shopId) {
+  const resolved = resolveExistingDbPath(shopId);
+  if (!resolved) {
+    const base = String(shopId).replace(/\.db$/i, "");
+    return `${base}.db`;
+  }
+  return path.basename(resolved);
+}
+
+function dbExists(shopId) {
+  return Boolean(resolveExistingDbPath(shopId));
 }
 
 function openDb(shopId) {
-  const p = dbPathForShop(shopId);
-  const db = new Database(p);
+  const existingPath = resolveExistingDbPath(shopId);
+  if (!existingPath) {
+    throw new Error(`Shop database not found for ${shopId}`);
+  }
+  const db = new Database(existingPath, { fileMustExist: true });
   db.pragma("journal_mode = WAL");
   return db;
 }
 
-function dbExists(shopId) {
-  const p = dbPathForShop(shopId);
-  return fs.existsSync(p);
-}
-
 function openDbIfExists(shopId) {
-  if (!dbExists(shopId)) {
+  const existingPath = resolveExistingDbPath(shopId);
+  if (!existingPath) {
     return null;
   }
-  return openDb(shopId);
+  const db = new Database(existingPath, { fileMustExist: true });
+  db.pragma("journal_mode = WAL");
+  return db;
+}
+
+function createShopDb(shopId, shopMeta) {
+  const safeId = String(shopId).replace(/\.db$/i, "");
+  if (/[\\/]/.test(safeId)) {
+    throw new Error("Invalid shopId - path separators are not allowed");
+  }
+
+  const dbPath = dbPathForShop(safeId, { allowCreate: true });
+  if (fs.existsSync(dbPath)) {
+    throw new Error(`Database already exists for shop ${safeId}`);
+  }
+
+  const db = new Database(dbPath);
+  db.pragma("journal_mode = WAL");
+  initSchema(db);
+  if (shopMeta) {
+    upsertShopMeta(db, safeId, shopMeta);
+  }
+  return db;
 }
 
 function initSchema(db) {
@@ -231,13 +300,6 @@ function replacePaymentMethods(db, shopId, methods = []) {
   txn(Array.isArray(methods) ? methods : []);
 }
 
-function createOrOpenShopDb(shopId, shopMeta) {
-  const db = openDb(shopId);
-  initSchema(db);
-  if (shopMeta) upsertShopMeta(db, shopId, shopMeta);
-  return db;
-}
-
 function insertInventoryRows(db, rows) {
   const insert = db.prepare(`
     INSERT INTO inventory (
@@ -262,11 +324,13 @@ function insertInventoryRows(db, rows) {
 }
 
 export {
+  sanitizeForFilename,
   dbPathForShop,
-  createOrOpenShopDb,
+  createShopDb,
   openDb,
   openDbIfExists,
   dbExists,
+  getDbFileName,
   initSchema,
   insertInventoryRows,
   upsertShopMeta,

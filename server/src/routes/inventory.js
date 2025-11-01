@@ -1,7 +1,7 @@
 import express from "express";
 import multer from "multer";
 import ExcelJS from "exceljs";
-import { createOrOpenShopDb, insertInventoryRows } from "../utils/db.js";
+import { openDb, dbExists, insertInventoryRows } from "../utils/db.js";
 
 const router = express.Router();
 const upload = multer({
@@ -65,12 +65,17 @@ router.post("/upload", (req, res, next) => {
       return res.status(400).json({ error: "Uploaded file is not an Excel file (.xlsx/.xls). Please check the file format." });
     }
 
+    if (!dbExists(shopId)) {
+      console.error(`[INVENTORY UPLOAD ERROR] Missing database`, { time: new Date().toISOString(), shopId });
+      return res.status(404).json({ error: "Shop database not found. Please complete shop setup." });
+    }
+
     let db;
     try {
-      db = createOrOpenShopDb(shopId);
+      db = openDb(shopId);
     } catch (dbErr) {
-      console.error(`[INVENTORY UPLOAD ERROR] DB open/create failed`, { time: new Date().toISOString(), shopId, error: dbErr });
-      return res.status(500).json({ error: "Could not open or create shop database.", detail: String(dbErr.message || dbErr) });
+      console.error(`[INVENTORY UPLOAD ERROR] DB open failed`, { time: new Date().toISOString(), shopId, error: dbErr });
+      return res.status(500).json({ error: "Could not open shop database.", detail: String(dbErr.message || dbErr) });
     }
 
     // Use exceljs to read the uploaded Excel file

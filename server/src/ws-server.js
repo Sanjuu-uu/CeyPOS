@@ -1,13 +1,12 @@
 // WebSocket server for real-time two-way sync per shop
 import { Server } from "socket.io";
 import {
-  createOrOpenShopDb,
   dbPathForShop,
   openDb,
+  dbExists,
   insertInventoryRows,
 } from "./utils/db.js";
 import fs from "fs";
-import path from "path";
 
 let ioInstance;
 const watchers = new Map(); // shopId -> fs.FSWatcher
@@ -118,6 +117,7 @@ function init(httpServer, opts = {}) {
           try {
             const dbr = openDb(shopId);
             const inv = readInventory(dbr);
+            dbr.close();
             io.to(`shop_${shopId}`).emit("inventoryUpdated", {
               shopId,
               items: inv,
@@ -164,6 +164,13 @@ function init(httpServer, opts = {}) {
 
     socket.on("disconnect", (reason) => {
       console.log(`Socket ${socket.id} disconnected: ${reason}`);
+      try {
+        if (db) {
+          db.close();
+        }
+      } catch (closeErr) {
+        console.warn("Failed to close DB after disconnect", closeErr);
+      }
     });
   });
 

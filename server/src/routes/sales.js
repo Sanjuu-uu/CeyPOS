@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { openDb } from "../utils/db.js"; // adjust path if different
+import { openDb, dbExists } from "../utils/db.js"; // adjust path if different
 const router = Router();
 
 router.post("/complete", (req, res) => {
@@ -19,7 +19,21 @@ router.post("/complete", (req, res) => {
     return res.status(400).json({ ok: false, error: "invalid_payload" });
   }
 
-  const db = openDb(shopId);
+  if (!dbExists(shopId)) {
+    return res
+      .status(404)
+      .json({ ok: false, error: "shop_not_configured" });
+  }
+
+  let db;
+  try {
+    db = openDb(shopId);
+  } catch (err) {
+    console.error("complete sale failed: unable to open shop db", err);
+    return res
+      .status(500)
+      .json({ ok: false, error: "database_unavailable" });
+  }
   try {
     const result = db.transaction(() => {
       // 1) upsert customer (by email or phone if present)
@@ -167,7 +181,7 @@ router.post("/complete", (req, res) => {
     console.error("complete sale failed:", e);
     res.status(500).json({ ok: false, error: "sale_failed" });
   } finally {
-    db.close();
+    if (db) db.close();
   }
 });
 

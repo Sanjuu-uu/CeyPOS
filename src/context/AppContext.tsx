@@ -1,7 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { ModuleName, User, Shop, CartItem } from '../types';
 import { db } from '../lib/db';
-import { generateShopId } from '../lib/api';
 
 interface AppContextType {
   currentModule: ModuleName;
@@ -28,9 +27,22 @@ interface AppContextType {
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
-export const AppProvider: React.FC<{ children: React.ReactNode, userEmail?: string }> = ({
+interface AppProviderProps {
+  children: React.ReactNode;
+  userEmail?: string;
+  shopId?: string;
+  shopProfile?: {
+    name?: string;
+    address?: string;
+    contact?: string;
+  };
+}
+
+export const AppProvider: React.FC<AppProviderProps> = ({
   children,
   userEmail,
+  shopId: externalShopId,
+  shopProfile,
 }) => {
   const [currentModule, setCurrentModule] = useState<ModuleName>('dashboard');
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
@@ -52,48 +64,70 @@ export const AppProvider: React.FC<{ children: React.ReactNode, userEmail?: stri
     db.init();
 
     (async () => {
-      // Try to determine a shopId from userEmail, existing user, or localStorage
-      let shopId: string | null = null;
-
-      // First priority: derive from userEmail (for newly created shops)
-      if (userEmail) {
-        shopId = generateShopId(userEmail);
+      if (!externalShopId) {
+        setCurrentShop(null);
+        return;
       }
 
-      // Second priority: check existing users in cache
-      if (!shopId) {
-        const users = db.users.getAll();
-        if (users.length > 0) {
-          setCurrentUser(users[0]);
-          shopId = users[0].shopId?.replace(/^shop_/, '') || null;
+      try {
+        await (db as any).connectWebSocket(externalShopId);
+        const loadedShop = db.shops.getById(`shop_${externalShopId}`);
+        if (loadedShop) {
+          setCurrentShop(loadedShop);
+        } else {
+          setCurrentShop({
+            id: `shop_${externalShopId}`,
+            name: 'My Shop',
+            address: '',
+            contact: '',
+          } as Shop);
         }
-      }
-
-      // Third priority: localStorage
-      if (!shopId) {
-        shopId = localStorage.getItem('ceypos-shop-id');
-      }
-
-      if (shopId) {
-        try {
-          // Connect websocket and fetch initial shop meta/inventory
-          await (db as any).connectWebSocket(shopId);
-
-          // Set currentShop from client cache (db.shops.getById expects full id)
-          const loadedShop = db.shops.getById(`shop_${shopId}`);
-          if (loadedShop) setCurrentShop(loadedShop);
-        } catch (e) {
-          console.warn('Failed to connect WebSocket for shop', shopId, e);
-        }
+      } catch (e) {
+        console.warn('Failed to connect WebSocket for shop', externalShopId, e);
       }
     })();
-  }, [userEmail]);  // New effect: when currentShop changes, ensure websocket connected (keeps sync alive)
+  }, [externalShopId]);
+
   useEffect(() => {
-    if (currentShop) {
-      const rawShopId = currentShop.id.replace(/^shop_/, '');
-      (db as any).connectWebSocket(rawShopId).catch((e: any) => console.warn('WS connect failed', e));
+    if (!externalShopId || !shopProfile) {
+      return;
     }
-  }, [currentShop]);
+
+    setCurrentShop((prev) => {
+      const base: Shop =
+        prev ?? {
+          id: `shop_${externalShopId}`,
+          name: 'My Shop',
+          address: '',
+          contact: '',
+        };
+
+      const next: Shop = {
+        ...base,
+        name: shopProfile.name || base.name,
+        address: shopProfile.address ?? base.address,
+        contact: shopProfile.contact ?? base.contact,
+      };
+
+      return next;
+    });
+  }, [externalShopId, shopProfile]);
+
+  useEffect(() => {
+    if (!userEmail) {
+      setCurrentUser(null);
+      return;
+    }
+
+    setCurrentUser({
+      id: `clerk_${userEmail}`,
+      name: userEmail.split('@')[0] || userEmail,
+      email: userEmail,
+      role: 'admin',
+      shopId: externalShopId ? `shop_${externalShopId}` : '',
+      permissions: ['*'],
+    });
+  }, [userEmail, externalShopId]);
 
   // Cart management functions
   const addToCart = (product: CartItem) => {

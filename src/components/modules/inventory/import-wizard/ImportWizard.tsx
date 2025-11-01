@@ -1,12 +1,14 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import axios from 'axios';
 import { motion, AnimatePresence } from 'framer-motion';
+import { ArrowLeftIcon, ArrowRightIcon, CheckIcon, X } from 'lucide-react';
 import { WizardStepIndicator } from './WizardStepIndicator';
 import { TemplateDownload } from './TemplateDownload';
 import { FileUpload } from './FileUpload';
 import { DataValidation } from './DataValidation';
 import { ImportConfirmation } from './ImportConfirmation';
-import { ArrowLeftIcon, ArrowRightIcon, CheckIcon, X } from 'lucide-react';
+import { useShopWizard } from '../../../../context/ShopWizardContext';
+import { useApp } from '../../../../context/AppContext';
 
 interface ImportWizardProps {
   onClose?: () => void;
@@ -25,8 +27,16 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ onClose, onImportCom
     backendError: null,
     validationIssues: [],
   });
-  // Get shopId from ShopWizardContext/localStorage
-  const shopId = localStorage.getItem('ceypos-shop-id') || '';
+  const { shopId: wizardShopId } = useShopWizard();
+  const { currentShop } = useApp();
+
+  const shopId = useMemo(() => {
+    if (wizardShopId) {
+      return wizardShopId;
+    }
+    const contextShopId = currentShop?.id?.replace(/^shop_/, '') || '';
+    return contextShopId;
+  }, [currentShop?.id, wizardShopId]);
 
   const steps = [
     'Download Template',

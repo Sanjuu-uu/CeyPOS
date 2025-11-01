@@ -328,8 +328,10 @@ async function executeTool(name, args, shopId) {
   // Handle database query tools
   const db = await import('../server/src/utils/db.js');
   const Database = (await import('better-sqlite3')).default;
-  const path = await import('path');
-  const fs = await import('fs');
+
+  if (!db.dbExists(shopId)) {
+    return { error: `Shop database not found for ${shopId}` };
+  }
 
   const dbPath = db.dbPathForShop(shopId);
   const connection = new Database(dbPath, { readonly: true });

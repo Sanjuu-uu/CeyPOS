@@ -95,19 +95,22 @@ function toProductRow(r: any): Product {
 async function fetchInitialData(shopId: string) {
   try {
     const metaRes = await fetch(`${API_BASE}/api/shop/${shopId}/meta`);
-    if (metaRes.ok) {
-      const body = await metaRes.json();
-      const meta = body.meta || body;
-      shopsCache.length = 0;
-      shopsCache.push({
-        id: `shop_${shopId}`,
-        name: meta.shop_name || "Shop",
-        address: meta.address || "",
-      } as Shop);
-      emit("shopMeta", { shopId, meta });
+    if (!metaRes.ok) {
+      throw new Error(`Failed to load shop metadata (${metaRes.status})`);
     }
+
+    const body = await metaRes.json();
+    const meta = body.meta || body;
+    shopsCache.length = 0;
+    shopsCache.push({
+      id: `shop_${shopId}`,
+      name: meta.shop_name || "Shop",
+      address: meta.address || "",
+    } as Shop);
+    emit("shopMeta", { shopId, meta });
   } catch (e) {
     console.warn("Failed to fetch shop meta", e);
+    throw e;
   }
 }
 

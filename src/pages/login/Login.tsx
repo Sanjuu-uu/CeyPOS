@@ -1,13 +1,44 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Eye, EyeOff, Mail, Lock, ArrowRight } from 'lucide-react';
-import { useSignIn } from '@clerk/clerk-react';
+import { useClerk, useSignIn } from '@clerk/clerk-react';
 import { useNavigate } from 'react-router-dom';
 import Navigation from '../components/Navigation';
 import Footer from '../components/Footer';
-import { generateShopId } from '../../lib/api';
+
+type ClerkErrorEntry = {
+  code?: string;
+  message?: string;
+  longMessage?: string;
+};
+
+const extractClerkErrors = (error: unknown): ClerkErrorEntry[] => {
+  if (!error || typeof error !== 'object') {
+    return [];
+  }
+
+  const candidates = [
+    (error as any).errors,
+    (error as any).data?.errors,
+    (error as any).response?.errors,
+    (error as any).response?.data?.errors,
+    (error as any).clerkError?.errors,
+    (error as any).error?.errors,
+  ];
+
+  const entries: ClerkErrorEntry[] = [];
+
+  for (const candidate of candidates) {
+    if (Array.isArray(candidate)) {
+      entries.push(...candidate);
+    }
+  }
+
+  return entries;
+};
 
 const Login = () => {
-  const { isLoaded, signIn, setActive } = useSignIn();
+  const clerk = useClerk();
+  const { isLoaded: isSignInLoaded, signIn, setActive } = useSignIn();
   const navigate = useNavigate();
   
   const [showPassword, setShowPassword] = useState(false);
@@ -15,32 +46,90 @@ const Login = () => {
   const [password, setPassword] = useState('');
   const [rememberMe, setRememberMe] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [oauthProvider, setOauthProvider] = useState<'google' | 'apple' | null>(null);
   const [error, setError] = useState('');
-  const [step, setStep] = useState('login'); // 'login' | 'verify'
+  const [step, setStep] = useState<'login' | 'login-verify'>('login');
   const [verificationCode, setVerificationCode] = useState('');
+  const [humanChallengePending, setHumanChallengePending] = useState(false);
+  const [showRegisterPrompt, setShowRegisterPrompt] = useState(false);
+
+  const isClerkReady = clerk.loaded;
+  const isAuthLocked = isLoading || oauthProvider !== null || humanChallengePending || !isClerkReady;
+  const registerMessage = 'Couldnt find your account';
+
+  const deactivateRegisterPrompt = () => {
+    if (showRegisterPrompt) {
+      setShowRegisterPrompt(false);
+    }
+  };
+
+  const activateRegisterPrompt = () => {
+    if (humanChallengePending) {
+      setHumanChallengePending(false);
+    }
+    setError(registerMessage);
+    if (!showRegisterPrompt) {
+      setShowRegisterPrompt(true);
+    }
+  };
+
+  const isMissingAccountError = (code?: string, message?: string) => {
+    const normalizedCode = (code || '').toLowerCase();
+    const normalizedMessage = (message || '').toLowerCase();
+
+    if (!normalizedCode && !normalizedMessage) {
+      return false;
+    }
+
+    if (
+      normalizedCode === 'identifier_not_found' ||
+      normalizedCode === 'session_not_found' ||
+      normalizedCode === 'third_party_identifier_not_found' ||
+      normalizedCode === 'third_party_email_address_not_found'
+    ) {
+      return true;
+    }
+
+    if (!normalizedMessage) {
+      return false;
+    }
+
+    return (
+      (normalizedMessage.includes('identifier') && normalizedMessage.includes('not found')) ||
+      normalizedMessage.includes('could not find') ||
+      normalizedMessage.includes('no account') ||
+      normalizedMessage.includes('does not exist') ||
+      normalizedMessage.includes('not registered')
+    );
+  };
 
   // Clear error when user starts typing
   const clearError = () => {
     if (error) setError('');
+    deactivateRegisterPrompt();
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!isLoaded || !signIn) return;
+    if (!isSignInLoaded || !signIn || isAuthLocked) return;
 
     if (!email.trim()) {
+      deactivateRegisterPrompt();
       setError('Please enter your email address');
       return;
     }
 
     if (!password.trim()) {
+      deactivateRegisterPrompt();
       setError('Please enter your password');
       return;
     }
 
+    setHumanChallengePending(false);
     setIsLoading(true);
     setError('');
+    deactivateRegisterPrompt();
 
     try {
       const result = await signIn.create({
@@ -49,55 +138,115 @@ const Login = () => {
       });
 
       if (result.status === 'complete') {
-        // Validate database exists for this user
-        const userEmail = email.trim().toLowerCase();
-        const shopId = generateShopId(userEmail);
-        
         try {
-          const response = await fetch(`/api/shop/${shopId}/exists`);
-          const data = await response.json();
-          
-          if (response.ok && data.exists && data.hasMetadata) {
-            // Database exists and has shop metadata - user has completed setup
+          if (setActive) {
             await setActive({ session: result.createdSessionId });
-            navigate('/dashboard');
-          } else {
-            // Database doesn't exist or has no metadata - redirect to shop wizard
-            setError('Welcome! Please complete your shop setup.');
-            setTimeout(() => navigate('/shop-wizard'), 3000);
           }
-        } catch (dbError) {
-          console.error('Database validation error:', dbError);
-          setError('Unable to validate account. Please try again.');
+          deactivateRegisterPrompt();
+          navigate('/');
+        } catch (sessionError) {
+          console.error('Failed to activate session:', sessionError);
+          deactivateRegisterPrompt();
+          setError('Something went wrong while starting your session. Please try again.');
         }
       } else if (result.status === 'needs_first_factor') {
         // Handle cases where additional verification is needed
-        setStep('verify');
+        deactivateRegisterPrompt();
+        setStep('login-verify');
         setError('Please check your email for a verification code to complete sign in.');
       } else {
         console.error('Sign in not complete:', result);
+        deactivateRegisterPrompt();
         setError('Login failed. Please try again.');
       }
     } catch (err: any) {
       console.error('Login error:', err);
-      
-      let errorMessage = 'Invalid email or password';
-      
-      if (err.errors && err.errors.length > 0) {
-        const firstError = err.errors[0];
-        const message = firstError.message || firstError.longMessage || '';
-        
-        if (message.includes('password') && message.includes('incorrect')) {
-          errorMessage = 'Incorrect password. Please try again.';
-        } else if (message.includes('identifier') || message.includes('not found')) {
-          errorMessage = 'Account not found. Please check your email or register.';
-        } else if (message.includes('too many')) {
-          errorMessage = 'Too many login attempts. Please try again later.';
-        } else if (message.length > 0) {
-          errorMessage = message;
+
+      const clerkErrors = extractClerkErrors(err);
+      const firstError = clerkErrors[0];
+      const rawMessage = (firstError?.message || firstError?.longMessage || '').trim();
+      const fallbackMessage = typeof err?.message === 'string' ? err.message.trim() : '';
+
+      const codeCandidates = new Set<string>();
+      const messageCandidates = new Set<string>();
+
+      const pushCode = (value?: string) => {
+        if (typeof value === 'string' && value.trim().length > 0) {
+          codeCandidates.add(value.trim());
         }
+      };
+
+      const pushMessage = (value?: string) => {
+        if (typeof value === 'string' && value.trim().length > 0) {
+          messageCandidates.add(value.trim());
+        }
+      };
+
+      pushCode(firstError?.code);
+      pushCode(typeof err?.code === 'string' ? err.code : '');
+      pushMessage(rawMessage);
+      pushMessage(firstError?.longMessage);
+      pushMessage(fallbackMessage);
+      pushMessage(typeof err?.longMessage === 'string' ? err.longMessage : '');
+      pushMessage(typeof err?.data?.message === 'string' ? err.data.message : '');
+      pushMessage(typeof err?.response?.message === 'string' ? err.response.message : '');
+      pushMessage(typeof err?.response?.data?.message === 'string' ? err.response.data.message : '');
+      pushMessage(typeof err?.statusText === 'string' ? err.statusText : '');
+
+      const nestedErrorCollections = [
+        err?.errors,
+        err?.data?.errors,
+        err?.response?.errors,
+        err?.response?.data?.errors,
+        clerkErrors,
+      ];
+
+      for (const collection of nestedErrorCollections) {
+        if (!Array.isArray(collection)) {
+          continue;
+        }
+
+        collection.forEach((item: any) => {
+          pushCode(item?.code);
+          pushMessage(item?.message);
+          pushMessage(item?.longMessage);
+        });
       }
-      
+
+      let missingAccountDetected = Array.from(codeCandidates).some((code) =>
+        isMissingAccountError(code, '')
+      );
+
+      if (!missingAccountDetected) {
+        missingAccountDetected = Array.from(messageCandidates).some((message) =>
+          isMissingAccountError('', message)
+        );
+      }
+
+      if (!missingAccountDetected && typeof err?.status === 'number' && err.status === 404) {
+        missingAccountDetected = true;
+      }
+
+      if (missingAccountDetected) {
+        activateRegisterPrompt();
+        return;
+      }
+
+      const defaultMessage = 'Invalid email or password';
+      const combinedMessages = Array.from(messageCandidates);
+      let errorMessage = rawMessage || fallbackMessage || combinedMessages[0] || defaultMessage;
+      const lowerCaseMessages = combinedMessages.map((message) => message.toLowerCase());
+
+      if (lowerCaseMessages.some((msg) => msg.includes('captcha') || msg.includes('bot'))) {
+        setHumanChallengePending(true);
+        errorMessage = 'Please complete the security verification to continue.';
+      } else if (lowerCaseMessages.some((msg) => msg.includes('password') && msg.includes('incorrect'))) {
+        errorMessage = 'Incorrect password. Please try again.';
+      } else if (lowerCaseMessages.some((msg) => msg.includes('too many'))) {
+        errorMessage = 'Too many login attempts. Please try again later.';
+      }
+
+      deactivateRegisterPrompt();
       setError(errorMessage);
     } finally {
       setIsLoading(false);
@@ -107,50 +256,39 @@ const Login = () => {
   const handleVerifyCode = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!isLoaded || !signIn) return;
+    if (!isSignInLoaded || !signIn || isAuthLocked) return;
     
     if (!verificationCode.trim()) {
+      deactivateRegisterPrompt();
       setError('Please enter the verification code');
       return;
     }
 
+    setHumanChallengePending(false);
     setIsLoading(true);
     setError('');
+    deactivateRegisterPrompt();
 
     try {
-      console.log('Attempting to verify email with code:', verificationCode);
-      
       // Attempt email verification
       const result = await signIn.attemptFirstFactor({
         strategy: 'email_code',
         code: verificationCode.trim(),
       });
 
-      console.log('Verification result:', result);
-
       if (result.status === 'complete') {
-        // Verification successful - validate database exists
-        const userEmail = email.trim().toLowerCase();
-        const shopId = generateShopId(userEmail);
-        
         try {
-          const response = await fetch(`/api/shop/${shopId}/exists`);
-          const data = await response.json();
-          
-          if (response.ok && data.exists && data.hasMetadata) {
-            // Database exists and has shop metadata - user has completed setup
+          if (setActive) {
             await setActive({ session: result.createdSessionId });
-            navigate('/dashboard');
-          } else {
-            // Database doesn't exist or has no metadata - redirect to shop wizard
-            setError('Welcome! Please complete your shop setup.');
-            setTimeout(() => navigate('/shop-wizard'), 3000);
           }
-        } catch (dbError) {
-          console.error('Database validation error:', dbError);
-          setError('Unable to validate account. Please try again.');
+          navigate('/');
+        } catch (sessionError) {
+          console.error('Failed to activate session:', sessionError);
+          deactivateRegisterPrompt();
+          setError('Unable to complete sign-in. Please try again.');
         }
       } else {
+        deactivateRegisterPrompt();
         setError('Verification incomplete. Please try again.');
       }
     } catch (err: any) {
@@ -170,7 +308,8 @@ const Login = () => {
           errorMessage = message;
         }
       }
-      
+
+      deactivateRegisterPrompt();
       setError(errorMessage);
     } finally {
       setIsLoading(false);
@@ -178,63 +317,129 @@ const Login = () => {
   };
 
   const handleResendCode = async () => {
-    if (!isLoaded || !signIn) return;
-    
+    if (isAuthLocked) {
+      return;
+    }
+
+    setHumanChallengePending(false);
     setIsLoading(true);
     setError('');
+    deactivateRegisterPrompt();
 
     try {
-      // For login verification, we need to restart the sign-in process
-      // This is a simpler approach that avoids the emailAddressId complexity
+      if (!isSignInLoaded || !signIn) {
+        return;
+      }
+
       const result = await signIn.create({
         identifier: email.trim(),
         password: password,
       });
-      
+
       if (result.status === 'needs_first_factor') {
         setError('New verification code sent to your email!');
         setTimeout(() => setError(''), 3000);
       }
     } catch (err: any) {
       console.error('Resend error:', err);
-      setError('Failed to resend verification code. Please try again.');
+      const rawMessage = err?.errors?.[0]?.message || err?.errors?.[0]?.longMessage || '';
+      deactivateRegisterPrompt();
+      if (rawMessage.toLowerCase().includes('captcha') || rawMessage.toLowerCase().includes('bot')) {
+        setHumanChallengePending(true);
+        setError('Please complete the security verification to continue.');
+      } else {
+        setError('Failed to resend verification code. Please try again.');
+      }
     } finally {
       setIsLoading(false);
     }
   };
 
   const handleGoogleSignIn = async () => {
-    if (!isLoaded || !signIn) return;
-    
+    if (!isSignInLoaded || !signIn || isAuthLocked) return;
+
+    setError('');
+    setHumanChallengePending(false);
+    deactivateRegisterPrompt();
+    setOauthProvider('google');
+    sessionStorage.setItem('ceypos::pendingOauth', 'google-login');
+
     try {
       await signIn.authenticateWithRedirect({
         strategy: 'oauth_google',
-        redirectUrl: '/',
-        redirectUrlComplete: '/',
+        redirectUrl: '/login',
+        redirectUrlComplete: '/shop-wizard',
       });
     } catch (err: any) {
-      console.error('Google signup error:', err);
-      setError('Failed to sign up with Google. Please try again.');
+      console.error('Google login error:', err);
+      setError('Failed to continue with Google. Please try again.');
+      deactivateRegisterPrompt();
+      setOauthProvider(null);
     }
   };
 
   const handleAppleSignIn = async () => {
-    if (!isLoaded || !signIn) return;
-    
+    if (!isSignInLoaded || !signIn || isAuthLocked) return;
+
+    setError('');
+    setHumanChallengePending(false);
+    deactivateRegisterPrompt();
+    setOauthProvider('apple');
+    sessionStorage.setItem('ceypos::pendingOauth', 'apple-login');
+
     try {
       await signIn.authenticateWithRedirect({
         strategy: 'oauth_apple',
-        redirectUrl: '/',
-        redirectUrlComplete: '/',
+        redirectUrl: '/login',
+        redirectUrlComplete: '/shop-wizard',
       });
     } catch (err: any) {
-      console.error('Apple signup error:', err);
-      setError('Failed to sign up with Apple. Please try again.');
+      console.error('Apple login error:', err);
+      setError('Failed to continue with Apple. Please try again.');
+      deactivateRegisterPrompt();
+      setOauthProvider(null);
     }
   };
 
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const errorCode = params.get('__clerk_error') || params.get('clerk_error');
+    const errorMessage = params.get('__clerk_message') || params.get('clerk_message') || '';
+    const status = params.get('__clerk_status') || params.get('clerk_status');
+
+    if (errorCode) {
+      if (isMissingAccountError(errorCode, errorMessage)) {
+        activateRegisterPrompt();
+      } else {
+        deactivateRegisterPrompt();
+        setError('Unable to complete sign in. Please try again.');
+      }
+      setOauthProvider(null);
+    }
+
+    if (status && status.includes('needs_verification')) {
+      setHumanChallengePending(true);
+      deactivateRegisterPrompt();
+    }
+
+    if ((errorCode || status) && window.location.search) {
+      window.history.replaceState(null, '', window.location.pathname);
+    }
+  }, []);
+
+  useEffect(() => {
+    const pendingOauth = sessionStorage.getItem('ceypos::pendingOauth');
+    if (!pendingOauth) {
+      return;
+    }
+
+    if (oauthProvider === null && step === 'login') {
+      sessionStorage.removeItem('ceypos::pendingOauth');
+    }
+  }, [oauthProvider, step]);
+
   // Email verification step
-  if (step === 'verify') {
+  if (step === 'login-verify') {
     return (
       <div className="min-h-screen bg-gray-50 flex flex-col">
         <Navigation />
@@ -253,21 +458,28 @@ const Login = () => {
                   <div className="inline-flex items-center bg-gradient-to-r from-gray-100 to-gray-200 text-gray-700 px-4 py-2 rounded-full text-xs font-medium mb-4">
                     Email Verification
                   </div>
-                  <h1 className="text-2xl font-black text-gray-900 mb-4">Enter Verification Code</h1>
+                  <h1 className="text-2xl font-black text-gray-900 mb-4">
+                    Enter Verification Code
+                  </h1>
                   <p className="text-gray-600 text-sm mb-6">
-                    We've sent a 6-digit verification code to <strong>{email}</strong>. 
-                    Please enter the code below to complete your login.
+                    We've sent a 6-digit verification code to <strong>{email}</strong>. Please enter the code below to complete your login.
                   </p>
                 </div>
 
                 {/* Error Message */}
-                {error && (
+                {!showRegisterPrompt && error && (
                   <div className={`mb-6 p-3 border rounded-lg text-sm ${
                     error.includes('sent') 
                       ? 'bg-green-50 border-green-200 text-green-600' 
                       : 'bg-red-50 border-red-200 text-red-600'
                   }`}>
                     {error}
+                  </div>
+                )}
+
+                {humanChallengePending && !error && (
+                  <div className="mb-6 p-3 bg-yellow-50 border border-yellow-200 text-yellow-700 text-sm rounded-lg">
+                    Please complete the security verification prompt to continue.
                   </div>
                 )}
 
@@ -302,7 +514,7 @@ const Login = () => {
 
                   <button
                     type="submit"
-                    disabled={isLoading || !isLoaded}
+                    disabled={isAuthLocked || !isSignInLoaded}
                     className="w-full bg-black hover:bg-gray-800 disabled:bg-gray-400 text-white py-3 px-4 rounded-full font-medium transition-all duration-300 flex items-center justify-center text-sm"
                   >
                     {isLoading ? (
@@ -327,20 +539,30 @@ const Login = () => {
                   <button
                     type="button"
                     onClick={handleResendCode}
-                    disabled={isLoading}
-                    className="text-gray-900 hover:text-gray-700 font-medium text-sm disabled:text-gray-400"
+                    disabled={isAuthLocked}
+                    className="inline-flex items-center gap-2 text-gray-900 hover:text-gray-700 font-medium text-sm disabled:text-gray-400"
                   >
+                    {isLoading ? (
+                      <span className="animate-spin rounded-full h-3 w-3 border-b-2 border-current"></span>
+                    ) : null}
                     Resend verification code
                   </button>
                   
                   <div className="pt-2 border-t border-gray-200">
-                    <button
-                      type="button"
-                      onClick={() => { setStep('login'); setVerificationCode(''); setError(''); }}
-                      className="text-gray-600 hover:text-gray-800 text-sm"
-                    >
-                      ← Back to login
-                    </button>
+                    <div className="flex flex-col gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setStep('login');
+                          setVerificationCode('');
+                          setError('');
+                          deactivateRegisterPrompt();
+                        }}
+                        className="text-gray-600 hover:text-gray-800 text-sm"
+                      >
+                        ← Back to login
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -383,7 +605,22 @@ const Login = () => {
                 </div>
 
                 {/* Error Message */}
-                {error && (
+                {showRegisterPrompt ? (
+                  <div className="mb-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg text-sm text-yellow-800">
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                      <div className="font-medium">{registerMessage}</div>
+                      <button
+                        type="button"
+                        onClick={() => navigate('/register')}
+                        className="inline-flex items-center justify-center rounded-full bg-black px-4 py-2 text-xs font-semibold text-white hover:bg-gray-800 transition-colors"
+                      >
+                        Register here
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
+
+                {!showRegisterPrompt && error && (
                   <div className="mb-6 p-3 bg-red-50 border border-red-200 rounded-lg text-red-600 text-sm">
                     {error}
                   </div>
@@ -393,27 +630,45 @@ const Login = () => {
                 <div className="space-y-3 mb-6">
                   <button 
                     onClick={handleGoogleSignIn}
-                    disabled={!isLoaded}
+                    disabled={!isSignInLoaded || isAuthLocked}
                     className="w-full flex items-center justify-center px-4 py-3 bg-white border border-gray-300 rounded-full hover:bg-gray-50 disabled:bg-gray-100 transition-colors text-sm"
                   >
-                    <svg className="w-4 h-4 mr-3" viewBox="0 0 24 24">
-                      <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
-                      <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-                      <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
-                      <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
-                    </svg>
-                    Continue with Google
+                    {oauthProvider === 'google' ? (
+                      <>
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-gray-700 mr-3"></div>
+                        Connecting to Google...
+                      </>
+                    ) : (
+                      <>
+                        <svg className="w-4 h-4 mr-3" viewBox="0 0 24 24">
+                          <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                          <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                          <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+                          <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+                        </svg>
+                        Continue with Google
+                      </>
+                    )}
                   </button>
                   
                   <button 
                     onClick={handleAppleSignIn}
-                    disabled={!isLoaded}
+                    disabled={!isSignInLoaded || isAuthLocked}
                     className="w-full flex items-center justify-center px-4 py-3 bg-black border border-black rounded-full hover:bg-gray-800 disabled:bg-gray-400 transition-colors text-sm text-white"
                   >
-                    <svg className="w-4 h-4 mr-3" fill="currentColor" viewBox="0 0 24 24">
-                      <path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/>
-                    </svg>
-                    Continue with Apple
+                    {oauthProvider === 'apple' ? (
+                      <>
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-3"></div>
+                        Connecting to Apple...
+                      </>
+                    ) : (
+                      <>
+                        <svg className="w-4 h-4 mr-3" fill="currentColor" viewBox="0 0 24 24">
+                          <path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/>
+                        </svg>
+                        Continue with Apple
+                      </>
+                    )}
                   </button>
                 </div>
 
@@ -506,7 +761,7 @@ const Login = () => {
                   {/* Submit Button - Black oval shape */}
                   <button
                     type="submit"
-                    disabled={isLoading || !isLoaded}
+                    disabled={isAuthLocked || !isSignInLoaded}
                     className="w-full bg-black hover:bg-gray-800 disabled:bg-gray-400 text-white py-3 px-4 rounded-full font-medium transition-all duration-300 flex items-center justify-center text-sm"
                   >
                     {isLoading ? (
