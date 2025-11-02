@@ -108,8 +108,8 @@ export const DatabasePreview: React.FC = () => {
     const unsubscribers = [
       db.on('inventoryUpdated', loadDatabaseData),
       db.on('saleCreated', loadDatabaseData),
-      db.on('customerCreated', loadDatabaseData),
-      db.on('customerUpdated', loadDatabaseData),
+      db.on('salesUpdated', loadDatabaseData),
+      db.on('customersUpdated', loadDatabaseData),
       db.on('dailySalesUpdated', loadDatabaseData)
     ];
 

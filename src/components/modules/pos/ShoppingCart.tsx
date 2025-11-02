@@ -21,26 +21,6 @@ import { db } from "../../../lib/db";
 type PaymentMethod = "card" | "cash" | "mobile";
 type ReceiptOption = "email" | "sms" | "print";
 
-// Inline API helper function
-const postJSON = async (endpoint: string, data: any) => {
-  const API_BASE = import.meta.env.VITE_API_BASE || "";
-  const response = await fetch(`${API_BASE}${endpoint}`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(data),
-  });
-
-  if (!response.ok) {
-    throw new Error(
-      `API request failed: ${response.status} ${response.statusText}`
-    );
-  }
-
-  return response.json();
-};
-
 export const ShoppingCart: React.FC = () => {
   const {
     cart,
@@ -139,110 +119,11 @@ export const ShoppingCart: React.FC = () => {
         items: [...cart],
         total: cartTotal,
         paymentMethod: selectedPaymentMethod,
-        receiptOptions: selectedReceiptOptions,
-        paymentDetails: {
-          card:
-            selectedPaymentMethod === "card"
-              ? {
-                  lastFour: cardInfo.number.slice(-4),
-                  cardholderName: cardInfo.name,
-                }
-              : undefined,
-          cash:
-            selectedPaymentMethod === "cash"
-              ? {
-                  received: parseFloat(cashInfo.receivedAmount),
-                  change: calculateChange(),
-                }
-              : undefined,
-        },
         timestamp: new Date().toISOString(),
       };
 
       // Save the main sale record
-      const savedSale = await db.sales.create(newSale);
-
-      // Handle customer data if provided
-      if (customerInfo.name || customerInfo.email || customerInfo.phone) {
-        try {
-          const customerData: any = {
-            shopId: currentShop.id,
-            totalSpendDelta: cartTotal,
-          };
-
-          if (customerInfo.name.trim())
-            customerData.name = customerInfo.name.trim();
-          if (customerInfo.email.trim())
-            customerData.email = customerInfo.email.trim();
-          if (customerInfo.phone.trim())
-            customerData.phone = customerInfo.phone.trim();
-
-          await db.customers.upsert(customerData);
-        } catch (error) {
-          console.warn("Failed to save customer data:", error);
-        }
-      }
-
-      // Update daily sales
-      try {
-        db.daily_sales.addOrIncrement(
-          currentShop.id,
-          savedSale.timestamp,
-          cartTotal
-        );
-      } catch (error) {
-        console.warn("Failed to update daily sales:", error);
-      }
-
-      // Create transaction items
-      try {
-        const transactionItems = cart.map((item) => ({
-          saleId: savedSale.id,
-          shopId: currentShop.id,
-          productId: item.id,
-          name: item.name,
-          price: item.price,
-          quantity: item.quantity,
-          subtotal: item.price * item.quantity,
-        }));
-
-        await db.transaction_items.bulkCreate(transactionItems);
-      } catch (error) {
-        console.warn("Failed to save transaction items:", error);
-      }
-
-      // Send to server for additional processing (receipts, etc.)
-      try {
-        // Transform data to match backend expectations
-        const serverPayload = {
-          shopId: currentShop.id.replace(/^shop_/, ""), // Remove "shop_" prefix
-          customer:
-            customerInfo.name || customerInfo.email || customerInfo.phone
-              ? {
-                  name: customerInfo.name || null,
-                  email: customerInfo.email || null,
-                  phone: customerInfo.phone || null,
-                }
-              : {},
-          items: cart.map((item) => ({
-            item_id: null, // Let backend handle this
-            inventory_code: item.id,
-            name: item.name,
-            unit_price: item.price,
-            quantity: item.quantity,
-          })),
-          subtotal: cartTotal,
-          discount: 0,
-          tax: 0,
-          total: cartTotal,
-          paymentMethod: selectedPaymentMethod,
-          createdAt: savedSale.timestamp,
-        };
-
-        await postJSON("/api/sales/complete", serverPayload);
-      } catch (error) {
-        console.warn("Server notification failed:", error);
-      }
+      await db.sales.create(newSale);
 
       // Reset UI state on successful completion
       clearCart();

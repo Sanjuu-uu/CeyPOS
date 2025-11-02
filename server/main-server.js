@@ -44,6 +44,7 @@ app.use(express.json({ limit: "10mb" }));
 import inventoryRouter from "./src/routes/inventory.js";
 import shopRouter from "./src/routes/shop.js";
 import salesRoutes from "./src/routes/sales.js";
+import paymentMethodRoutes from "./src/routes/payment-methods.js";
 
 app.get("/api/health", (req, res) => {
   res.json({ status: "ok" });
@@ -66,6 +67,7 @@ app.post("/api/analytics/chat", async (req, res) => {
 app.use("/api/inventory", inventoryRouter);
 app.use("/api/shop", shopRouter);
 app.use("/api/sales", salesRoutes);
+app.use("/api/payment-methods", paymentMethodRoutes);
 
 // Serve static files from the dist directory (built frontend)
 const distPath = path.join(process.cwd(), "../dist");
@@ -117,7 +119,7 @@ init(server, {
 });
 
 server.listen(PORT, () => {
-  console.log(`Server listening on port ${PORT}`);
+  console.log(`CeyPos Main server running on port ${PORT}`);
 });
 
 // Handle uncaught exceptions and unhandled rejections

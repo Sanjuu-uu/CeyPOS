@@ -13,62 +13,63 @@ export const Checkout: React.FC = () => {
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('card');
   const [isProcessing, setIsProcessing] = useState(false);
   const [isComplete, setIsComplete] = useState(false);
+  const [lastTotal, setLastTotal] = useState(0);
   const [customerEmail, setCustomerEmail] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
   const [emailReceipt, setEmailReceipt] = useState(false);
   const [smsReceipt, setSmsReceipt] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   
-  const handlePayment = () => {
-    if (cart.length === 0 || !currentShop) return;
-    
-    setIsProcessing(true);
-    
-    // Simulate payment processing
-    setTimeout(() => {
-      // Create a new sale record
-      let customerInfo: { name: string; email: string; phone: string } | undefined = undefined;
+  const handlePayment = async () => {
+    if (cart.length === 0 || !currentShop || isProcessing) return;
 
-      if (customerEmail && customerPhone) {
-        customerInfo = {
+    const saleItems = cart.map((item) => ({ ...item }));
+    const saleTotal = cartTotal;
+    const trimmedEmail = customerEmail.trim();
+    const trimmedPhone = customerPhone.trim();
+    const hasContactInfo = Boolean(trimmedEmail || trimmedPhone);
+    const customerInfo = hasContactInfo
+      ? {
           name: 'Customer',
-          email: customerEmail,
-          phone: customerPhone
-        };
-      }
+          email: trimmedEmail || '',
+          phone: trimmedPhone || '',
+        }
+      : undefined;
 
+    setErrorMessage(null);
+    setIsProcessing(true);
 
-      
-      // Add to database
-      db.sales.create({
+    try {
+      await db.sales.create({
         shopId: currentShop.id,
         customerInfo,
-        items: [...cart],
-        total: cartTotal,
+        items: saleItems,
+        total: saleTotal,
         paymentMethod,
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
       });
 
-      
-      setIsProcessing(false);
+      setLastTotal(saleTotal);
       setIsComplete(true);
-      
-      // Simulate receipt sending
-      if (emailReceipt && customerEmail) {
-        // In a real app, this would call an API to send email
-        console.log(`Receipt sent to email: ${customerEmail}`);
+
+      if (emailReceipt && trimmedEmail) {
+        console.log(`Receipt sent to email: ${trimmedEmail}`);
       }
-      
-      if (smsReceipt && customerPhone) {
-        // In a real app, this would call an API to send SMS
-        console.log(`Receipt sent to phone: ${customerPhone}`);
+
+      if (smsReceipt && trimmedPhone) {
+        console.log(`Receipt sent to phone: ${trimmedPhone}`);
       }
-      
-      // Clear cart after successful payment
+
+      clearCart();
       setTimeout(() => {
-        clearCart();
         setCurrentModule('dashboard');
       }, 3000);
-    }, 2000);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to process payment. Please try again.';
+      setErrorMessage(message);
+    } finally {
+      setIsProcessing(false);
+    }
   };
   
   if (cart.length === 0 && !isComplete) {
@@ -100,7 +101,7 @@ export const Checkout: React.FC = () => {
           </div>
           <h2 className="text-xl font-medium text-gray-800 mb-2">Payment Successful!</h2>
           <p className="text-gray-500 mb-6">
-            Total Amount: ${cartTotal.toFixed(2)}
+            Total Amount: ${lastTotal.toFixed(2)}
             {(emailReceipt || smsReceipt) && (
               <span className="block mt-2 text-sm">
                 Receipt {emailReceipt && smsReceipt ? 'emails and texts' : emailReceipt ? 'emails' : 'texts'} have been sent.
@@ -136,7 +137,9 @@ export const Checkout: React.FC = () => {
                   ? 'border-[#ECFF76] bg-[#ECFF76]/10'
                   : 'border-gray-200 hover:bg-gray-50'
               }`}
+              type="button"
               onClick={() => setPaymentMethod('card')}
+              disabled={isProcessing}
             >
               <CreditCard className={`${paymentMethod === 'card' ? 'text-gray-800' : 'text-gray-400'} mb-2`} size={24} />
               <span className={`text-sm font-medium ${paymentMethod === 'card' ? 'text-gray-800' : 'text-gray-500'}`}>
@@ -150,7 +153,9 @@ export const Checkout: React.FC = () => {
                   ? 'border-[#ECFF76] bg-[#ECFF76]/10'
                   : 'border-gray-200 hover:bg-gray-50'
               }`}
+              type="button"
               onClick={() => setPaymentMethod('cash')}
+              disabled={isProcessing}
             >
               <DollarSign className={`${paymentMethod === 'cash' ? 'text-gray-800' : 'text-gray-400'} mb-2`} size={24} />
               <span className={`text-sm font-medium ${paymentMethod === 'cash' ? 'text-gray-800' : 'text-gray-500'}`}>
@@ -164,7 +169,9 @@ export const Checkout: React.FC = () => {
                   ? 'border-[#ECFF76] bg-[#ECFF76]/10'
                   : 'border-gray-200 hover:bg-gray-50'
               }`}
+              type="button"
               onClick={() => setPaymentMethod('mobile')}
+              disabled={isProcessing}
             >
               <QrCode className={`${paymentMethod === 'mobile' ? 'text-gray-800' : 'text-gray-400'} mb-2`} size={24} />
               <span className={`text-sm font-medium ${paymentMethod === 'mobile' ? 'text-gray-800' : 'text-gray-500'}`}>
@@ -241,6 +248,7 @@ export const Checkout: React.FC = () => {
                 checked={emailReceipt}
                 onChange={() => setEmailReceipt(!emailReceipt)}
                 className="h-4 w-4 text-[#ECFF76] focus:ring-[#ECFF76]/50 border-gray-300 rounded"
+                disabled={isProcessing}
               />
               <label htmlFor="emailReceipt" className="text-sm text-gray-700 font-medium">
                 Email Receipt
@@ -264,6 +272,7 @@ export const Checkout: React.FC = () => {
                 checked={smsReceipt}
                 onChange={() => setSmsReceipt(!smsReceipt)}
                 className="h-4 w-4 text-[#ECFF76] focus:ring-[#ECFF76]/50 border-gray-300 rounded"
+                disabled={isProcessing}
               />
               <label htmlFor="smsReceipt" className="text-sm text-gray-700 font-medium">
                 SMS Receipt
@@ -286,6 +295,7 @@ export const Checkout: React.FC = () => {
                 id="printReceipt"
                 defaultChecked
                 className="h-4 w-4 text-[#ECFF76] focus:ring-[#ECFF76]/50 border-gray-300 rounded"
+                disabled={isProcessing}
               />
               <label htmlFor="printReceipt" className="text-sm text-gray-700 font-medium">
                 Print Receipt
@@ -330,18 +340,11 @@ export const Checkout: React.FC = () => {
               </div>
             </div>
             
-            {/* Payment Button */}
-            <Button
-              variant="primary"
-              fullWidth
-              size="lg"
-              disabled={isProcessing || cart.length === 0}
-              onClick={handlePayment}
-              className="mt-4"
-              icon={isProcessing ? undefined : <CreditCard size={18} />}
-            >
-              {isProcessing ? 'Processing...' : `Pay $${cartTotal.toFixed(2)}`}
-            </Button>
+            {errorMessage && (
+              <div className="mt-2 rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600">
+                {errorMessage}
+              </div>
+            )}
 
             {/* Payment Button */}
             <Button

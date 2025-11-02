@@ -126,7 +126,7 @@ server.tool(
 async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.error('CeyPoS MCP server is running...');
+  console.log('CeyPos MCP server running...');
 }
 
 main().catch((error) => {

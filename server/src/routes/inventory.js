@@ -1,7 +1,8 @@
 import express from "express";
 import multer from "multer";
 import ExcelJS from "exceljs";
-import { openDb, dbExists, insertInventoryRows } from "../utils/db.js";
+import { openDb, dbExists } from "../utils/db.js";
+import { upsertProducts, deleteProducts } from "../services/inventory-service.js";
 
 const router = express.Router();
 const upload = multer({
@@ -71,6 +72,17 @@ router.post("/upload", (req, res, next) => {
     }
 
     let db;
+    const releaseDb = () => {
+      if (db) {
+        try {
+          db.close();
+        } catch (closeErr) {
+          console.warn("Failed to close inventory DB", closeErr);
+        }
+        db = null;
+      }
+    };
+
     try {
       db = openDb(shopId);
     } catch (dbErr) {
@@ -193,7 +205,7 @@ router.post("/upload", (req, res, next) => {
       const rowsToInsert = [];
       // Query all barcode_ids in DB
       try {
-        const stmt = db.prepare('SELECT barcode_id FROM inventory WHERE barcode_id IS NOT NULL');
+    const stmt = db.prepare('SELECT barcode_id FROM inventory WHERE barcode_id IS NOT NULL');
         for (const row of stmt.iterate()) {
           if (row.barcode_id) dbBarcodes.add(String(row.barcode_id).trim());
         }
@@ -214,11 +226,16 @@ router.post("/upload", (req, res, next) => {
 
     if (!validRows.length) {
       console.error(`[INVENTORY UPLOAD ERROR] No valid rows`, { time: new Date().toISOString(), shopId, file: req.file?.originalname, validationIssues });
+      releaseDb();
       return res.status(400).json({ error: "No valid rows after parsing. Please fix errors in your file and try again.", validationIssues });
     }
 
     try {
-      insertInventoryRows(db, validRows);
+      releaseDb();
+      upsertProducts(shopId, validRows, {
+        metadata: { source: "inventory-upload" },
+        actor: req.user?.id || null,
+      });
     } catch (dbInsertErr) {
       console.error(`[INVENTORY UPLOAD ERROR] DB insert failed`, { time: new Date().toISOString(), shopId, file: req.file?.originalname, error: dbInsertErr });
       return res.status(500).json({ error: "Failed to insert inventory rows into database.", detail: String(dbInsertErr.message || dbInsertErr) });
@@ -238,6 +255,10 @@ router.post("/upload", (req, res, next) => {
   } catch (err) {
     console.error(`[INVENTORY UPLOAD ERROR] Unexpected server error`, { time: new Date().toISOString(), error: err });
     res.status(500).json({ error: "Unexpected server error during inventory import.", detail: String(err.message || err) });
+  } finally {
+    // ensure db released if we exited early without inserting
+    // (releaseDb is safe if db already null)
+    if (typeof releaseDb === "function") releaseDb();
   }
 });
 
@@ -285,6 +306,38 @@ router.get("/template", async (req, res) => {
   } catch (err) {
     console.error('Failed to generate inventory template', err);
     res.status(500).json({ error: 'Failed to generate Excel template' });
+  }
+});
+
+router.delete("/:shopId/:inventoryCode", async (req, res) => {
+  const { shopId, inventoryCode } = req.params;
+
+  if (!shopId || !inventoryCode) {
+    return res.status(400).json({ ok: false, error: "missing_parameters" });
+  }
+
+  if (!dbExists(shopId)) {
+    return res.status(404).json({ ok: false, error: "shop_not_found" });
+  }
+
+  try {
+    const removed = deleteProducts(shopId, [inventoryCode], {
+      actor: req.user?.id || null,
+    });
+
+    if (!removed.length) {
+      return res.status(404).json({ ok: false, error: "product_not_found" });
+    }
+
+    res.json({ ok: true, codes: removed });
+  } catch (err) {
+    console.error("[INVENTORY DELETE ERROR]", {
+      time: new Date().toISOString(),
+      shopId,
+      inventoryCode,
+      error: err,
+    });
+    res.status(500).json({ ok: false, error: "failed_to_delete_product" });
   }
 });
 

@@ -153,11 +153,14 @@ export const AppProvider: React.FC<AppProviderProps> = ({
   };
 
   const updateCartItemQuantity = (productId: string, quantity: number) => {
-    setCart((prevCart) =>
-      prevCart.map((item) =>
+    setCart((prevCart) => {
+      if (quantity <= 0) {
+        return prevCart.filter((item) => item.id !== productId);
+      }
+      return prevCart.map((item) =>
         item.id === productId ? { ...item, quantity } : item
-      )
-    );
+      );
+    });
   };
 
   const clearCart = () => {

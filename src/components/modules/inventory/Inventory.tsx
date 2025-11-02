@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Card } from '../../ui/Card';
 import { Input } from '../../ui/Input';
 import { Button } from '../../ui/Button';
@@ -15,6 +15,11 @@ export const Inventory: React.FC = () => {
   const [isAddingProduct, setIsAddingProduct] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [showImportWizard, setShowImportWizard] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [globalError, setGlobalError] = useState<string | null>(null);
+  const [deleteInProgress, setDeleteInProgress] = useState<string | null>(null);
   
   // New product form state
   const [newProduct, setNewProduct] = useState({
@@ -26,13 +31,36 @@ export const Inventory: React.FC = () => {
     imageUrl: ''
   });
 
-  // Get all products for the current shop
-  const products = currentShop 
-    ? db.products.getByShopId(currentShop.id)
-    : [];
+  useEffect(() => {
+    if (!currentShop) {
+      setProducts([]);
+      setGlobalError(null);
+      return;
+    }
 
-  // Get all unique categories
-  const categories = [...new Set(products.map(product => product.category))];
+    const shopProducts = db.products.getByShopId(currentShop.id);
+    setProducts(shopProducts);
+
+    const handler = (payload: any) => {
+      if (!payload?.shopId || payload.shopId !== currentShop.id) return;
+      setProducts(payload.items || []);
+    };
+
+    const unsubscribe = db.on('inventoryUpdated', handler);
+
+    return () => {
+      if (typeof unsubscribe === 'function') {
+        unsubscribe();
+      } else {
+        db.off('inventoryUpdated', handler);
+      }
+    };
+  }, [currentShop]);
+
+  const categories = useMemo(
+    () => [...new Set(products.map((product) => product.category))],
+    [products]
+  );
 
   // Filter products based on search term and selected category
   const filteredProducts = products.filter(product => {
@@ -66,35 +94,67 @@ export const Inventory: React.FC = () => {
     });
     setEditingProduct(null);
     setIsAddingProduct(false);
+    setErrorMessage(null);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!currentShop) return;
-    
-    if (editingProduct) {
-      // Update existing product
-      db.products.update(editingProduct);
-    } else {
-      // Create new product
-      db.products.create({
-        shopId: currentShop.id,
-        name: newProduct.name,
-        category: newProduct.category,
-        price: parseFloat(newProduct.price),
-        stock: parseInt(newProduct.stock),
-        barcode: newProduct.barcode,
-        imageUrl: newProduct.imageUrl
-      });
+    if (!currentShop || isSaving) return;
+
+    const parsedPrice = parseFloat(newProduct.price);
+    const parsedStock = parseInt(newProduct.stock, 10);
+    if (!editingProduct && (Number.isNaN(parsedPrice) || Number.isNaN(parsedStock))) {
+      setErrorMessage('Please provide valid price and stock values.');
+      return;
     }
-    
-    resetForm();
+
+  setIsSaving(true);
+  setGlobalError(null);
+    setErrorMessage(null);
+
+    try {
+      if (editingProduct) {
+        await db.products.update({ ...editingProduct });
+      } else {
+        await db.products.create({
+          shopId: currentShop.id,
+          name: newProduct.name,
+          category: newProduct.category,
+          price: parsedPrice,
+          stock: parsedStock,
+          barcode: newProduct.barcode,
+          imageUrl: newProduct.imageUrl,
+        });
+      }
+
+      resetForm();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to save product. Please try again.';
+      setErrorMessage(message);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleEditProduct = (product: Product) => {
     setEditingProduct(product);
     setIsAddingProduct(true);
+  };
+
+  const handleDeleteProduct = async (product: Product) => {
+    if (!currentShop) return;
+
+    setGlobalError(null);
+    setDeleteInProgress(product.id);
+    try {
+      await db.products.delete(product.id, currentShop.id);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to delete product. Please try again.';
+      setGlobalError(message);
+    } finally {
+      setDeleteInProgress(null);
+    }
   };
 
   return (
@@ -141,6 +201,7 @@ export const Inventory: React.FC = () => {
               value={editingProduct ? editingProduct.name : newProduct.name}
               onChange={handleInputChange}
               required
+              disabled={isSaving}
             />
             
             <div>
@@ -153,6 +214,7 @@ export const Inventory: React.FC = () => {
                 onChange={handleInputChange}
                 className="w-full h-10 pl-3 pr-10 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#ECFF76]/20 focus:border-[#ECFF76]"
                 required
+                disabled={isSaving}
               >
                 <option value="">Select Category</option>
                 {categories.map((category) => (
@@ -173,6 +235,7 @@ export const Inventory: React.FC = () => {
               value={editingProduct ? editingProduct.price.toString() : newProduct.price}
               onChange={handleInputChange}
               required
+              disabled={isSaving}
             />
             
             <Input
@@ -183,6 +246,7 @@ export const Inventory: React.FC = () => {
               value={editingProduct ? editingProduct.stock.toString() : newProduct.stock}
               onChange={handleInputChange}
               required
+              disabled={isSaving}
             />
             
             <Input
@@ -191,6 +255,7 @@ export const Inventory: React.FC = () => {
               value={editingProduct ? editingProduct.barcode : newProduct.barcode}
               onChange={handleInputChange}
               required
+              disabled={isSaving}
             />
             
             <Input
@@ -198,6 +263,7 @@ export const Inventory: React.FC = () => {
               name="imageUrl"
               value={editingProduct ? editingProduct.imageUrl || '' : newProduct.imageUrl}
               onChange={handleInputChange}
+              disabled={isSaving}
             />
             
             <div className="md:col-span-2 flex justify-end space-x-3 mt-2">
@@ -205,16 +271,23 @@ export const Inventory: React.FC = () => {
                 variant="outline"
                 type="button"
                 onClick={resetForm}
+                disabled={isSaving}
               >
                 Cancel
               </Button>
               <Button
                 variant="primary"
                 type="submit"
+                disabled={isSaving}
               >
-                {editingProduct ? 'Update Product' : 'Add Product'}
+                {isSaving ? 'Saving...' : editingProduct ? 'Update Product' : 'Add Product'}
               </Button>
             </div>
+            {errorMessage && (
+              <div className="md:col-span-2 rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600">
+                {errorMessage}
+              </div>
+            )}
           </form>
         </Card>
       )}
@@ -249,6 +322,11 @@ export const Inventory: React.FC = () => {
       
       {/* Products Table */}
       <Card className="border border-gray-100">
+        {globalError && (
+          <div className="mb-4 rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600">
+            {globalError}
+          </div>
+        )}
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-gray-200">
             <thead>
@@ -325,8 +403,12 @@ export const Inventory: React.FC = () => {
                         <Edit size={16} />
                       </button>
                       <button
-                        onClick={() => {}} // Not implemented for demo
-                        className="text-red-500 hover:text-red-700"
+                        onClick={() => handleDeleteProduct(product)}
+                        disabled={deleteInProgress === product.id}
+                        className={`text-red-500 hover:text-red-700 ${
+                          deleteInProgress === product.id ? 'opacity-50 cursor-not-allowed' : ''
+                        }`}
+                        aria-label={`Delete ${product.name}`}
                       >
                         <Trash2 size={16} />
                       </button>

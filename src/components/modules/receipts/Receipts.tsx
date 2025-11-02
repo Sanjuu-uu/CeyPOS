@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Card } from '../../ui/Card';
 import { Input } from '../../ui/Input';
 import { Button } from '../../ui/Button';
@@ -9,11 +9,84 @@ import { Sale } from '../../../types';
 
 export const Receipts: React.FC = () => {
   const { currentShop } = useApp();
-  const [searchTerm, setSearchTerm] = React.useState('');
-  const [selectedReceipt, setSelectedReceipt] = React.useState<Sale | null>(null);
-  
-  // Get all sales for the current shop
-  const sales = currentShop ? db.sales.getByShopId(currentShop.id) : [];
+  const [searchTerm, setSearchTerm] = useState('');
+  const [sales, setSales] = useState<Sale[]>([]);
+  const [selectedSaleId, setSelectedSaleId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!currentShop) {
+      setSales([]);
+      setSelectedSaleId(null);
+      return;
+    }
+
+    const shopId = currentShop.id;
+
+    const applySales = (nextSales: Sale[]) => {
+      setSales(nextSales);
+      if (!nextSales.length) {
+        setSelectedSaleId(null);
+        return;
+      }
+      setSelectedSaleId((prevId) => {
+        if (!prevId) {
+          return nextSales[0].id;
+        }
+        return nextSales.some((sale) => sale.id === prevId)
+          ? prevId
+          : nextSales[0].id;
+      });
+    };
+
+    const bootstrap = () => {
+      const currentSales = db.sales.getByShopId(shopId);
+      applySales(currentSales);
+    };
+
+    const handleSalesUpdated = (payload: any) => {
+      if (!payload?.shopId || payload.shopId !== shopId) {
+        return;
+      }
+      const items: Sale[] = payload?.items || db.sales.getByShopId(shopId);
+      applySales(items);
+    };
+
+    const handleSaleCreated = (payload: any) => {
+      if (!payload?.shopId || payload.shopId !== shopId) {
+        return;
+      }
+      bootstrap();
+    };
+
+    bootstrap();
+
+    const unsubscribeUpdated = db.on('salesUpdated', handleSalesUpdated);
+    const unsubscribeCreated = db.on('saleCreated', handleSaleCreated);
+
+    return () => {
+      if (typeof unsubscribeUpdated === 'function') {
+        unsubscribeUpdated();
+      } else {
+        db.off('salesUpdated', handleSalesUpdated);
+      }
+
+      if (typeof unsubscribeCreated === 'function') {
+        unsubscribeCreated();
+      } else {
+        db.off('saleCreated', handleSaleCreated);
+      }
+    };
+  }, [currentShop]);
+
+  const selectedReceipt = useMemo(
+    () => (selectedSaleId ? sales.find((sale) => sale.id === selectedSaleId) ?? null : null),
+    [selectedSaleId, sales]
+  );
+
+  const receiptNumber = (saleId: string) => {
+    const parts = saleId.split('_').filter(Boolean);
+    return parts.length ? parts[parts.length - 1] : saleId;
+  };
   
   // Filter sales based on search term
   const filteredSales = searchTerm 
@@ -64,15 +137,15 @@ export const Receipts: React.FC = () => {
                 <div
                   key={sale.id}
                   className={`p-3 rounded-lg border-2 cursor-pointer transition-colors ${
-                    selectedReceipt?.id === sale.id
+                    selectedSaleId === sale.id
                       ? 'border-[#ECFF76] bg-[#ECFF76]/10'
                       : 'border-gray-100 hover:bg-gray-50'
                   }`}
-                  onClick={() => setSelectedReceipt(sale)}
+                  onClick={() => setSelectedSaleId(sale.id)}
                 >
                   <div className="flex justify-between mb-1">
                     <span className="font-medium text-gray-800">
-                      #{sale.id.split('_')[1]}
+                      #{receiptNumber(sale.id)}
                     </span>
                     <span className="text-sm text-gray-500">
                       ${sale.total.toFixed(2)}
@@ -128,7 +201,7 @@ export const Receipts: React.FC = () => {
                 </p>
                 <div className="border-b-2 border-dashed border-gray-200 my-4"></div>
                 <div className="flex justify-between text-sm text-gray-600">
-                  <span>Receipt #: {selectedReceipt.id.split('_')[1]}</span>
+                  <span>Receipt #: {receiptNumber(selectedReceipt.id)}</span>
                   <span>{formatDate(selectedReceipt.timestamp)}</span>
                 </div>
               </div>

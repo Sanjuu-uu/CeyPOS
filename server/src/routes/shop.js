@@ -12,6 +12,7 @@ import {
   getDbFileName,
   sanitizeForFilename,
 } from "../utils/db.js";
+import { getShopSnapshot } from "../services/shop-snapshot.js";
 
 const router = express.Router();
 
@@ -195,6 +196,26 @@ router.get("/:shopId/meta", (req, res) => {
       error: "Failed to read shop data",
       detail: String(err.message || err),
     });
+  }
+});
+
+// Return consolidated snapshot for realtime clients
+router.get("/:shopId/snapshot", (req, res) => {
+  try {
+    const { shopId } = req.params;
+    if (!shopId) {
+      return res.status(400).json({ error: "shopId is required" });
+    }
+
+    if (!dbExists(shopId)) {
+      return res.status(404).json({ error: "Shop database not found" });
+    }
+
+    const snapshot = getShopSnapshot(shopId);
+    res.json({ ok: true, snapshot });
+  } catch (err) {
+    console.error("GET /shop/:shopId/snapshot error", err);
+    res.status(500).json({ error: "Failed to load snapshot", detail: String(err.message || err) });
   }
 });
 

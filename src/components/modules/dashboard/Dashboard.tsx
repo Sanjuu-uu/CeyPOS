@@ -1,4 +1,4 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Card } from "../../ui/Card";
 import {
   DollarSign,
@@ -15,9 +15,10 @@ import { useUser } from "@clerk/clerk-react";
 import { useNavigate } from "react-router-dom";
 
 export const Dashboard: React.FC = () => {
-  const { currentShop } = useApp();
+  const { currentShop, setCurrentModule } = useApp();
   const { isLoaded: isUserLoaded } = useUser();
   const navigate = useNavigate();
+  const [sales, setSales] = useState<Sale[]>([]);
 
   // --- ADDED: Gatekeeper Logic ---
   // This effect checks if the user is loaded and if they have a shop.
@@ -38,26 +39,73 @@ export const Dashboard: React.FC = () => {
   }, [isUserLoaded, currentShop, navigate]);
   // --- END ADDED ---
 
-  // Calculate dashboard statistics
-  const calculateStats = () => {
-    // This check is still good. If currentShop is null (e.g., during redirect),
-    // it prevents errors.
-    if (!currentShop)
+  useEffect(() => {
+    if (!currentShop) {
+      setSales([]);
+      return;
+    }
+
+    const shopId = currentShop.id;
+
+    const applySales = (nextSales: Sale[]) => {
+      setSales(nextSales.slice());
+    };
+
+    const bootstrap = () => {
+      const nextSales = db.sales.getByShopId(shopId);
+      applySales(nextSales);
+    };
+
+    const handleSalesUpdated = (payload: any) => {
+      if (!payload?.shopId || payload.shopId !== shopId) {
+        return;
+      }
+      const items: Sale[] = payload?.items || db.sales.getByShopId(shopId);
+      applySales(items);
+    };
+
+    const handleSaleCreated = (payload: any) => {
+      if (!payload?.shopId || payload.shopId !== shopId) {
+        return;
+      }
+      bootstrap();
+    };
+
+    bootstrap();
+
+    const unsubscribeUpdated = db.on("salesUpdated", handleSalesUpdated);
+    const unsubscribeCreated = db.on("saleCreated", handleSaleCreated);
+
+    return () => {
+      if (typeof unsubscribeUpdated === "function") {
+        unsubscribeUpdated();
+      } else {
+        db.off("salesUpdated", handleSalesUpdated);
+      }
+
+      if (typeof unsubscribeCreated === "function") {
+        unsubscribeCreated();
+      } else {
+        db.off("saleCreated", handleSaleCreated);
+      }
+    };
+  }, [currentShop]);
+
+  const stats = useMemo(() => {
+    if (!sales.length) {
       return {
         totalSales: 0,
         totalRevenue: 0,
         averageOrderValue: 0,
         customerCount: 0,
       };
-
-    const sales = db.sales.getByShopId(currentShop.id);
+    }
 
     const totalSales = sales.length;
     const totalRevenue = sales.reduce((sum, sale) => sum + sale.total, 0);
     const averageOrderValue = totalSales > 0 ? totalRevenue / totalSales : 0;
 
-    // Count unique customers
-    const uniqueCustomers = new Set();
+    const uniqueCustomers = new Set<string>();
     sales.forEach((sale) => {
       if (sale.customerInfo?.email) {
         uniqueCustomers.add(sale.customerInfo.email);
@@ -70,22 +118,16 @@ export const Dashboard: React.FC = () => {
       averageOrderValue,
       customerCount: uniqueCustomers.size,
     };
-  };
+  }, [sales]);
 
-  const getRecentSales = (): Sale[] => {
-    if (!currentShop) return [];
-    const sales = db.sales.getByShopId(currentShop.id);
-    // Sort by timestamp, most recent first
-    return [...sales]
+  const recentSales = useMemo(() => {
+    return sales
+      .slice()
       .sort(
-        (a, b) =>
-          new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+        (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
       )
       .slice(0, 5);
-  };
-
-  const stats = calculateStats();
-  const recentSales = getRecentSales();
+  }, [sales]);
 
   const statCards = [
     {
@@ -224,7 +266,7 @@ export const Dashboard: React.FC = () => {
           <div className="space-y-4">
             <button
               className="w-full flex items-center justify-between p-3 rounded-lg bg-gray-50 hover:bg-gray-100 transition-colors"
-              onClick={() => {}}
+              onClick={() => setCurrentModule("pos")}
             >
               <div className="flex items-center">
                 <ShoppingBag className="text-gray-500 mr-3" size={18} />
@@ -235,7 +277,7 @@ export const Dashboard: React.FC = () => {
 
             <button
               className="w-full flex items-center justify-between p-3 rounded-lg bg-gray-50 hover:bg-gray-100 transition-colors"
-              onClick={() => {}}
+              onClick={() => setCurrentModule("inventory")}
             >
               <div className="flex items-center">
                 <Package className="text-gray-500 mr-3" size={18} />
@@ -246,7 +288,7 @@ export const Dashboard: React.FC = () => {
 
             <button
               className="w-full flex items-center justify-between p-3 rounded-lg bg-gray-50 hover:bg-gray-100 transition-colors"
-              onClick={() => {}}
+              onClick={() => setCurrentModule("reports")}
             >
               <div className="flex items-center">
                 <FileText className="text-gray-500 mr-3" size={18} />

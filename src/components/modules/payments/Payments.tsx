@@ -1,7 +1,6 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Card } from '../../ui/Card';
 import { Button } from '../../ui/Button';
-import { Input } from '../../ui/Input';
 import { 
   CreditCard, 
   Wallet, 
@@ -11,21 +10,67 @@ import {
   Settings, 
   Check, 
   X,
-  QrCode,
   Shield,
   TrendingUp
 } from 'lucide-react';
 import { useApp } from '../../../context/AppContext';
 import { db } from '../../../lib/db';
+import { Sale } from '../../../types';
 
-interface PaymentMethod {
-  id: string;
+type PaymentMethodId = 'card' | 'digital_wallet' | 'mobile' | 'cash';
+
+interface PaymentMethodDefinition {
+  id: PaymentMethodId;
   name: string;
   type: 'card' | 'digital' | 'cash';
-  icon: React.ReactNode;
-  enabled: boolean;
-  fee: number; // percentage
+  fee: number;
   description: string;
+}
+
+const PAYMENT_METHOD_ORDER: PaymentMethodId[] = ['card', 'digital_wallet', 'mobile', 'cash'];
+
+const PAYMENT_METHOD_DEFINITIONS: Record<PaymentMethodId, PaymentMethodDefinition> = {
+  card: {
+    id: 'card',
+    name: 'Credit/Debit Cards',
+    type: 'card',
+    fee: 2.9,
+    description: 'Accept Visa, Mastercard, American Express',
+  },
+  digital_wallet: {
+    id: 'digital_wallet',
+    name: 'Digital Wallet',
+    type: 'digital',
+    fee: 1.5,
+    description: 'Apple Pay, Google Pay, Samsung Pay',
+  },
+  mobile: {
+    id: 'mobile',
+    name: 'Mobile Payment',
+    type: 'digital',
+    fee: 1.0,
+    description: 'QR code and mobile app payments',
+  },
+  cash: {
+    id: 'cash',
+    name: 'Cash',
+    type: 'cash',
+    fee: 0,
+    description: 'Traditional cash payments',
+  },
+};
+
+const DEFAULT_ENABLED_METHODS: PaymentMethodId[] = ['card', 'digital_wallet', 'cash'];
+
+function coerceMethodIds(methods: string[] | undefined | null): PaymentMethodId[] {
+  if (!methods) return DEFAULT_ENABLED_METHODS.slice();
+  const set = new Set<PaymentMethodId>();
+  for (const method of methods) {
+    if (PAYMENT_METHOD_ORDER.includes(method as PaymentMethodId)) {
+      set.add(method as PaymentMethodId);
+    }
+  }
+  return set.size ? Array.from(set) : DEFAULT_ENABLED_METHODS.slice();
 }
 
 interface Transaction {
@@ -40,72 +85,136 @@ interface Transaction {
 export const Payments: React.FC = () => {
   const { currentShop } = useApp();
   const [activeTab, setActiveTab] = useState<'overview' | 'methods' | 'transactions' | 'settings'>('overview');
-  const [isAddingMethod, setIsAddingMethod] = useState(false);
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [enabledMethods, setEnabledMethods] = useState<PaymentMethodId[]>(DEFAULT_ENABLED_METHODS);
+  const [methodsLoading, setMethodsLoading] = useState(false);
+  const [methodsError, setMethodsError] = useState<string | null>(null);
+  const [pendingMethodId, setPendingMethodId] = useState<PaymentMethodId | null>(null);
 
-  // Sample payment methods
-  const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([
-    {
-      id: '1',
-      name: 'Credit/Debit Cards',
-      type: 'card',
-      icon: <CreditCard size={20} />,
-      enabled: true,
-      fee: 2.9,
-      description: 'Accept Visa, Mastercard, American Express'
-    },
-    {
-      id: '2',
-      name: 'Digital Wallet',
-      type: 'digital',
-      icon: <Wallet size={20} />,
-      enabled: true,
-      fee: 1.5,
-      description: 'Apple Pay, Google Pay, Samsung Pay'
-    },
-    {
-      id: '3',
-      name: 'Mobile Payment',
-      type: 'digital',
-      icon: <Smartphone size={20} />,
-      enabled: false,
-      fee: 1.0,
-      description: 'QR code and mobile app payments'
-    },
-    {
-      id: '4',
-      name: 'Cash',
-      type: 'cash',
-      icon: <DollarSign size={20} />,
-      enabled: true,
-      fee: 0,
-      description: 'Traditional cash payments'
-    }
-  ]);
-
-  // Get sample transactions
-  const getTransactions = (): Transaction[] => {
-    if (!currentShop) return [];
-    
-    const sales = db.sales.getByShopId(currentShop.id);
-    return sales.slice(0, 10).map((sale, index) => ({
+  const mapSalesToTransactions = (sales: Sale[]): Transaction[] =>
+    sales.map((sale) => ({
       id: sale.id,
       amount: sale.total,
       method: sale.paymentMethod,
       status: 'completed' as const,
       timestamp: sale.timestamp,
-      reference: `TXN-${sale.id.slice(-8).toUpperCase()}`
+      reference: `TXN-${(sale.id || '').slice(-8).toUpperCase()}`,
     }));
-  };
 
-  const transactions = getTransactions();
+  useEffect(() => {
+    if (!currentShop) {
+      setTransactions([]);
+      return;
+    }
+
+    const shopId = currentShop.id;
+
+    const applyTransactions = (sales: Sale[]) => {
+      const mapped = mapSalesToTransactions(sales);
+      setTransactions(mapped.slice(0, 50));
+    };
+
+    const bootstrap = () => {
+      const sales = db.sales.getByShopId(shopId);
+      applyTransactions(sales);
+    };
+
+    const handleSalesUpdated = (payload: any) => {
+      if (!payload?.shopId || payload.shopId !== shopId) {
+        return;
+      }
+      const items: Sale[] = payload?.items || db.sales.getByShopId(shopId);
+      applyTransactions(items);
+    };
+
+    const handleSaleCreated = (payload: any) => {
+      if (!payload?.shopId || payload.shopId !== shopId) {
+        return;
+      }
+      bootstrap();
+    };
+
+    bootstrap();
+
+    const unsubscribeUpdated = db.on('salesUpdated', handleSalesUpdated);
+    const unsubscribeCreated = db.on('saleCreated', handleSaleCreated);
+
+    return () => {
+      if (typeof unsubscribeUpdated === 'function') {
+        unsubscribeUpdated();
+      } else {
+        db.off('salesUpdated', handleSalesUpdated);
+      }
+
+      if (typeof unsubscribeCreated === 'function') {
+        unsubscribeCreated();
+      } else {
+        db.off('saleCreated', handleSaleCreated);
+      }
+    };
+  }, [currentShop]);
+
+  useEffect(() => {
+    if (!currentShop) {
+      setEnabledMethods(DEFAULT_ENABLED_METHODS);
+      return;
+    }
+
+    let cancelled = false;
+    const shopId = currentShop.id;
+    const cached = db.paymentMethods.getByShopId(shopId);
+    if (cached.length) {
+      setEnabledMethods(coerceMethodIds(cached));
+    }
+
+    const handler = (payload: any) => {
+      if (cancelled) return;
+      if (!payload?.shopId || payload.shopId !== currentShop.id) {
+        return;
+      }
+      setEnabledMethods(coerceMethodIds(payload.methods));
+    };
+
+    const unsubscribe = db.on('paymentMethodsUpdated', handler);
+
+    setMethodsLoading(true);
+    setMethodsError(null);
+    db.paymentMethods
+      .refresh(shopId)
+      .then((methods) => {
+        if (!cancelled) {
+          setEnabledMethods(coerceMethodIds(methods));
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setMethodsError(
+            error instanceof Error ? error.message : 'Failed to load payment methods.'
+          );
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setMethodsLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+      if (typeof unsubscribe === 'function') {
+        unsubscribe();
+      } else {
+        db.off('paymentMethodsUpdated', handler);
+      }
+    };
+  }, [currentShop]);
 
   // Calculate payment statistics
-  const calculateStats = () => {
+  const stats = useMemo(() => {
     const totalTransactions = transactions.length;
     const totalAmount = transactions.reduce((sum, txn) => sum + txn.amount, 0);
     const avgTransaction = totalTransactions > 0 ? totalAmount / totalTransactions : 0;
-    
-    // Payment method breakdown
+
     const methodBreakdown = transactions.reduce((acc, txn) => {
       acc[txn.method] = (acc[txn.method] || 0) + txn.amount;
       return acc;
@@ -115,18 +224,25 @@ export const Payments: React.FC = () => {
       totalTransactions,
       totalAmount,
       avgTransaction,
-      methodBreakdown
+      methodBreakdown,
     };
-  };
+  }, [transactions]);
 
-  const stats = calculateStats();
-
-  const togglePaymentMethod = (id: string) => {
-    setPaymentMethods(prev => 
-      prev.map(method => 
-        method.id === id ? { ...method, enabled: !method.enabled } : method
-      )
-    );
+  const togglePaymentMethod = async (id: PaymentMethodId) => {
+    if (!currentShop) return;
+    setMethodsError(null);
+    setPendingMethodId(id);
+    try {
+      const nextEnabled = enabledMethods.includes(id)
+        ? enabledMethods.filter((method) => method !== id)
+        : [...enabledMethods, id];
+      const updated = await db.paymentMethods.setEnabled(currentShop.id, nextEnabled);
+      setEnabledMethods(coerceMethodIds(updated));
+    } catch (error) {
+      setMethodsError(error instanceof Error ? error.message : 'Failed to update payment methods.');
+    } finally {
+      setPendingMethodId(null);
+    }
   };
 
   const formatCurrency = (amount: number) => {
@@ -152,7 +268,7 @@ export const Payments: React.FC = () => {
         <Button
           variant="primary"
           icon={<Plus size={16} />}
-          onClick={() => setIsAddingMethod(true)}
+          onClick={() => setActiveTab('methods')}
         >
           Add Payment Method
         </Button>
@@ -275,35 +391,53 @@ export const Payments: React.FC = () => {
       {/* Payment Methods Tab */}
       {activeTab === 'methods' && (
         <div className="space-y-6">
+          {methodsError && (
+            <div className="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600">
+              {methodsError}
+            </div>
+          )}
+          {methodsLoading && (
+            <div className="rounded border border-blue-100 bg-blue-50 px-3 py-2 text-sm text-blue-600">
+              Loading payment methods...
+            </div>
+          )}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {paymentMethods.map(method => (
-              <Card key={method.id} className="border border-gray-100">
+            {PAYMENT_METHOD_ORDER.map((methodId) => {
+              const definition = PAYMENT_METHOD_DEFINITIONS[methodId];
+              const enabled = enabledMethods.includes(methodId);
+              return (
+                <Card key={methodId} className="border border-gray-100">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center space-x-3">
                     <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
-                      method.enabled ? 'bg-green-100 text-green-600' : 'bg-gray-100 text-gray-400'
+                      enabled ? 'bg-green-100 text-green-600' : 'bg-gray-100 text-gray-400'
                     }`}>
-                      {method.icon}
+                      {methodId === 'card' && <CreditCard size={20} />}
+                      {methodId === 'digital_wallet' && <Wallet size={20} />}
+                      {methodId === 'mobile' && <Smartphone size={20} />}
+                      {methodId === 'cash' && <DollarSign size={20} />}
                     </div>
                     <div>
-                      <h3 className="font-medium text-gray-900">{method.name}</h3>
-                      <p className="text-sm text-gray-500">{method.description}</p>
-                      <p className="text-xs text-gray-400">Fee: {method.fee}%</p>
+                      <h3 className="font-medium text-gray-900">{definition.name}</h3>
+                      <p className="text-sm text-gray-500">{definition.description}</p>
+                      <p className="text-xs text-gray-400">Fee: {definition.fee}%</p>
                     </div>
                   </div>
                   <button
-                    onClick={() => togglePaymentMethod(method.id)}
+                    onClick={() => togglePaymentMethod(methodId)}
+                    disabled={methodsLoading || pendingMethodId === methodId}
                     className={`w-12 h-6 rounded-full transition-colors ${
-                      method.enabled ? 'bg-verde-primary' : 'bg-gray-200'
+                      enabled ? 'bg-verde-primary' : 'bg-gray-200'
                     }`}
                   >
                     <div className={`w-5 h-5 bg-white rounded-full shadow transition-transform ${
-                      method.enabled ? 'translate-x-6' : 'translate-x-0.5'
+                      enabled ? 'translate-x-6' : 'translate-x-0.5'
                     }`} />
                   </button>
                 </div>
               </Card>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}
