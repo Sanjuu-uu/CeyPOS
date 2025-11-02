@@ -1,112 +1,163 @@
-import React from 'react';
-import { Card } from '../../ui/Card';
-import { DollarSign, ShoppingBag, TrendingUp, Users, Package, FileText } from 'lucide-react';
-import { db } from '../../../lib/db';
-import { useApp } from '../../../context/AppContext';
-import { Sale } from '../../../types';
+import React, { useEffect } from "react";
+import { Card } from "../../ui/Card";
+import {
+  DollarSign,
+  ShoppingBag,
+  TrendingUp,
+  Users,
+  Package,
+  FileText,
+} from "lucide-react";
+import { db } from "../../../lib/db";
+import { useApp } from "../../../context/AppContext";
+import { Sale } from "../../../types";
+import { useUser } from "@clerk/clerk-react";
+import { useNavigate } from "react-router-dom";
 
 export const Dashboard: React.FC = () => {
   const { currentShop } = useApp();
-  
+  const { isLoaded: isUserLoaded } = useUser();
+  const navigate = useNavigate();
+
+  // --- ADDED: Gatekeeper Logic ---
+  // This effect checks if the user is loaded and if they have a shop.
+  // If they don't have a shop, it redirects them to the wizard.
+  useEffect(() => {
+    // Wait for both Clerk (isUserLoaded) and your AppContext (currentShop)
+    // to be resolved before making a decision.
+    if (isUserLoaded) {
+      // If the user is loaded but there is no currentShop selected,
+      // they need to create one.
+      if (!currentShop) {
+        console.log(
+          "User loaded, no shop found. Redirecting to /shop-wizard..."
+        );
+        navigate("/shop-wizard");
+      }
+    }
+  }, [isUserLoaded, currentShop, navigate]);
+  // --- END ADDED ---
+
   // Calculate dashboard statistics
   const calculateStats = () => {
-    if (!currentShop) return {
-      totalSales: 0,
-      totalRevenue: 0,
-      averageOrderValue: 0,
-      customerCount: 0
-    };
-    
+    // This check is still good. If currentShop is null (e.g., during redirect),
+    // it prevents errors.
+    if (!currentShop)
+      return {
+        totalSales: 0,
+        totalRevenue: 0,
+        averageOrderValue: 0,
+        customerCount: 0,
+      };
+
     const sales = db.sales.getByShopId(currentShop.id);
-    
+
     const totalSales = sales.length;
     const totalRevenue = sales.reduce((sum, sale) => sum + sale.total, 0);
     const averageOrderValue = totalSales > 0 ? totalRevenue / totalSales : 0;
-    
+
     // Count unique customers
     const uniqueCustomers = new Set();
-    sales.forEach(sale => {
+    sales.forEach((sale) => {
       if (sale.customerInfo?.email) {
         uniqueCustomers.add(sale.customerInfo.email);
       }
     });
-    
+
     return {
       totalSales,
       totalRevenue,
       averageOrderValue,
-      customerCount: uniqueCustomers.size
+      customerCount: uniqueCustomers.size,
     };
   };
-  
+
   const getRecentSales = (): Sale[] => {
     if (!currentShop) return [];
     const sales = db.sales.getByShopId(currentShop.id);
     // Sort by timestamp, most recent first
     return [...sales]
-      .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+      .sort(
+        (a, b) =>
+          new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+      )
       .slice(0, 5);
   };
-  
+
   const stats = calculateStats();
   const recentSales = getRecentSales();
-  
+
   const statCards = [
     {
-      title: 'Total Sales',
+      title: "Total Sales",
       value: stats.totalSales.toString(),
       icon: <ShoppingBag size={20} />,
-      color: 'bg-blue-50 text-blue-600'
+      color: "bg-blue-50 text-blue-600",
     },
     {
-      title: 'Total Revenue',
+      title: "Total Revenue",
       value: `$${stats.totalRevenue.toFixed(2)}`,
       icon: <DollarSign size={20} />,
-      color: 'bg-green-50 text-green-600'
+      color: "bg-green-50 text-green-600",
     },
     {
-      title: 'Avg. Order Value',
+      title: "Avg. Order Value",
       value: `$${stats.averageOrderValue.toFixed(2)}`,
       icon: <TrendingUp size={20} />,
-      color: 'bg-amber-50 text-amber-600'
+      color: "bg-amber-50 text-amber-600",
     },
     {
-      title: 'Customers',
+      title: "Customers",
       value: stats.customerCount.toString(),
       icon: <Users size={20} />,
-      color: 'bg-purple-50 text-purple-600'
-    }
+      color: "bg-purple-50 text-purple-600",
+    },
   ];
-  
+
   // Format date for display
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
-    return new Intl.DateTimeFormat('en-US', {
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
+    return new Intl.DateTimeFormat("en-US", {
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
     }).format(date);
   };
-  
+
+  // --- ADDED: Loading/Redirect State ---
+  // While redirecting or loading, show a clean loading screen
+  // This also prevents the dashboard from flashing with "0" stats
+  if (!isUserLoaded || !currentShop) {
+    return (
+      <div className="flex h-[50vh] w-full items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gray-900"></div>
+      </div>
+    );
+  }
+  // --- END ADDED ---
+
+  // This content will only be rendered if the user is loaded AND has a shop
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         {statCards.map((card, index) => (
           <Card key={index} className="border border-gray-100">
             <div className="flex items-center">
-              <div className={`p-3 rounded-lg ${card.color}`}>
-                {card.icon}
-              </div>
+              <div className={`p-3 rounded-lg ${card.color}`}>{card.icon}</div>
               <div className="ml-4">
-                <p className="text-sm font-medium text-gray-500">{card.title}</p>
-                <p className="text-2xl font-semibold text-gray-900">{card.value}</p>
+                <p className="text-sm font-medium text-gray-500">
+                  {card.title}
+                </p>
+                <p className="text-2xl font-semibold text-gray-900">
+                  {card.value}
+                </p>
               </div>
             </div>
           </Card>
         ))}
       </div>
-      
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Recent Activity */}
         <Card
@@ -136,10 +187,14 @@ export const Dashboard: React.FC = () => {
                   recentSales.map((sale) => (
                     <tr key={sale.id}>
                       <td className="px-3 py-4 whitespace-nowrap text-sm text-gray-900">
-                        {sale.customerInfo?.name || 'Walk-in Customer'}
+                        {sale.customerInfo?.name || "Walk-in Customer"}
                       </td>
+                      {/* --- THIS WAS THE LOCATION OF THE BAD CODE ---
+                          It has been removed.
+                      */}
                       <td className="px-3 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {sale.items.length} {sale.items.length === 1 ? 'item' : 'items'}
+                        {sale.items.length}{" "}
+                        {sale.items.length === 1 ? "item" : "items"}
                       </td>
                       <td className="px-3 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                         ${sale.total.toFixed(2)}
@@ -151,7 +206,10 @@ export const Dashboard: React.FC = () => {
                   ))
                 ) : (
                   <tr>
-                    <td colSpan={4} className="px-3 py-4 text-sm text-center text-gray-500">
+                    <td
+                      colSpan={4}
+                      className="px-3 py-4 text-sm text-center text-gray-500"
+                    >
                       No recent sales
                     </td>
                   </tr>
@@ -160,14 +218,11 @@ export const Dashboard: React.FC = () => {
             </table>
           </div>
         </Card>
-        
+
         {/* Quick Actions */}
-        <Card
-          title="Quick Actions"
-          className="border border-gray-100"
-        >
+        <Card title="Quick Actions" className="border border-gray-100">
           <div className="space-y-4">
-            <button 
+            <button
               className="w-full flex items-center justify-between p-3 rounded-lg bg-gray-50 hover:bg-gray-100 transition-colors"
               onClick={() => {}}
             >
@@ -177,8 +232,8 @@ export const Dashboard: React.FC = () => {
               </div>
               <span className="text-[#ECFF76]">→</span>
             </button>
-            
-            <button 
+
+            <button
               className="w-full flex items-center justify-between p-3 rounded-lg bg-gray-50 hover:bg-gray-100 transition-colors"
               onClick={() => {}}
             >
@@ -188,8 +243,8 @@ export const Dashboard: React.FC = () => {
               </div>
               <span className="text-[#ECFF76]">→</span>
             </button>
-            
-            <button 
+
+            <button
               className="w-full flex items-center justify-between p-3 rounded-lg bg-gray-50 hover:bg-gray-100 transition-colors"
               onClick={() => {}}
             >

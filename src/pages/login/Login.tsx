@@ -1,9 +1,9 @@
-import { useEffect, useState } from 'react';
-import { Eye, EyeOff, Mail, Lock, ArrowRight } from 'lucide-react';
-import { useClerk, useSignIn } from '@clerk/clerk-react';
-import { useNavigate } from 'react-router-dom';
-import Navigation from '../components/Navigation';
-import Footer from '../components/Footer';
+import { useEffect, useState } from "react";
+import { Eye, EyeOff, Mail, Lock, ArrowRight } from "lucide-react";
+import { useClerk, useSignIn } from "@clerk/clerk-react";
+import { useNavigate } from "react-router-dom";
+import Navigation from "../components/Navigation";
+import Footer from "../components/Footer";
 
 type ClerkErrorEntry = {
   code?: string;
@@ -12,7 +12,7 @@ type ClerkErrorEntry = {
 };
 
 const extractClerkErrors = (error: unknown): ClerkErrorEntry[] => {
-  if (!error || typeof error !== 'object') {
+  if (!error || typeof error !== "object") {
     return [];
   }
 
@@ -40,22 +40,28 @@ const Login = () => {
   const clerk = useClerk();
   const { isLoaded: isSignInLoaded, signIn, setActive } = useSignIn();
   const navigate = useNavigate();
-  
+
   const [showPassword, setShowPassword] = useState(false);
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [rememberMe, setRememberMe] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [oauthProvider, setOauthProvider] = useState<'google' | 'apple' | null>(null);
-  const [error, setError] = useState('');
-  const [step, setStep] = useState<'login' | 'login-verify'>('login');
-  const [verificationCode, setVerificationCode] = useState('');
+  const [oauthProvider, setOauthProvider] = useState<"google" | "apple" | null>(
+    null
+  );
+  const [error, setError] = useState("");
+  const [step, setStep] = useState<"login" | "login-verify">("login");
+  const [verificationCode, setVerificationCode] = useState("");
   const [humanChallengePending, setHumanChallengePending] = useState(false);
   const [showRegisterPrompt, setShowRegisterPrompt] = useState(false);
 
   const isClerkReady = clerk.loaded;
-  const isAuthLocked = isLoading || oauthProvider !== null || humanChallengePending || !isClerkReady;
-  const registerMessage = 'Couldnt find your account';
+  const isAuthLocked =
+    isLoading ||
+    oauthProvider !== null ||
+    humanChallengePending ||
+    !isClerkReady;
+  const registerMessage = "Couldnt find your account";
 
   const deactivateRegisterPrompt = () => {
     if (showRegisterPrompt) {
@@ -74,18 +80,19 @@ const Login = () => {
   };
 
   const isMissingAccountError = (code?: string, message?: string) => {
-    const normalizedCode = (code || '').toLowerCase();
-    const normalizedMessage = (message || '').toLowerCase();
+    const normalizedCode = (code || "").toLowerCase();
+    const normalizedMessage = (message || "").toLowerCase();
 
     if (!normalizedCode && !normalizedMessage) {
       return false;
     }
 
     if (
-      normalizedCode === 'identifier_not_found' ||
-      normalizedCode === 'session_not_found' ||
-      normalizedCode === 'third_party_identifier_not_found' ||
-      normalizedCode === 'third_party_email_address_not_found'
+      normalizedCode === "identifier_not_found" ||
+      normalizedCode === "session_not_found" ||
+      normalizedCode === "third_party_identifier_not_found" ||
+      normalizedCode === "third_party_email_address_not_found" ||
+      normalizedCode === "form_identifier_not_found"
     ) {
       return true;
     }
@@ -95,40 +102,41 @@ const Login = () => {
     }
 
     return (
-      (normalizedMessage.includes('identifier') && normalizedMessage.includes('not found')) ||
-      normalizedMessage.includes('could not find') ||
-      normalizedMessage.includes('no account') ||
-      normalizedMessage.includes('does not exist') ||
-      normalizedMessage.includes('not registered')
+      (normalizedMessage.includes("identifier") &&
+        normalizedMessage.includes("not found")) ||
+      normalizedMessage.includes("could not find") ||
+      normalizedMessage.includes("no account") ||
+      normalizedMessage.includes("does not exist") ||
+      normalizedMessage.includes("not registered")
     );
   };
 
   // Clear error when user starts typing
   const clearError = () => {
-    if (error) setError('');
+    if (error) setError("");
     deactivateRegisterPrompt();
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (!isSignInLoaded || !signIn || isAuthLocked) return;
 
     if (!email.trim()) {
       deactivateRegisterPrompt();
-      setError('Please enter your email address');
+      setError("Please enter your email address");
       return;
     }
 
     if (!password.trim()) {
       deactivateRegisterPrompt();
-      setError('Please enter your password');
+      setError("Please enter your password");
       return;
     }
 
     setHumanChallengePending(false);
     setIsLoading(true);
-    setError('');
+    setError("");
     deactivateRegisterPrompt();
 
     try {
@@ -137,61 +145,77 @@ const Login = () => {
         password: password,
       });
 
-      if (result.status === 'complete') {
+      if (result.status === "complete") {
         try {
           if (setActive) {
             await setActive({ session: result.createdSessionId });
           }
           deactivateRegisterPrompt();
-          navigate('/');
+          navigate("/");
         } catch (sessionError) {
-          console.error('Failed to activate session:', sessionError);
+          console.error("Failed to activate session:", sessionError);
           deactivateRegisterPrompt();
-          setError('Something went wrong while starting your session. Please try again.');
+          setError(
+            "Something went wrong while starting your session. Please try again."
+          );
         }
-      } else if (result.status === 'needs_first_factor') {
-        // Handle cases where additional verification is needed
+      } else if (result.status === "needs_first_factor") {
         deactivateRegisterPrompt();
-        setStep('login-verify');
-        setError('Please check your email for a verification code to complete sign in.');
+        setStep("login-verify");
+        setError(
+          "Please check your email for a verification code to complete sign in."
+        );
       } else {
-        console.error('Sign in not complete:', result);
+        console.error("Sign in not complete:", result);
         deactivateRegisterPrompt();
-        setError('Login failed. Please try again.');
+        setError("Login failed. Please try again.");
       }
     } catch (err: any) {
-      console.error('Login error:', err);
+      console.error("Login error:", err);
 
       const clerkErrors = extractClerkErrors(err);
       const firstError = clerkErrors[0];
-      const rawMessage = (firstError?.message || firstError?.longMessage || '').trim();
-      const fallbackMessage = typeof err?.message === 'string' ? err.message.trim() : '';
+      const rawMessage = (
+        firstError?.message ||
+        firstError?.longMessage ||
+        ""
+      ).trim();
+      const fallbackMessage =
+        typeof err?.message === "string" ? err.message.trim() : "";
 
       const codeCandidates = new Set<string>();
       const messageCandidates = new Set<string>();
 
       const pushCode = (value?: string) => {
-        if (typeof value === 'string' && value.trim().length > 0) {
+        if (typeof value === "string" && value.trim().length > 0) {
           codeCandidates.add(value.trim());
         }
       };
 
       const pushMessage = (value?: string) => {
-        if (typeof value === 'string' && value.trim().length > 0) {
+        if (typeof value === "string" && value.trim().length > 0) {
           messageCandidates.add(value.trim());
         }
       };
 
       pushCode(firstError?.code);
-      pushCode(typeof err?.code === 'string' ? err.code : '');
+      pushCode(typeof err?.code === "string" ? err.code : "");
       pushMessage(rawMessage);
       pushMessage(firstError?.longMessage);
       pushMessage(fallbackMessage);
-      pushMessage(typeof err?.longMessage === 'string' ? err.longMessage : '');
-      pushMessage(typeof err?.data?.message === 'string' ? err.data.message : '');
-      pushMessage(typeof err?.response?.message === 'string' ? err.response.message : '');
-      pushMessage(typeof err?.response?.data?.message === 'string' ? err.response.data.message : '');
-      pushMessage(typeof err?.statusText === 'string' ? err.statusText : '');
+      pushMessage(typeof err?.longMessage === "string" ? err.longMessage : "");
+      pushMessage(
+        typeof err?.data?.message === "string" ? err.data.message : ""
+      );
+      pushMessage(
+        typeof err?.response?.message === "string" ? err.response.message : ""
+      );
+      pushMessage(
+        typeof err?.response?.data?.message === "string"
+          ? err.response.data.message
+          : ""
+      );
+      pushMessage(typeof err?.statusText === "string" ? err.statusText : "");
 
       const nestedErrorCollections = [
         err?.errors,
@@ -214,16 +238,20 @@ const Login = () => {
       }
 
       let missingAccountDetected = Array.from(codeCandidates).some((code) =>
-        isMissingAccountError(code, '')
+        isMissingAccountError(code, "")
       );
 
       if (!missingAccountDetected) {
         missingAccountDetected = Array.from(messageCandidates).some((message) =>
-          isMissingAccountError('', message)
+          isMissingAccountError("", message)
         );
       }
 
-      if (!missingAccountDetected && typeof err?.status === 'number' && err.status === 404) {
+      if (
+        !missingAccountDetected &&
+        typeof err?.status === "number" &&
+        err.status === 404
+      ) {
         missingAccountDetected = true;
       }
 
@@ -232,18 +260,29 @@ const Login = () => {
         return;
       }
 
-      const defaultMessage = 'Invalid email or password';
+      const defaultMessage = "Invalid email or password";
       const combinedMessages = Array.from(messageCandidates);
-      let errorMessage = rawMessage || fallbackMessage || combinedMessages[0] || defaultMessage;
-      const lowerCaseMessages = combinedMessages.map((message) => message.toLowerCase());
+      let errorMessage =
+        rawMessage || fallbackMessage || combinedMessages[0] || defaultMessage;
+      const lowerCaseMessages = combinedMessages.map((message) =>
+        message.toLowerCase()
+      );
 
-      if (lowerCaseMessages.some((msg) => msg.includes('captcha') || msg.includes('bot'))) {
+      if (
+        lowerCaseMessages.some(
+          (msg) => msg.includes("captcha") || msg.includes("bot")
+        )
+      ) {
         setHumanChallengePending(true);
-        errorMessage = 'Please complete the security verification to continue.';
-      } else if (lowerCaseMessages.some((msg) => msg.includes('password') && msg.includes('incorrect'))) {
-        errorMessage = 'Incorrect password. Please try again.';
-      } else if (lowerCaseMessages.some((msg) => msg.includes('too many'))) {
-        errorMessage = 'Too many login attempts. Please try again later.';
+        errorMessage = "Please complete the security verification to continue.";
+      } else if (
+        lowerCaseMessages.some(
+          (msg) => msg.includes("password") && msg.includes("incorrect")
+        )
+      ) {
+        errorMessage = "Incorrect password. Please try again.";
+      } else if (lowerCaseMessages.some((msg) => msg.includes("too many"))) {
+        errorMessage = "Too many login attempts. Please try again later.";
       }
 
       deactivateRegisterPrompt();
@@ -255,55 +294,57 @@ const Login = () => {
 
   const handleVerifyCode = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (!isSignInLoaded || !signIn || isAuthLocked) return;
-    
+
     if (!verificationCode.trim()) {
       deactivateRegisterPrompt();
-      setError('Please enter the verification code');
+      setError("Please enter the verification code");
       return;
     }
 
     setHumanChallengePending(false);
     setIsLoading(true);
-    setError('');
+    setError("");
     deactivateRegisterPrompt();
 
     try {
       // Attempt email verification
       const result = await signIn.attemptFirstFactor({
-        strategy: 'email_code',
+        strategy: "email_code",
         code: verificationCode.trim(),
       });
 
-      if (result.status === 'complete') {
+      if (result.status === "complete") {
         try {
           if (setActive) {
             await setActive({ session: result.createdSessionId });
           }
-          navigate('/');
+          navigate("/");
         } catch (sessionError) {
-          console.error('Failed to activate session:', sessionError);
+          console.error("Failed to activate session:", sessionError);
           deactivateRegisterPrompt();
-          setError('Unable to complete sign-in. Please try again.');
+          setError("Unable to complete sign-in. Please try again.");
         }
       } else {
         deactivateRegisterPrompt();
-        setError('Verification incomplete. Please try again.');
+        setError("Verification incomplete. Please try again.");
       }
     } catch (err: any) {
-      console.error('Verification error:', err);
-      
-      let errorMessage = 'Invalid verification code. Please try again.';
-      
+      console.error("Verification error:", err);
+
+      let errorMessage = "Invalid verification code. Please try again.";
+
       if (err.errors && err.errors.length > 0) {
         const firstError = err.errors[0];
-        const message = firstError.message || firstError.longMessage || '';
-        
-        if (message.includes('invalid') || message.includes('incorrect')) {
-          errorMessage = 'Invalid verification code. Please check your email and try again.';
-        } else if (message.includes('expired')) {
-          errorMessage = 'Verification code has expired. Please request a new code.';
+        const message = firstError.message || firstError.longMessage || "";
+
+        if (message.includes("invalid") || message.includes("incorrect")) {
+          errorMessage =
+            "Invalid verification code. Please check your email and try again.";
+        } else if (message.includes("expired")) {
+          errorMessage =
+            "Verification code has expired. Please request a new code.";
         } else if (message.length > 0) {
           errorMessage = message;
         }
@@ -323,7 +364,7 @@ const Login = () => {
 
     setHumanChallengePending(false);
     setIsLoading(true);
-    setError('');
+    setError("");
     deactivateRegisterPrompt();
 
     try {
@@ -336,19 +377,23 @@ const Login = () => {
         password: password,
       });
 
-      if (result.status === 'needs_first_factor') {
-        setError('New verification code sent to your email!');
-        setTimeout(() => setError(''), 3000);
+      if (result.status === "needs_first_factor") {
+        setError("New verification code sent to your email!");
+        setTimeout(() => setError(""), 3000);
       }
     } catch (err: any) {
-      console.error('Resend error:', err);
-      const rawMessage = err?.errors?.[0]?.message || err?.errors?.[0]?.longMessage || '';
+      console.error("Resend error:", err);
+      const rawMessage =
+        err?.errors?.[0]?.message || err?.errors?.[0]?.longMessage || "";
       deactivateRegisterPrompt();
-      if (rawMessage.toLowerCase().includes('captcha') || rawMessage.toLowerCase().includes('bot')) {
+      if (
+        rawMessage.toLowerCase().includes("captcha") ||
+        rawMessage.toLowerCase().includes("bot")
+      ) {
         setHumanChallengePending(true);
-        setError('Please complete the security verification to continue.');
+        setError("Please complete the security verification to continue.");
       } else {
-        setError('Failed to resend verification code. Please try again.');
+        setError("Failed to resend verification code. Please try again.");
       }
     } finally {
       setIsLoading(false);
@@ -358,21 +403,21 @@ const Login = () => {
   const handleGoogleSignIn = async () => {
     if (!isSignInLoaded || !signIn || isAuthLocked) return;
 
-    setError('');
+    setError("");
     setHumanChallengePending(false);
     deactivateRegisterPrompt();
-    setOauthProvider('google');
-    sessionStorage.setItem('ceypos::pendingOauth', 'google-login');
+    setOauthProvider("google");
+    sessionStorage.setItem("ceypos::pendingOauth", "google-login");
 
     try {
       await signIn.authenticateWithRedirect({
-        strategy: 'oauth_google',
-        redirectUrl: '/login',
-        redirectUrlComplete: '/shop-wizard',
+        strategy: "oauth_google",
+        redirectUrl: "/login",
+        redirectUrlComplete: "/",
       });
     } catch (err: any) {
-      console.error('Google login error:', err);
-      setError('Failed to continue with Google. Please try again.');
+      console.error("Google login error:", err);
+      setError("Failed to continue with Google. Please try again.");
       deactivateRegisterPrompt();
       setOauthProvider(null);
     }
@@ -381,21 +426,21 @@ const Login = () => {
   const handleAppleSignIn = async () => {
     if (!isSignInLoaded || !signIn || isAuthLocked) return;
 
-    setError('');
+    setError("");
     setHumanChallengePending(false);
     deactivateRegisterPrompt();
-    setOauthProvider('apple');
-    sessionStorage.setItem('ceypos::pendingOauth', 'apple-login');
+    setOauthProvider("apple");
+    sessionStorage.setItem("ceypos::pendingOauth", "apple-login");
 
     try {
       await signIn.authenticateWithRedirect({
-        strategy: 'oauth_apple',
-        redirectUrl: '/login',
-        redirectUrlComplete: '/shop-wizard',
+        strategy: "oauth_apple",
+        redirectUrl: "/login",
+        redirectUrlComplete: "/",
       });
     } catch (err: any) {
-      console.error('Apple login error:', err);
-      setError('Failed to continue with Apple. Please try again.');
+      console.error("Apple login error:", err);
+      setError("Failed to continue with Apple. Please try again.");
       deactivateRegisterPrompt();
       setOauthProvider(null);
     }
@@ -403,47 +448,48 @@ const Login = () => {
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const errorCode = params.get('__clerk_error') || params.get('clerk_error');
-    const errorMessage = params.get('__clerk_message') || params.get('clerk_message') || '';
-    const status = params.get('__clerk_status') || params.get('clerk_status');
+    const errorCode = params.get("__clerk_error") || params.get("clerk_error");
+    const errorMessage =
+      params.get("__clerk_message") || params.get("clerk_message") || "";
+    const status = params.get("__clerk_status") || params.get("clerk_status");
 
     if (errorCode) {
       if (isMissingAccountError(errorCode, errorMessage)) {
         activateRegisterPrompt();
       } else {
         deactivateRegisterPrompt();
-        setError('Unable to complete sign in. Please try again.');
+        setError("Unable to complete sign in. Please try again.");
       }
       setOauthProvider(null);
     }
 
-    if (status && status.includes('needs_verification')) {
+    if (status && status.includes("needs_verification")) {
       setHumanChallengePending(true);
       deactivateRegisterPrompt();
     }
 
     if ((errorCode || status) && window.location.search) {
-      window.history.replaceState(null, '', window.location.pathname);
+      window.history.replaceState(null, "", window.location.pathname);
     }
   }, []);
 
   useEffect(() => {
-    const pendingOauth = sessionStorage.getItem('ceypos::pendingOauth');
+    const pendingOauth = sessionStorage.getItem("ceypos::pendingOauth");
     if (!pendingOauth) {
       return;
     }
 
-    if (oauthProvider === null && step === 'login') {
-      sessionStorage.removeItem('ceypos::pendingOauth');
+    if (oauthProvider === null && step === "login") {
+      sessionStorage.removeItem("ceypos::pendingOauth");
     }
   }, [oauthProvider, step]);
 
   // Email verification step
-  if (step === 'login-verify') {
+  if (step === "login-verify") {
     return (
       <div className="min-h-screen bg-gray-50 flex flex-col">
         <Navigation />
-        
+
         <div className="relative overflow-hidden flex-1">
           <div className="absolute inset-0 pointer-events-none">
             <div className="absolute inset-0 bg-gradient-to-br from-gray-100 via-gray-50 to-gray-100 opacity-80"></div>
@@ -462,31 +508,39 @@ const Login = () => {
                     Enter Verification Code
                   </h1>
                   <p className="text-gray-600 text-sm mb-6">
-                    We've sent a 6-digit verification code to <strong>{email}</strong>. Please enter the code below to complete your login.
+                    We've sent a 6-digit verification code to{" "}
+                    <strong>{email}</strong>. Please enter the code below to
+                    complete your login.
                   </p>
                 </div>
 
                 {/* Error Message */}
                 {!showRegisterPrompt && error && (
-                  <div className={`mb-6 p-3 border rounded-lg text-sm ${
-                    error.includes('sent') 
-                      ? 'bg-green-50 border-green-200 text-green-600' 
-                      : 'bg-red-50 border-red-200 text-red-600'
-                  }`}>
+                  <div
+                    className={`mb-6 p-3 border rounded-lg text-sm ${
+                      error.includes("sent")
+                        ? "bg-green-50 border-green-200 text-green-600"
+                        : "bg-red-50 border-red-200 text-red-600"
+                    }`}
+                  >
                     {error}
                   </div>
                 )}
 
                 {humanChallengePending && !error && (
                   <div className="mb-6 p-3 bg-yellow-50 border border-yellow-200 text-yellow-700 text-sm rounded-lg">
-                    Please complete the security verification prompt to continue.
+                    Please complete the security verification prompt to
+                    continue.
                   </div>
                 )}
 
                 {/* Verification Form */}
                 <form onSubmit={handleVerifyCode} className="space-y-5">
                   <div>
-                    <label htmlFor="verificationCode" className="block text-sm font-medium text-gray-700 mb-2">
+                    <label
+                      htmlFor="verificationCode"
+                      className="block text-sm font-medium text-gray-700 mb-2"
+                    >
                       Verification Code
                     </label>
                     <div className="relative">
@@ -497,15 +551,18 @@ const Login = () => {
                         id="verificationCode"
                         type="text"
                         value={verificationCode}
-                        onChange={(e) => { setVerificationCode(e.target.value); clearError(); }}
+                        onChange={(e) => {
+                          setVerificationCode(e.target.value);
+                          clearError();
+                        }}
                         className="block w-full px-4 py-3 border border-gray-300 rounded-full focus:outline-none focus:ring-2 focus:ring-gray-500 focus:border-transparent text-xl text-center tracking-[0.75em] font-mono bg-gray-50"
                         placeholder="1 2 3 4 5 6"
                         maxLength={6}
                         autoComplete="one-time-code"
-                        style={{ 
-                          textAlign: 'center',
-                          letterSpacing: '0.75em',
-                          paddingLeft: '0.375em'
+                        style={{
+                          textAlign: "center",
+                          letterSpacing: "0.75em",
+                          paddingLeft: "0.375em",
                         }}
                         required
                       />
@@ -530,12 +587,12 @@ const Login = () => {
                     )}
                   </button>
                 </form>
-                
+
                 <div className="mt-6 text-center space-y-4">
                   <p className="text-xs text-gray-500">
                     Didn't receive the code? Check your spam folder.
                   </p>
-                  
+
                   <button
                     type="button"
                     onClick={handleResendCode}
@@ -547,15 +604,15 @@ const Login = () => {
                     ) : null}
                     Resend verification code
                   </button>
-                  
+
                   <div className="pt-2 border-t border-gray-200">
                     <div className="flex flex-col gap-2">
                       <button
                         type="button"
                         onClick={() => {
-                          setStep('login');
-                          setVerificationCode('');
-                          setError('');
+                          setStep("login");
+                          setVerificationCode("");
+                          setError("");
                           deactivateRegisterPrompt();
                         }}
                         className="text-gray-600 hover:text-gray-800 text-sm"
@@ -569,7 +626,7 @@ const Login = () => {
             </div>
           </div>
         </div>
-        
+
         <Footer />
       </div>
     );
@@ -591,7 +648,6 @@ const Login = () => {
 
         <div className="relative z-10 min-h-full flex items-center justify-center px-6 py-12">
           <div className="w-full max-w-6xl grid lg:grid-cols-2 gap-12 items-center">
-            
             {/* Login Form - Remove background box */}
             <div className="w-full max-w-md mx-auto lg:mx-0">
               <div className="p-8">
@@ -600,8 +656,12 @@ const Login = () => {
                   <div className="inline-flex items-center bg-gradient-to-r from-gray-100 to-gray-200 text-gray-700 px-4 py-2 rounded-full text-xs font-medium mb-4">
                     CeyPOS Login
                   </div>
-                  <h1 className="text-2xl font-black text-gray-900 mb-2">Welcome to CeyPOS!</h1>
-                  <p className="text-gray-600 text-sm">Sign in to access your dashboard</p>
+                  <h1 className="text-2xl font-black text-gray-900 mb-2">
+                    Welcome to CeyPOS!
+                  </h1>
+                  <p className="text-gray-600 text-sm">
+                    Sign in to access your dashboard
+                  </p>
                 </div>
 
                 {/* Error Message */}
@@ -611,7 +671,7 @@ const Login = () => {
                       <div className="font-medium">{registerMessage}</div>
                       <button
                         type="button"
-                        onClick={() => navigate('/register')}
+                        onClick={() => navigate("/register")}
                         className="inline-flex items-center justify-center rounded-full bg-black px-4 py-2 text-xs font-semibold text-white hover:bg-gray-800 transition-colors"
                       >
                         Register here
@@ -628,12 +688,12 @@ const Login = () => {
 
                 {/* Social Login Buttons */}
                 <div className="space-y-3 mb-6">
-                  <button 
+                  <button
                     onClick={handleGoogleSignIn}
                     disabled={!isSignInLoaded || isAuthLocked}
                     className="w-full flex items-center justify-center px-4 py-3 bg-white border border-gray-300 rounded-full hover:bg-gray-50 disabled:bg-gray-100 transition-colors text-sm"
                   >
-                    {oauthProvider === 'google' ? (
+                    {oauthProvider === "google" ? (
                       <>
                         <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-gray-700 mr-3"></div>
                         Connecting to Google...
@@ -641,30 +701,46 @@ const Login = () => {
                     ) : (
                       <>
                         <svg className="w-4 h-4 mr-3" viewBox="0 0 24 24">
-                          <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
-                          <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-                          <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
-                          <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+                          <path
+                            fill="#4285F4"
+                            d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+                          />
+                          <path
+                            fill="#34A853"
+                            d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+                          />
+                          <path
+                            fill="#FBBC05"
+                            d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
+                          />
+                          <path
+                            fill="#EA4335"
+                            d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
+                          />
                         </svg>
                         Continue with Google
                       </>
                     )}
                   </button>
-                  
-                  <button 
+
+                  <button
                     onClick={handleAppleSignIn}
                     disabled={!isSignInLoaded || isAuthLocked}
                     className="w-full flex items-center justify-center px-4 py-3 bg-black border border-black rounded-full hover:bg-gray-800 disabled:bg-gray-400 transition-colors text-sm text-white"
                   >
-                    {oauthProvider === 'apple' ? (
+                    {oauthProvider === "apple" ? (
                       <>
                         <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-3"></div>
                         Connecting to Apple...
                       </>
                     ) : (
                       <>
-                        <svg className="w-4 h-4 mr-3" fill="currentColor" viewBox="0 0 24 24">
-                          <path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/>
+                        <svg
+                          className="w-4 h-4 mr-3"
+                          fill="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z" />
                         </svg>
                         Continue with Apple
                       </>
@@ -686,7 +762,10 @@ const Login = () => {
                 <form onSubmit={handleSubmit} className="space-y-5">
                   {/* Email Field */}
                   <div>
-                    <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-2">
+                    <label
+                      htmlFor="email"
+                      className="block text-sm font-medium text-gray-700 mb-2"
+                    >
                       Email Address
                     </label>
                     <div className="relative">
@@ -697,7 +776,10 @@ const Login = () => {
                         id="email"
                         type="email"
                         value={email}
-                        onChange={(e) => { setEmail(e.target.value); clearError(); }}
+                        onChange={(e) => {
+                          setEmail(e.target.value);
+                          clearError();
+                        }}
                         className="block w-full pl-10 pr-3 py-2.5 border border-gray-300 rounded-full focus:outline-none focus:ring-2 focus:ring-gray-500 focus:border-transparent text-sm"
                         placeholder="example@gmail.com"
                         autoComplete="email"
@@ -708,7 +790,10 @@ const Login = () => {
 
                   {/* Password Field */}
                   <div>
-                    <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-2">
+                    <label
+                      htmlFor="password"
+                      className="block text-sm font-medium text-gray-700 mb-2"
+                    >
                       Password
                     </label>
                     <div className="relative">
@@ -717,9 +802,12 @@ const Login = () => {
                       </div>
                       <input
                         id="password"
-                        type={showPassword ? 'text' : 'password'}
+                        type={showPassword ? "text" : "password"}
                         value={password}
-                        onChange={(e) => { setPassword(e.target.value); clearError(); }}
+                        onChange={(e) => {
+                          setPassword(e.target.value);
+                          clearError();
+                        }}
                         className="block w-full pl-10 pr-10 py-2.5 border border-gray-300 rounded-full focus:outline-none focus:ring-2 focus:ring-gray-500 focus:border-transparent text-sm"
                         placeholder="min 8 character"
                         autoComplete="current-password"
@@ -749,11 +837,17 @@ const Login = () => {
                         onChange={(e) => setRememberMe(e.target.checked)}
                         className="h-4 w-4 text-gray-600 focus:ring-gray-500 border-gray-300 rounded"
                       />
-                      <label htmlFor="remember-me" className="ml-2 block text-sm text-gray-700">
+                      <label
+                        htmlFor="remember-me"
+                        className="ml-2 block text-sm text-gray-700"
+                      >
                         Remember me
                       </label>
                     </div>
-                    <a href="#" className="text-sm text-gray-900 hover:text-gray-700 font-medium">
+                    <a
+                      href="#"
+                      className="text-sm text-gray-900 hover:text-gray-700 font-medium"
+                    >
                       Forgot password?
                     </a>
                   </div>
@@ -780,8 +874,11 @@ const Login = () => {
 
                 {/* Sign Up Link */}
                 <p className="mt-6 text-center text-sm text-gray-600">
-                  Don't have an account?{' '}
-                  <a href="/register" className="text-gray-900 hover:text-gray-700 font-medium">
+                  Don't have an account?{" "}
+                  <a
+                    href="/register"
+                    className="text-gray-900 hover:text-gray-700 font-medium"
+                  >
                     Register
                   </a>
                 </p>
@@ -790,29 +887,8 @@ const Login = () => {
 
             {/* Dashboard Preview */}
             <div className="hidden lg:block">
-              {/* 
-                TODO: Replace with actual dashboard image
-                Image Requirements:
-                - Size: 600x400px (3:2 aspect ratio)
-                - Format: PNG or JPG
-                - Location: src/pages/reacthome/images/dashboard-preview.png
-                - Alt text: "CeyPOS Dashboard Preview"
-                
-                To add the image, uncomment and use this code:
-                <div className="bg-white rounded-2xl shadow-2xl overflow-hidden border border-gray-200">
-                  <img 
-                    src="/src/pages/reacthome/images/dashboard-preview.png"
-                    alt="CeyPOS Dashboard Preview"
-                    width="600"
-                    height="400"
-                    className="w-full h-auto object-cover"
-                  />
-                </div>
-              */}
-              
-              {/* Temporary Stock Photo - Replace with actual dashboard */}
               <div className="bg-white rounded-2xl shadow-2xl overflow-hidden border border-gray-200">
-                <img 
+                <img
                   src="https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=600&h=400&fit=crop&crop=center"
                   alt="Dashboard Preview - Temporary Stock Photo"
                   width="600"
@@ -821,7 +897,6 @@ const Login = () => {
                 />
               </div>
             </div>
-
           </div>
         </div>
       </div>

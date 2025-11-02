@@ -4,7 +4,7 @@ import { useSignUp } from "@clerk/clerk-react";
 import { useNavigate } from "react-router-dom";
 import Navigation from "../components/Navigation";
 import Footer from "../components/Footer";
-import { getEmailValidationError } from "../utils/emailValidation"; // --- ADDED ---
+import { getEmailValidationError } from "../utils/emailValidation";
 
 type RegisterAction = "register" | "verify" | "resend" | null;
 
@@ -52,22 +52,11 @@ const Register = () => {
       return;
     }
 
-    // --- MODIFIED ---
-    // Use the new comprehensive email validator which checks for
-    // empty, invalid format, and disposable domains.
     const emailError = getEmailValidationError(email);
     if (emailError) {
       setError(emailError);
       return;
     }
-    // --- END MODIFIED ---
-
-    /* --- REMOVED OLD CHECK (now handled by getEmailValidationError) ---
-    if (!email.trim()) {
-      setError('Please enter your email address');
-      return;
-    }
-    */
 
     if (password.length < 8) {
       setError("Password must be at least 8 characters long");
@@ -81,7 +70,6 @@ const Register = () => {
     try {
       console.log("Starting registration...");
 
-      // Simple registration with just email and password
       const result = await signUp.create({
         emailAddress: email.trim(),
         password: password,
@@ -90,15 +78,11 @@ const Register = () => {
       console.log("Registration result:", result);
 
       if (result.status === "complete") {
-        // Registration complete - always redirect to shop wizard for new users
         await setActive({ session: result.createdSessionId });
-        // Use navigate for client-side routing after authentication
         navigate("/shop-wizard");
       } else if (result.status === "missing_requirements") {
-        // Email verification required
         console.log("Email verification required");
 
-        // Prepare email verification with code strategy
         await signUp.prepareEmailAddressVerification({
           strategy: "email_code",
         });
@@ -114,8 +98,10 @@ const Register = () => {
       if (err.errors && err.errors.length > 0) {
         const firstError = err.errors[0];
         const message = firstError.message || firstError.longMessage || "";
+        const code = firstError.code || ""; // --- MODIFICATION: Get error code ---
 
         if (
+          code === "form_identifier_exists" || // --- MODIFICATION: Check code ---
           message.includes("email address is taken") ||
           message.includes("email_address_taken")
         ) {
@@ -125,7 +111,6 @@ const Register = () => {
           errorMessage =
             "Password must be at least 8 characters with letters and numbers.";
         } else if (message.includes("email_address_invalid")) {
-          // This might be redundant now but good as a fallback
           errorMessage = "Please enter a valid email address.";
         } else if (
           message.includes("captcha") ||
@@ -202,7 +187,6 @@ const Register = () => {
     try {
       console.log("Attempting to verify email with code:", verificationCode);
 
-      // Attempt email verification
       const result = await signUp.attemptEmailAddressVerification({
         code: verificationCode.trim(),
       });
@@ -211,18 +195,14 @@ const Register = () => {
       console.log("Status:", result.status);
 
       if (result.status === "complete") {
-        // Verification successful - redirect to shop wizard for new users
         await setActive({ session: result.createdSessionId });
-        // Use navigate for client-side routing after authentication with delay
         navigate("/shop-wizard");
       } else if (result.status === "missing_requirements") {
-        // Check what fields are missing and try to complete them
         console.log(
           "Missing requirements after verification:",
           result.missingFields
         );
 
-        // Try to update with the full name if we have it
         if (fullName.trim()) {
           try {
             const nameParts = fullName.trim().split(" ");
@@ -246,13 +226,11 @@ const Register = () => {
           }
         }
 
-        // If we can't complete the signup, redirect to login
         setError(
           "Email verified successfully! Your account has been created. Please sign in with your credentials."
         );
         setTimeout(() => navigate("/login"), 2000);
       } else {
-        // Handle other statuses
         console.log("Unexpected verification status:", result.status);
         setError(
           "Email verification completed. Please sign in with your email and password."
@@ -309,7 +287,6 @@ const Register = () => {
     try {
       await signUp.prepareEmailAddressVerification({ strategy: "email_code" });
       setError("");
-      // Show success message temporarily
       setError("New verification code sent to your email!");
       setTimeout(() => setError(""), 3000);
     } catch (err: any) {
@@ -342,7 +319,7 @@ const Register = () => {
       await signUp.authenticateWithRedirect({
         strategy: "oauth_google",
         redirectUrl: "/register",
-        redirectUrlComplete: "/shop-wizard",
+        redirectUrlComplete: "/",
       });
     } catch (err: any) {
       console.error("Google signup error:", err);
@@ -363,11 +340,11 @@ const Register = () => {
       await signUp.authenticateWithRedirect({
         strategy: "oauth_apple",
         redirectUrl: "/register",
-        redirectUrlComplete: "/shop-wizard",
+        redirectUrlComplete: "/",
       });
     } catch (err: any) {
       console.error("Apple signup error:", err);
-      setError("Failed to sign up with Apple. Please try again.");
+      setError("Failed to sign up with Apple. Please check configuration.");
       setOauthProvider(null);
     }
   };
