@@ -16,6 +16,7 @@ interface AppContextType {
 
   currentUser: User | null;
   currentShop: Shop | null;
+  activeShopId: string | null;
 
   cart: CartItem[];
   addToCart: (product: CartItem) => void;
@@ -182,6 +183,7 @@ export const AppProvider: React.FC<AppProviderProps> = ({
 
         currentUser,
         currentShop,
+        activeShopId: externalShopId ?? null,
         cart,
         addToCart,
         removeFromCart,

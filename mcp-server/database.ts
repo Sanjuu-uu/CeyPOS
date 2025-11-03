@@ -1,6 +1,5 @@
 import * as sqlite3 from 'sqlite3';
-import * as path from 'path';
-import { dbPathForShop } from '../server/src/utils/db.js';
+import { dbPathForShop } from './db-path.js';
 
 export async function queryDatabase(shopId: string, query: string): Promise<any> {
   return new Promise((resolve, reject) => {

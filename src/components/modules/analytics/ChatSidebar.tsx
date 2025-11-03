@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { MessageCircle, X, Send, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Input } from '../../ui/Input';
 import { ChatVisualization } from './ChatVisualization';
+import { useApp } from '../../../context/AppContext';
 
 interface VisualizationData {
   type: 'kpi_card' | 'bar_chart' | 'line_chart' | 'pie_chart';
@@ -35,6 +36,11 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({ isOpen, onToggle }) =>
       visualizations: []
     }
   ]);
+  const { activeShopId, currentShop } = useApp();
+  const normalizedShopId = useMemo(() => {
+    if (!activeShopId) return null;
+    return String(activeShopId).replace(/^shop_/, '').replace(/\.db$/i, '');
+  }, [activeShopId]);
 
   const handleSendMessage = async () => {
     if (!chatInput.trim()) return;
@@ -46,13 +52,29 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({ isOpen, onToggle }) =>
     };
     
     setChatMessages(prev => [...prev, userMessage]);
+
+    if (!normalizedShopId) {
+      const aiMessage: Message = {
+        sender: 'ai',
+        message: 'Analytics chat requires an active shop. Please finish onboarding or refresh after selecting your shop.',
+        timestamp: new Date(),
+        visualizations: []
+      };
+      setChatMessages(prev => [...prev, aiMessage]);
+      setChatInput('');
+      return;
+    }
     
     // Call AI API
     try {
       const response = await fetch('/api/analytics/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question: chatInput, shopId: '1755542590' }) // TODO: get shopId from context
+        body: JSON.stringify({
+          question: chatInput,
+          shopId: normalizedShopId,
+          shopLabel: currentShop?.name,
+        })
       });
       const data = await response.json();
       const aiMessage: Message = {
@@ -171,7 +193,7 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({ isOpen, onToggle }) =>
             />
             <button
               onClick={handleSendMessage}
-              disabled={!chatInput.trim()}
+              disabled={!chatInput.trim() || !normalizedShopId}
               className="p-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
             >
               <Send className="w-4 h-4" />

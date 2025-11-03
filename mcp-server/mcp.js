@@ -1,5 +1,11 @@
 import OpenAI from 'openai';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import { randomUUID } from 'crypto';
+import sqlite3 from 'sqlite3';
 import dotenv from 'dotenv';
+import { dbExists, dbPathForShop } from './db-path.js';
 dotenv.config();
 
 const openai = new OpenAI({
@@ -218,77 +224,298 @@ const TOOLS = [
   }
 ];
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const LOG_DIR = path.join(__dirname, 'logs');
+const MAX_LOG_STRING_LENGTH = 1000;
+const MAX_LOG_ARRAY_ITEMS = 20;
+const MAX_LOG_OBJECT_KEYS = 30;
+
+function ensureLogDir() {
+  try {
+    if (!fs.existsSync(LOG_DIR)) {
+      fs.mkdirSync(LOG_DIR, { recursive: true });
+    }
+  } catch (error) {
+    console.error('Failed to prepare MCP log directory', error);
+  }
+}
+
+function safeForLog(value, depth = 0) {
+  if (depth > 3) {
+    return '[depth truncated]';
+  }
+
+  if (value === null || value === undefined) {
+    return value;
+  }
+
+  if (typeof value === 'string') {
+    return value.length > MAX_LOG_STRING_LENGTH
+      ? `${value.slice(0, MAX_LOG_STRING_LENGTH)}…`
+      : value;
+  }
+
+  if (typeof value === 'number' || typeof value === 'boolean') {
+    return value;
+  }
+
+  if (Array.isArray(value)) {
+    const sample = value.slice(0, MAX_LOG_ARRAY_ITEMS).map((item) =>
+      safeForLog(item, depth + 1)
+    );
+    const summary = {
+      length: value.length,
+      sample,
+    };
+    if (value.length > MAX_LOG_ARRAY_ITEMS) {
+      summary.truncated = value.length - MAX_LOG_ARRAY_ITEMS;
+    }
+    return summary;
+  }
+
+  if (typeof value === 'object') {
+    const entries = Object.entries(value);
+    const limited = entries.slice(0, MAX_LOG_OBJECT_KEYS);
+    const result = {};
+    for (const [key, val] of limited) {
+      result[key] = safeForLog(val, depth + 1);
+    }
+    if (entries.length > MAX_LOG_OBJECT_KEYS) {
+      result.__truncatedKeys__ = entries.length - MAX_LOG_OBJECT_KEYS;
+    }
+    return result;
+  }
+
+  try {
+    return JSON.parse(JSON.stringify(value));
+  } catch (error) {
+    return String(value);
+  }
+}
+
+function createSessionLog(question, rawShopId, normalizedShopId) {
+  return {
+    id: randomUUID(),
+    startedAt: new Date().toISOString(),
+    rawShopId: rawShopId ?? null,
+    shopId: normalizedShopId ?? null,
+    question,
+    toolCalls: [],
+    errors: [],
+    openAi: {},
+    finalResponse: null,
+    durationMs: null,
+  };
+}
+
+function recordError(session, stage, error) {
+  if (!session || !error) return;
+  session.errors.push({
+    stage,
+    message: error?.message ? String(error.message) : String(error),
+    stack: error?.stack ? String(error.stack).split('\n').slice(0, 10).join('\n') : undefined,
+  });
+}
+
+function writeSessionLog(session) {
+  if (!session) return;
+  try {
+    ensureLogDir();
+    const timestampFragment = session.startedAt
+      ? session.startedAt.replace(/[:.]/g, '-').replace(/Z$/, '')
+      : Date.now().toString();
+    const fileName = `${timestampFragment}_${session.id}.json`;
+    const filePath = path.join(LOG_DIR, fileName);
+    fs.writeFileSync(filePath, JSON.stringify(session, null, 2), 'utf8');
+  } catch (error) {
+    console.error('Failed to write MCP session log', error);
+  }
+}
+
+const normalizeShopId = (shopId) => {
+  if (!shopId) return '';
+  return String(shopId).replace(/^shop_/, '').replace(/\.db$/i, '').trim();
+};
+
+function runSqlQuery(shopId, query) {
+  return new Promise((resolve, reject) => {
+    const dbPath = dbPathForShop(shopId);
+    const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READONLY, (openErr) => {
+      if (openErr) {
+        reject(openErr);
+        return;
+      }
+
+      db.all(query, [], (err, rows) => {
+        db.close();
+        if (err) {
+          reject(err);
+        } else {
+          resolve(rows);
+        }
+      });
+    });
+  });
+}
+
 async function processUserQuestion(question, shopId) {
+  const effectiveShopId = normalizeShopId(shopId);
+  const session = createSessionLog(question, shopId, effectiveShopId);
+  const startedAt = Date.now();
+  let responsePayload = {
+    answer: 'Analytics assistant needs a valid shop before it can query data. Please finish shop setup and try again.',
+    visualizations: [],
+  };
+
+  if (!effectiveShopId) {
+    recordError(session, 'validation', new Error('Missing shop identifier'));
+    session.durationMs = Date.now() - startedAt;
+    session.finalResponse = safeForLog(responsePayload);
+    writeSessionLog(session);
+    return responsePayload;
+  }
+
+  if (!dbExists(effectiveShopId)) {
+    const message = `Shop database not found for ${effectiveShopId}`;
+    const error = new Error(message);
+    recordError(session, 'validation', error);
+    responsePayload = {
+      answer: `Error: ${message}`,
+      visualizations: [],
+    };
+    session.durationMs = Date.now() - startedAt;
+    session.finalResponse = safeForLog(responsePayload);
+    writeSessionLog(session);
+    return responsePayload;
+  }
+
   try {
     const messages = [
       { role: 'system', content: SYSTEM_PROMPT },
       { role: 'user', content: question }
     ];
 
-    const response = await openai.chat.completions.create({
+    const initialCompletion = await openai.chat.completions.create({
       model: 'gpt-4',
       messages,
       tools: TOOLS,
       tool_choice: 'auto'
     });
 
-    const message = response.choices[0].message;
+    session.openAi.initialCompletion = safeForLog({
+      id: initialCompletion.id,
+      model: initialCompletion.model,
+      usage: initialCompletion.usage ?? null,
+      finishReason: initialCompletion.choices?.[0]?.finish_reason ?? null,
+    });
+
+    const assistantMessage = initialCompletion.choices[0].message;
     const visualizations = [];
 
-    if (message.tool_calls) {
-      messages.push(message);
+    if (assistantMessage.tool_calls?.length) {
+      messages.push(assistantMessage);
 
-      for (const toolCall of message.tool_calls) {
-        const { name, arguments: args } = toolCall.function;
-        let result;
+      for (const toolCall of assistantMessage.tool_calls) {
+        const toolStart = Date.now();
+        const toolRecord = {
+          id: toolCall.id,
+          tool: toolCall.function?.name ?? 'unknown',
+          rawArguments: toolCall.function?.arguments ?? null,
+          startedAt: new Date().toISOString(),
+        };
+
+        let parsedArgs;
 
         try {
-          const parsedArgs = JSON.parse(args);
-          result = await executeTool(name, parsedArgs, shopId);
+          parsedArgs = JSON.parse(toolCall.function.arguments || '{}');
+          toolRecord.arguments = safeForLog(parsedArgs);
+        } catch (parseError) {
+          recordError(session, `tool:${toolRecord.tool}`, parseError);
+          const parseFailure = {
+            error: `Failed to parse tool arguments: ${parseError.message}`,
+          };
+          toolRecord.result = safeForLog(parseFailure);
+          toolRecord.durationMs = Date.now() - toolStart;
+          session.toolCalls.push(toolRecord);
+          messages.push({
+            role: 'tool',
+            content: JSON.stringify(parseFailure),
+            tool_call_id: toolCall.id,
+          });
+          continue;
+        }
 
-          // Collect visualization data
+        try {
+          const result = await executeTool(toolRecord.tool, parsedArgs, effectiveShopId);
+          toolRecord.result = safeForLog(result);
+
           if (result && typeof result === 'object' && result.type) {
             visualizations.push(result);
           }
-        } catch (error) {
-          result = { error: `Failed to execute tool: ${error.message}` };
-        }
 
-        messages.push({
-          role: 'tool',
-          content: JSON.stringify(result),
-          tool_call_id: toolCall.id
-        });
+          messages.push({
+            role: 'tool',
+            content: JSON.stringify(result),
+            tool_call_id: toolCall.id,
+          });
+        } catch (toolError) {
+          recordError(session, `tool:${toolRecord.tool}`, toolError);
+          const failure = { error: `Failed to execute tool: ${toolError.message}` };
+          toolRecord.result = safeForLog(failure);
+          messages.push({
+            role: 'tool',
+            content: JSON.stringify(failure),
+            tool_call_id: toolCall.id,
+          });
+        } finally {
+          toolRecord.durationMs = Date.now() - toolStart;
+          session.toolCalls.push(toolRecord);
+        }
       }
 
-      const finalResponse = await openai.chat.completions.create({
+      const finalCompletion = await openai.chat.completions.create({
         model: 'gpt-4',
-        messages
+        messages,
       });
 
-      const answer = finalResponse.choices[0].message.content || 'No response generated';
+      session.openAi.finalCompletion = safeForLog({
+        id: finalCompletion.id,
+        model: finalCompletion.model,
+        usage: finalCompletion.usage ?? null,
+        finishReason: finalCompletion.choices?.[0]?.finish_reason ?? null,
+      });
 
-      // Return both text and visualizations
-      return {
+      const answer = finalCompletion.choices[0].message.content || 'No response generated';
+      responsePayload = {
         answer,
-        visualizations
+        visualizations,
       };
     } else {
-      return {
-        answer: message.content || 'No response generated',
-        visualizations: []
+      responsePayload = {
+        answer: assistantMessage.content || 'No response generated',
+        visualizations: [],
       };
     }
   } catch (error) {
     console.error('Error processing question:', error);
-    return {
+    recordError(session, 'processing', error);
+    responsePayload = {
       answer: `Error: ${error.message}`,
-      visualizations: []
+      visualizations: [],
     };
+  } finally {
+    session.durationMs = Date.now() - startedAt;
+    session.finalResponse = safeForLog(responsePayload);
+    writeSessionLog(session);
   }
+
+  return responsePayload;
 }
 
 async function executeTool(name, args, shopId) {
+  const effectiveShopId = normalizeShopId(shopId);
+
   // Handle chart generation tools
   if (name === 'generate_kpi_card') {
     return {
@@ -325,25 +552,31 @@ async function executeTool(name, args, shopId) {
     };
   }
 
-  // Handle database query tools
-  const db = await import('../server/src/utils/db.js');
-  const Database = (await import('better-sqlite3')).default;
-
-  if (!db.dbExists(shopId)) {
-    return { error: `Shop database not found for ${shopId}` };
+  if (!effectiveShopId) {
+    return { error: 'Missing shop identifier for analytics query' };
   }
 
-  const dbPath = db.dbPathForShop(shopId);
-  const connection = new Database(dbPath, { readonly: true });
+  const sqlTools = new Set([
+    'query_inventory',
+    'query_sales',
+    'query_customers',
+    'query_general',
+  ]);
 
-  try {
-    const result = connection.prepare(args.query).all();
-    return result;
-  } catch (error) {
-    return { error: error.message };
-  } finally {
-    connection.close();
+  if (sqlTools.has(name)) {
+    if (!args || typeof args.query !== 'string' || !args.query.trim()) {
+      return { error: 'SQL query is required for this tool' };
+    }
+
+    try {
+      const rows = await runSqlQuery(effectiveShopId, args.query);
+      return rows;
+    } catch (error) {
+      return { error: error.message };
+    }
   }
+
+  return { error: `Unknown tool: ${name}` };
 }
 
 export { processUserQuestion };
