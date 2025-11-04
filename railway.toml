@@ -3,7 +3,7 @@ builder = "NIXPACKS"
 buildCommand = "NPM_CONFIG_PRODUCTION=false npm install && npm install --prefix server && npm install --prefix mcp-server --include=dev && npm run build"
 
 [build.env]
-NIXPACKS_NODE_VERSION = "20"
+NIXPACKS_NODE_VERSION = "20.18.1"
 
 [deploy]
 startCommand = "node server/main-server.js"
