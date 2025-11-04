@@ -10,8 +10,11 @@
   "scripts": {
     "dev": "concurrently \"npm:server\" \"npm:client\"",
     "start": "concurrently \"npm:server\" \"npm:mcp\" \"npm:client\"",
-    "server": "cd server && npm run dev",
-    "mcp": "cd mcp-server && npm start",
+  "server": "cd server && npm run dev",
+  "server:start": "npm run start --prefix server",
+  "mcp": "cd mcp-server && npm start",
+  "mcp:start": "npm run start --prefix mcp-server",
+  "start:railway": "concurrently \"npm:server:start\" \"npm:mcp:start\"",
     "client": "vite",
     "build": "vite build",
     "lint": "eslint .",
