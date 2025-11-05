@@ -1,48 +1,48 @@
-import React from 'react';
-import { useApp } from '../../context/AppContext';
+import React from "react";
+import { useApp } from "../../context/AppContext";
 
 // Import all module components
-import { Dashboard } from './dashboard/Dashboard';
-import { POS } from './pos/POS';
-import { Inventory } from './inventory/Inventory';
-import { Analytics } from './analytics/Analytics';
-import { Checkout } from './checkout/Checkout';
-import { Receipts } from './receipts/Receipts';
-import { Payments } from './payments/Payments';
-import { Reports } from './reports/Reports';
-import { Settings } from './settings/Settings';
-import { Support } from './support/Support';
-import { Import } from './import/Import';
-import { Sessions } from './sessions/Sessions';
+import { Dashboard } from "./dashboard/Dashboard";
+import { POS } from "./pos/POS";
+import { Inventory } from "./inventory/Inventory";
+import { Analytics } from "./analytics/Analytics";
+import { Subscription } from "./subscription/Subscription";
+import { Receipts } from "./receipts/Receipts";
+import { Payments } from "./payments/Payments";
+import { Reports } from "./reports/Reports";
+import { Settings } from "./settings/Settings";
+import { Support } from "./support/Support";
+import { Import } from "./import/Import";
+import { Sessions } from "./sessions/Sessions";
 
 export const ModuleRouter: React.FC = () => {
   const { currentModule } = useApp();
-  
+
   // Return the appropriate module component based on currentModule
   switch (currentModule) {
-    case 'dashboard':
+    case "dashboard":
       return <Dashboard />;
-    case 'pos':
+    case "pos":
       return <POS />;
-    case 'inventory':
+    case "inventory":
       return <Inventory />;
-    case 'analytics':
+    case "analytics":
       return <Analytics />;
-    case 'checkout':
-      return <Checkout />;
-    case 'receipts':
+    case "Subscription":
+      return <Subscription />;
+    case "receipts":
       return <Receipts />;
-    case 'payments':
+    case "payments":
       return <Payments />;
-    case 'reports':
+    case "reports":
       return <Reports />;
-    case 'settings':
+    case "settings":
       return <Settings />;
-    case 'support':
+    case "support":
       return <Support />;
-    case 'import':
+    case "import":
       return <Import />;
-    case 'sessions':
+    case "sessions":
       return <Sessions />;
     default:
       return <Dashboard />;

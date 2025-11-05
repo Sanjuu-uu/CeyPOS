@@ -1,4 +1,4 @@
-import React from 'react';
+import React from "react";
 import {
   LayoutDashboard,
   ShoppingCart,
@@ -14,9 +14,9 @@ import {
   Settings,
   PanelLeftOpen,
   PanelLeftClose,
-} from 'lucide-react';
-import { useApp } from '../../context/AppContext';
-import { ModuleName } from '../../types';
+} from "lucide-react";
+import { useApp } from "../../context/AppContext";
+import { ModuleName } from "../../types";
 
 interface SidebarItemProps {
   icon: React.ReactNode;
@@ -38,12 +38,12 @@ const SidebarItem: React.FC<SidebarItemProps> = ({
     <div
       className={`flex items-center px-3 py-2 cursor-pointer rounded-lg transition-colors duration-200 ${
         isActive
-          ? 'bg-[#c5f542] text-gray-900'
-          : 'text-gray-500 hover:bg-gray-100 hover:text-gray-900'
+          ? "bg-[#c5f542] text-gray-900"
+          : "text-gray-500 hover:bg-gray-100 hover:text-gray-900"
       }`}
       onClick={onClick}
     >
-      <div className={`${isActive ? 'text-gray-900' : ''}`}>{icon}</div>
+      <div className={`${isActive ? "text-gray-900" : ""}`}>{icon}</div>
       {!isCollapsed && <span className="ml-3 font-medium">{label}</span>}
     </div>
   );
@@ -59,23 +59,71 @@ export const Sidebar: React.FC = () => {
     setIsMobileMenuOpen,
   } = useApp();
 
-  // On mobile (isMobileMenuOpen = true), force “expanded” labels; 
+  // On mobile (isMobileMenuOpen = true), force “expanded” labels;
   // on desktop, use isSidebarCollapsed as normal.
   const effectiveCollapsed = isMobileMenuOpen ? false : isSidebarCollapsed;
 
   const menuItems = [
-    { icon: <LayoutDashboard size={20} />, label: 'Dashboard', module: 'dashboard' as ModuleName },
-    { icon: <ShoppingCart size={20} />, label: 'POS', module: 'pos' as ModuleName },
-    { icon: <Package size={20} />, label: 'Inventory', module: 'inventory' as ModuleName },
-    { icon: <Wifi size={20} />, label: 'Sessions', module: 'sessions' as ModuleName },
-    { icon: <Wallet size={20} />, label: 'Payments', module: 'payments' as ModuleName },
-    { icon: <Receipt size={20} />, label: 'Receipts', module: 'receipts' as ModuleName },
-    { icon: <CreditCard size={20} />, label: 'Checkout', module: 'checkout' as ModuleName },
-    { icon: <BarChart3 size={20} />, label: 'Analytics', module: 'analytics' as ModuleName },
-    { icon: <Upload size={20} />, label: 'Flash-Promo', module: 'import' as ModuleName },
-    { icon: <FileText size={20} />, label: 'Reports', module: 'reports' as ModuleName },
-    { icon: <LifeBuoy size={20} />, label: 'Support', module: 'support' as ModuleName },
-    { icon: <Settings size={20} />, label: 'Settings', module: 'settings' as ModuleName },
+    {
+      icon: <LayoutDashboard size={20} />,
+      label: "Dashboard",
+      module: "dashboard" as ModuleName,
+    },
+    {
+      icon: <ShoppingCart size={20} />,
+      label: "POS",
+      module: "pos" as ModuleName,
+    },
+    {
+      icon: <Package size={20} />,
+      label: "Inventory",
+      module: "inventory" as ModuleName,
+    },
+    {
+      icon: <Wifi size={20} />,
+      label: "Sessions",
+      module: "sessions" as ModuleName,
+    },
+    {
+      icon: <Wallet size={20} />,
+      label: "Payments",
+      module: "payments" as ModuleName,
+    },
+    {
+      icon: <Receipt size={20} />,
+      label: "Receipts",
+      module: "receipts" as ModuleName,
+    },
+    {
+      icon: <BarChart3 size={20} />,
+      label: "Analytics",
+      module: "analytics" as ModuleName,
+    },
+    {
+      icon: <Upload size={20} />,
+      label: "Flash-Promo",
+      module: "import" as ModuleName,
+    },
+    {
+      icon: <FileText size={20} />,
+      label: "Reports",
+      module: "reports" as ModuleName,
+    },
+    {
+      icon: <CreditCard size={20} />,
+      label: "Subscription",
+      module: "Subscription" as ModuleName,
+    },
+    {
+      icon: <LifeBuoy size={20} />,
+      label: "Support",
+      module: "support" as ModuleName,
+    },
+    {
+      icon: <Settings size={20} />,
+      label: "Settings",
+      module: "settings" as ModuleName,
+    },
   ];
 
   return (
@@ -95,12 +143,12 @@ export const Sidebar: React.FC = () => {
 
           /* On mobile (<md): w-60 and slide in/out */
           w-60 transform transition-transform duration-300 ease-in-out
-          ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}
+          ${isMobileMenuOpen ? "translate-x-0" : "-translate-x-full"}
 
           /* On desktop (md+): disable sliding, normal flow, width = 16 or 60 */
           md:relative
           md:translate-x-0  
-          ${effectiveCollapsed ? 'md:w-16' : 'md:w-60'}
+          ${effectiveCollapsed ? "md:w-16" : "md:w-60"}
         `}
       >
         {/* Sidebar Header */}
@@ -125,7 +173,11 @@ export const Sidebar: React.FC = () => {
             }}
             className="p-1 rounded-md hover:bg-gray-100 text-gray-500 hover:text-gray-900 transition-colors"
           >
-            {effectiveCollapsed ? <PanelLeftOpen size={20} /> : <PanelLeftClose size={20} />}
+            {effectiveCollapsed ? (
+              <PanelLeftOpen size={20} />
+            ) : (
+              <PanelLeftClose size={20} />
+            )}
           </button>
         </div>
 

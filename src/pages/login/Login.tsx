@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Eye, EyeOff, Mail, Lock, ArrowRight } from "lucide-react";
+import { Eye, EyeOff, Mail, Lock, ArrowRight, X } from "lucide-react";
 import { useClerk, useSignIn } from "@clerk/clerk-react";
 import { useNavigate } from "react-router-dom";
 import Navigation from "../components/Navigation";
@@ -54,6 +54,19 @@ const Login = () => {
   const [verificationCode, setVerificationCode] = useState("");
   const [humanChallengePending, setHumanChallengePending] = useState(false);
   const [showRegisterPrompt, setShowRegisterPrompt] = useState(false);
+
+  // --- "Forgot Password" Modal State ---
+  const [isForgotPassword, setIsForgotPassword] = useState(false);
+  const [forgotPasswordStep, setForgotPasswordStep] = useState<
+    "request" | "reset" | "success"
+  >("request");
+  const [forgotPasswordEmail, setForgotPasswordEmail] = useState("");
+  const [forgotPasswordCode, setForgotPasswordCode] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [forgotPasswordError, setForgotPasswordError] = useState("");
+  const [forgotPasswordLoading, setForgotPasswordLoading] = useState(false);
+  // --- End of "Forgot Password" Modal State ---
 
   const isClerkReady = clerk.loaded;
   const isAuthLocked =
@@ -150,6 +163,15 @@ const Login = () => {
           if (setActive) {
             await setActive({ session: result.createdSessionId });
           }
+
+          // --- "Remember Me" Logic ---
+          if (rememberMe) {
+            localStorage.setItem("ceypos::rememberedEmail", email.trim());
+          } else {
+            localStorage.removeItem("ceypos::rememberedEmail");
+          }
+          // --- End of Logic ---
+
           deactivateRegisterPrompt();
           navigate("/");
         } catch (sessionError) {
@@ -320,6 +342,15 @@ const Login = () => {
           if (setActive) {
             await setActive({ session: result.createdSessionId });
           }
+
+          // --- "Remember Me" Logic ---
+          if (rememberMe) {
+            localStorage.setItem("ceypos::rememberedEmail", email.trim());
+          } else {
+            localStorage.removeItem("ceypos::rememberedEmail");
+          }
+          // --- End of Logic ---
+
           navigate("/");
         } catch (sessionError) {
           console.error("Failed to activate session:", sessionError);
@@ -446,6 +477,131 @@ const Login = () => {
     }
   };
 
+  // --- "Forgot Password" Modal Handlers ---
+  const handleRequestResetCode = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!isSignInLoaded || !signIn || forgotPasswordLoading) return;
+
+    setForgotPasswordLoading(true);
+    setForgotPasswordError("");
+
+    try {
+      const result = await signIn.create({
+        strategy: "reset_password_email_code",
+        identifier: forgotPasswordEmail.trim(),
+      });
+
+      // This flow assumes you have "Email verification code" enabled
+      // for password reset in your Clerk dashboard.
+      if (result.status === "needs_first_factor") {
+        setForgotPasswordStep("reset");
+      } else {
+        // Fallback for other potential statuses
+        console.error("Unexpected password reset status:", result.status);
+        setForgotPasswordError(
+          "Could not start password reset. Please try again."
+        );
+      }
+    } catch (err: any) {
+      console.error("Forgot Password error:", err);
+      const clerkErrors = extractClerkErrors(err);
+      const firstError = clerkErrors[0];
+      const message =
+        firstError?.message || firstError?.longMessage || "An error occurred.";
+
+      if (isMissingAccountError(firstError?.code, message)) {
+        setForgotPasswordError(
+          "We couldn't find an account with that email address."
+        );
+      } else {
+        setForgotPasswordError(message);
+      }
+    } finally {
+      setForgotPasswordLoading(false);
+    }
+  };
+
+  const handleResetPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!isSignInLoaded || !signIn || forgotPasswordLoading) return;
+
+    setForgotPasswordLoading(true);
+    setForgotPasswordError("");
+
+    try {
+      const result = await signIn.attemptFirstFactor({
+        strategy: "reset_password_email_code",
+        code: forgotPasswordCode.trim(),
+        password: newPassword,
+      });
+
+      if (result.status === "complete") {
+        setForgotPasswordStep("success");
+        // Don't auto-login, just show success and close.
+        // The user can now log in with their new password.
+        setTimeout(() => {
+          handleCloseForgotPassword();
+        }, 3000); // Close modal after 3 seconds
+      } else {
+        console.error("Unexpected password reset status:", result.status);
+        setForgotPasswordError("Password reset failed. Please try again.");
+      }
+    } catch (err: any) {
+      console.error("Reset Password error:", err);
+      const clerkErrors = extractClerkErrors(err);
+      const firstError = clerkErrors[0];
+      let errorMessage = "Invalid code or password. Please try again.";
+
+      const message =
+        firstError?.message || firstError?.longMessage || "".toLowerCase();
+
+      if (message.includes("invalid") || message.includes("incorrect")) {
+        errorMessage = "Invalid verification code. Please try again.";
+      } else if (message.includes("expired")) {
+        errorMessage =
+          "Verification code has expired. Please request a new one.";
+      } else if (
+        message.includes("password") &&
+        (message.includes("minimum") || message.includes("length"))
+      ) {
+        errorMessage = "Password does not meet security requirements.";
+      } else if (message.length > 0) {
+        errorMessage = message;
+      }
+
+      setForgotPasswordError(errorMessage);
+    } finally {
+      setForgotPasswordLoading(false);
+    }
+  };
+
+  const handleCloseForgotPassword = () => {
+    setIsForgotPassword(false);
+    // Reset all modal state on close
+    setTimeout(() => {
+      setForgotPasswordStep("request");
+      setForgotPasswordEmail("");
+      setForgotPasswordCode("");
+      setNewPassword("");
+      setShowNewPassword(false);
+      setForgotPasswordError("");
+      setForgotPasswordLoading(false);
+    }, 300); // Delay reset to allow for closing animation
+  };
+  // --- End of "Forgot Password" Modal Handlers ---
+
+  // --- "Remember Me" Logic ---
+  // Pre-fill email from localStorage on component mount
+  useEffect(() => {
+    const storedEmail = localStorage.getItem("ceypos::rememberedEmail");
+    if (storedEmail) {
+      setEmail(storedEmail);
+      setRememberMe(true);
+    }
+  }, []); // Empty array ensures this runs only once on mount
+  // --- End of Logic ---
+
+  // ... (useEffect for Clerk errors remains unchanged) ...
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const errorCode = params.get("__clerk_error") || params.get("clerk_error");
@@ -473,6 +629,7 @@ const Login = () => {
     }
   }, []);
 
+  // ... (useEffect for pendingOauth remains unchanged) ...
   useEffect(() => {
     const pendingOauth = sessionStorage.getItem("ceypos::pendingOauth");
     if (!pendingOauth) {
@@ -484,7 +641,7 @@ const Login = () => {
     }
   }, [oauthProvider, step]);
 
-  // Email verification step
+  // ... (Email verification step "login-verify" remains unchanged) ...
   if (step === "login-verify") {
     return (
       <div className="min-h-screen bg-gray-50 flex flex-col">
@@ -636,6 +793,207 @@ const Login = () => {
     <div className="min-h-screen bg-gray-50 flex flex-col">
       {/* Navigation */}
       <Navigation />
+
+      {/* --- "Forgot Password" Modal --- */}
+      {isForgotPassword && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-black bg-opacity-75">
+          <div className="relative w-full max-w-md bg-white rounded-2xl shadow-xl p-8">
+            <button
+              type="button"
+              onClick={handleCloseForgotPassword}
+              className="absolute top-4 right-4 text-gray-400 hover:text-gray-600"
+            >
+              <X className="h-6 w-6" />
+            </button>
+
+            {/* --- Modal Content --- */}
+            {forgotPasswordStep === "request" && (
+              <>
+                <div className="text-center mb-6">
+                  <h2 className="text-2xl font-black text-gray-900 mb-2">
+                    Forgot Password?
+                  </h2>
+                  <p className="text-gray-600 text-sm">
+                    Enter your email to receive a verification code.
+                  </p>
+                </div>
+
+                {forgotPasswordError && (
+                  <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-600 text-sm">
+                    {forgotPasswordError}
+                  </div>
+                )}
+
+                <form onSubmit={handleRequestResetCode} className="space-y-5">
+                  <div>
+                    <label
+                      htmlFor="forgot-email"
+                      className="block text-sm font-medium text-gray-700 mb-2"
+                    >
+                      Email Address
+                    </label>
+                    <div className="relative">
+                      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                        <Mail className="h-4 w-4 text-gray-400" />
+                      </div>
+                      <input
+                        id="forgot-email"
+                        type="email"
+                        value={forgotPasswordEmail}
+                        onChange={(e) => {
+                          setForgotPasswordEmail(e.target.value);
+                          if (forgotPasswordError) setForgotPasswordError("");
+                        }}
+                        className="block w-full pl-10 pr-3 py-2.5 border border-gray-300 rounded-full focus:outline-none focus:ring-2 focus:ring-gray-500 focus:border-transparent text-sm"
+                        placeholder="example@gmail.com"
+                        autoComplete="email"
+                        required
+                      />
+                    </div>
+                  </div>
+                  <button
+                    type="submit"
+                    disabled={forgotPasswordLoading || !isSignInLoaded}
+                    className="w-full bg-black hover:bg-gray-800 disabled:bg-gray-400 text-white py-3 px-4 rounded-full font-medium transition-all duration-300 flex items-center justify-center text-sm"
+                  >
+                    {forgotPasswordLoading ? (
+                      <>
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                        Sending Code...
+                      </>
+                    ) : (
+                      <>
+                        Send Verification Code
+                        <ArrowRight className="ml-2 h-4 w-4" />
+                      </>
+                    )}
+                  </button>
+                </form>
+              </>
+            )}
+
+            {forgotPasswordStep === "reset" && (
+              <>
+                <div className="text-center mb-6">
+                  <h2 className="text-2xl font-black text-gray-900 mb-2">
+                    Reset Your Password
+                  </h2>
+                  <p className="text-gray-600 text-sm">
+                    A code was sent to <strong>{forgotPasswordEmail}</strong>.
+                    Enter it below along with your new password.
+                  </p>
+                </div>
+
+                {forgotPasswordError && (
+                  <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-600 text-sm">
+                    {forgotPasswordError}
+                  </div>
+                )}
+
+                <form onSubmit={handleResetPassword} className="space-y-5">
+                  {/* Verification Code */}
+                  <div>
+                    <label
+                      htmlFor="forgot-code"
+                      className="block text-sm font-medium text-gray-700 mb-2"
+                    >
+                      Verification Code
+                    </label>
+                    <div className="relative">
+                      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                        <Lock className="h-4 w-4 text-gray-400" />
+                      </div>
+                      <input
+                        id="forgot-code"
+                        type="text"
+                        value={forgotPasswordCode}
+                        onChange={(e) => {
+                          setForgotPasswordCode(e.target.value);
+                          if (forgotPasswordError) setForgotPasswordError("");
+                        }}
+                        className="block w-full pl-10 pr-3 py-2.5 border border-gray-300 rounded-full focus:outline-none focus:ring-2 focus:ring-gray-500 focus:border-transparent text-sm"
+                        placeholder="123456"
+                        maxLength={6}
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  {/* New Password */}
+                  <div>
+                    <label
+                      htmlFor="new-password"
+                      className="block text-sm font-medium text-gray-700 mb-2"
+                    >
+                      New Password
+                    </label>
+                    <div className="relative">
+                      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                        <Lock className="h-4 w-4 text-gray-400" />
+                      </div>
+                      <input
+                        id="new-password"
+                        type={showNewPassword ? "text" : "password"}
+                        value={newPassword}
+                        onChange={(e) => {
+                          setNewPassword(e.target.value);
+                          if (forgotPasswordError) setForgotPasswordError("");
+                        }}
+                        className="block w-full pl-10 pr-10 py-2.5 border border-gray-300 rounded-full focus:outline-none focus:ring-2 focus:ring-gray-500 focus:border-transparent text-sm"
+                        placeholder="min 8 character"
+                        required
+                      />
+                      <button
+                        type="button"
+                        className="absolute inset-y-0 right-0 pr-3 flex items-center"
+                        onClick={() => setShowNewPassword(!showNewPassword)}
+                      >
+                        {showNewPassword ? (
+                          <EyeOff className="h-4 w-4 text-gray-400 hover:text-gray-600" />
+                        ) : (
+                          <Eye className="h-4 w-4 text-gray-400 hover:text-gray-600" />
+                        )}
+                      </button>
+                    </div>
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={forgotPasswordLoading || !isSignInLoaded}
+                    className="w-full bg-black hover:bg-gray-800 disabled:bg-gray-400 text-white py-3 px-4 rounded-full font-medium transition-all duration-300 flex items-center justify-center text-sm"
+                  >
+                    {forgotPasswordLoading ? (
+                      <>
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                        Resetting...
+                      </>
+                    ) : (
+                      <>
+                        Set New Password
+                        <ArrowRight className="ml-2 h-4 w-4" />
+                      </>
+                    )}
+                  </button>
+                </form>
+              </>
+            )}
+
+            {forgotPasswordStep === "success" && (
+              <div className="text-center">
+                <h2 className="text-2xl font-black text-green-600 mb-2">
+                  Success!
+                </h2>
+                <p className="text-gray-600 text-sm">
+                  Your password has been reset. You can now log in with your new
+                  password.
+                </p>
+              </div>
+            )}
+            {/* --- End Modal Content --- */}
+          </div>
+        </div>
+      )}
+      {/* --- End "Forgot Password" Modal --- */}
 
       {/* Main Content */}
       <div className="relative overflow-hidden flex-1">
@@ -844,12 +1202,20 @@ const Login = () => {
                         Remember me
                       </label>
                     </div>
-                    <a
-                      href="#"
+
+                    {/* --- "Forgot Password" Button --- */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        // Pre-fill modal with email from login form if it exists
+                        setForgotPasswordEmail(email);
+                        setIsForgotPassword(true);
+                      }}
                       className="text-sm text-gray-900 hover:text-gray-700 font-medium"
                     >
                       Forgot password?
-                    </a>
+                    </button>
+                    {/* --- End of Button --- */}
                   </div>
 
                   {/* Submit Button - Black oval shape */}
@@ -887,7 +1253,7 @@ const Login = () => {
 
             {/* Dashboard Preview */}
             <div className="hidden lg:block">
-              <div className="bg-white rounded-2xl shadow-2xl overflow-hidden border border-gray-200">
+              <div className="bg-white rounded-2xl shadow-2xl overflow-hidden border border-gray-20pre">
                 <img
                   src="https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=600&h=400&fit=crop&crop=center"
                   alt="Dashboard Preview - Temporary Stock Photo"

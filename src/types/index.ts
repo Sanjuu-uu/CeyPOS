@@ -4,7 +4,7 @@ export interface User {
   id: string;
   name: string;
   email: string;
-  role: 'admin' | 'manager' | 'staff';
+  role: "admin" | "manager" | "staff";
   shopId: string;
   permissions: string[];
   avatarUrl?: string;
@@ -43,7 +43,7 @@ export interface Sale {
   };
   items: CartItem[];
   total: number;
-  paymentMethod: 'cash' | 'card' | 'mobile';
+  paymentMethod: "cash" | "card" | "mobile";
   timestamp: string;
 }
 
@@ -58,17 +58,17 @@ export interface DashboardStats {
   }>;
 }
 
-export type ModuleName = 
-  | 'dashboard' 
-  | 'pos' 
-  | 'inventory' 
-  | 'analytics' 
-  | 'checkout' 
-  | 'receipts' 
-  | 'payments' 
-  | 'reports' 
-  | 'settings' 
-  | 'support' 
-  | 'import' 
-  | 'sessions'
-  | 'components';
+export type ModuleName =
+  | "dashboard"
+  | "pos"
+  | "inventory"
+  | "analytics"
+  | "Subscription"
+  | "receipts"
+  | "payments"
+  | "reports"
+  | "settings"
+  | "support"
+  | "import"
+  | "sessions"
+  | "components";
