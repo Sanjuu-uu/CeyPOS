@@ -3,22 +3,29 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
+  "engines": {
+    "node": "20.x",
+    "npm": ">=10.0.0"
+  },
   "scripts": {
     "dev": "concurrently \"npm:server\" \"npm:client\"",
     "start": "concurrently \"npm:server\" \"npm:mcp\" \"npm:client\"",
-    "server": "cd server && npm run dev",
-    "mcp": "cd mcp-server && npm start",
+  "server": "cd server && npm run dev",
+  "server:start": "npm run start --prefix server",
+  "mcp": "cd mcp-server && npm start",
+  "mcp:start": "npm run start --prefix mcp-server",
+  "start:railway": "concurrently \"npm:server:start\" \"npm:mcp:start\"",
     "client": "vite",
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.18.0",
     "@clerk/clerk-react": "^5.46.2",
     "@clerk/nextjs": "^6.31.10",
     "@types/react-router-dom": "^5.3.3",
     "axios": "^1.11.0",
-    "better-sqlite3": "^9.4.3",
     "clsx": "^2.1.1",
     "dotenv": "^17.2.1",
     "exceljs": "^4.4.0",
@@ -40,6 +47,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.9.1",
+    "@flydotio/dockerfile": "^0.7.10",
     "@tailwindcss/aspect-ratio": "^0.4.2",
     "@tailwindcss/forms": "^0.5.9",
     "@tailwindcss/typography": "^0.5.15",

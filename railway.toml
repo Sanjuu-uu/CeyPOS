@@ -1,10 +1,12 @@
 [build]
 builder = "NIXPACKS"
+buildCommand = "npm install && npm install --prefix server && npm install --prefix mcp-server && npm run build"
 
-[build.nixpacks]
-node_version = "18"
+[build.env]
+NIXPACKS_NODE_VERSION = "20.18.1"
 
 [deploy]
-buildCommand = "npm install && cd server && npm install && cd ../mcp-server && npm install && cd .. && npm run build"
-startCommand = "npm start"
+startCommand = "npm run start:railway"
+healthcheckPath = "/api/health"
 restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 10

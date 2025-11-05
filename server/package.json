@@ -4,6 +4,9 @@
   "description": "CeyPOS back-end",
   "main": "main-server.js",
   "type": "module",
+  "engines": {
+    "node": "20.x"
+  },
   "scripts": {
     "start": "node main-server.js",
     "dev": "set PORT=4000 && node main-server.js"
