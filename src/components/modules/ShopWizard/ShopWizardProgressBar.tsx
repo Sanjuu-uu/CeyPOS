@@ -13,8 +13,14 @@ export const ShopWizardProgressBar: React.FC<ShopWizardProgressBarProps> = ({ cl
   const { currentStep, nextStep, previousStep, canProceed } = useShopWizard();
   const totalSteps = 6;
 
+  // --- FIX APPLIED HERE ---
+  // Override 'canProceed' for the Review & Confirm step (Step 5)
+  // as it should always allow the user to move to the final step (Step 6).
+  const shouldAllowNext = canProceed || currentStep === 5;
+
   const handleNext = () => {
-    if (canProceed && currentStep < totalSteps) {
+    // Use the shouldAllowNext logic
+    if (shouldAllowNext && currentStep < totalSteps) {
       nextStep();
     }
   };
@@ -142,23 +148,23 @@ export const ShopWizardProgressBar: React.FC<ShopWizardProgressBarProps> = ({ cl
             </motion.button>
           )}
 
-          {/* Next/Complete Button */}
+          {/* Next/Complete Button - Uses shouldAllowNext for logic */}
           <motion.button
-            whileHover={{ scale: canProceed ? 1.02 : 1 }}
-            whileTap={{ scale: canProceed ? 0.98 : 1 }}
+            whileHover={{ scale: shouldAllowNext ? 1.02 : 1 }}
+            whileTap={{ scale: shouldAllowNext ? 0.98 : 1 }}
             onClick={handleNext}
-            disabled={!canProceed || currentStep >= totalSteps}
-            className={canProceed && currentStep < totalSteps ? "button-primary" : "button-outline"}
+            disabled={!shouldAllowNext || currentStep >= totalSteps}
+            className={shouldAllowNext && currentStep < totalSteps ? "button-primary" : "button-outline"}
             style={{
               height: '32px',
               minWidth: '110px',
               padding: '0 14px',
               fontSize: '12px',
               fontWeight: 500,
-              backgroundColor: canProceed && currentStep < totalSteps ? '#c5f542' : 'var(--gray--200)',
-              color: canProceed && currentStep < totalSteps ? '#000000' : 'var(--gray--500)',
+              backgroundColor: shouldAllowNext && currentStep < totalSteps ? '#c5f542' : 'var(--gray--200)',
+              color: shouldAllowNext && currentStep < totalSteps ? '#000000' : 'var(--gray--500)',
               border: '1px solid var(--gray--300)',
-              cursor: canProceed && currentStep < totalSteps ? 'pointer' : 'not-allowed',
+              cursor: shouldAllowNext && currentStep < totalSteps ? 'pointer' : 'not-allowed',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',

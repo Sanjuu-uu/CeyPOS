@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { useShopWizard } from '../../../context/ShopWizardContext';
 import './styles/ShopWizard.css';
@@ -28,13 +28,12 @@ const inputVariants = {
   }),
 };
 
+// Filtered Currencies for: United States, United Kingdom, Australia, Singapore, Sri Lanka, India
 const currencies = {
   USD: { name: 'US Dollar', symbol: '$' },
-  EUR: { name: 'Euro', symbol: '€' },
   GBP: { name: 'British Pound', symbol: '£' },
-  JPY: { name: 'Japanese Yen', symbol: '¥' },
-  CAD: { name: 'Canadian Dollar', symbol: 'C$' },
   AUD: { name: 'Australian Dollar', symbol: 'A$' },
+  SGD: { name: 'Singapore Dollar', symbol: 'S$' },
   LKR: { name: 'Sri Lankan Rupee', symbol: 'Rs' },
   INR: { name: 'Indian Rupee', symbol: '₹' },
 };
@@ -89,10 +88,17 @@ const daysOfWeek = [
   { key: 'sunday', label: 'Sunday' },
 ];
 
+interface LocalData {
+  currency: string;
+  timezone: string;
+  operatingHours: any;
+  paymentMethods: string[];
+}
+
 export const ShopWizardStep4: React.FC = () => {
   const { formData, updateFormData } = useShopWizard();
-  const [localData, setLocalData] = useState({
-    currency: formData.currency,
+  const [localData, setLocalData] = useState<LocalData>({
+    currency: formData.currency || '',
     timezone: formData.timezone,
     operatingHours: formData.operatingHours,
     paymentMethods: formData.paymentMethods,
@@ -100,12 +106,31 @@ export const ShopWizardStep4: React.FC = () => {
 
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  const handleInputChange = (field: string, value: any) => {
-    setLocalData(prev => ({ ...prev, [field]: value }));
-    // Clear error when user makes changes
-    if (errors[field]) {
-      setErrors(prev => ({ ...prev, [field]: '' }));
+  // Validation Logic
+  const validateForm = useCallback((data: LocalData) => {
+    const newErrors: Record<string, string> = {};
+    let isValid = true;
+
+    if (!data.currency) {
+      newErrors.currency = 'Currency is required.';
+      isValid = false;
     }
+
+    if (data.paymentMethods.length === 0) {
+      newErrors.paymentMethods = 'Please select at least one payment method.';
+      isValid = false;
+    }
+    
+    setErrors(newErrors);
+    return isValid;
+  }, []);
+
+  const handleInputChange = (field: keyof LocalData, value: any) => {
+    const updatedData = { ...localData, [field]: value };
+    setLocalData(updatedData);
+
+    // Live validation after state update
+    validateForm(updatedData);
   };
 
   const handlePaymentMethodToggle = (methodValue: string) => {
@@ -124,11 +149,37 @@ export const ShopWizardStep4: React.FC = () => {
         [field]: value,
       },
     };
-    handleInputChange('operatingHours', updatedHours);  };
-
+    handleInputChange('operatingHours', updatedHours);
+  };
+  
+  // Update global state whenever localData changes
   useEffect(() => {
     updateFormData(localData);
-  }, [localData, updateFormData]);  return (
+  }, [localData, updateFormData]);
+  
+  
+  // Helper component for error message (matching Step 3's structure + Step 4's motion)
+  const ErrorMessage: React.FC<{ message: string }> = ({ message }) => (
+    <motion.p
+      initial={{ opacity: 0, y: -5 }}
+      animate={{ opacity: 1, y: 0 }}
+      style={{
+        fontFamily: 'Inter, sans-serif',
+        fontSize: '11px',
+        fontWeight: 500,
+        color: 'var(--red--600, #DC2626)',
+        marginTop: '4px',
+        margin: '4px 0 0 0'
+      }}
+    >
+      {message}
+    </motion.p>
+  );
+  
+  // NOTE: You would typically call a submit/next function here, like handleNext, 
+  // but for a single step component, we focus on the field interaction.
+
+  return (
     <div className="w-full flex justify-center">
       <motion.div
         variants={cardVariants}
@@ -202,7 +253,8 @@ export const ShopWizardStep4: React.FC = () => {
                   style={{
                     width: '100%',
                     height: '48px',
-                    border: `1px solid ${errors.currency ? '#ef4444' : 'var(--gray--200)'}`,
+                    // Border color logic matching Step 3
+                    border: `1px solid ${errors.currency ? 'var(--red--500)' : 'var(--gray--200)'}`,
                     borderRadius: 'var(--radius--12px)',
                     backgroundColor: 'var(--main--white)',
                     padding: '0 16px',
@@ -214,10 +266,10 @@ export const ShopWizardStep4: React.FC = () => {
                     cursor: 'pointer'
                   }}
                   onFocus={(e) => {
-                    e.target.style.borderColor = 'var(--gray--900)';
+                    e.target.style.borderColor = errors.currency ? 'var(--red--500)' : 'var(--gray--900)';
                   }}
                   onBlur={(e) => {
-                    e.target.style.borderColor = errors.currency ? '#ef4444' : 'var(--gray--200)';
+                    e.target.style.borderColor = errors.currency ? 'var(--red--500)' : 'var(--gray--200)';
                   }}
                 >
                   <option value="">Select your currency</option>
@@ -227,19 +279,20 @@ export const ShopWizardStep4: React.FC = () => {
                     </option>
                   ))}
                 </select>
-                {errors.currency && (
-                  <motion.p
-                    initial={{ opacity: 0, y: -5 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    style={{
-                      fontFamily: 'Inter, sans-serif',
-                      fontSize: '11px',
-                      color: '#ef4444',
-                      marginTop: '4px'
-                    }}
-                  >
-                    {errors.currency}
-                  </motion.p>
+                {/* Conditional Error/Help Text (Matching Step 3 Pattern) */}
+                {errors.currency ? (
+                  <ErrorMessage message={errors.currency} />
+                ) : (
+                  <p style={{
+                    fontFamily: 'Inter, sans-serif',
+                    fontSize: '11px',
+                    fontWeight: 400,
+                    color: 'var(--gray--400)',
+                    marginTop: '4px',
+                    margin: '4px 0 0 0'
+                  }}>
+                    Select the primary currency for your shop.
+                  </p>
                 )}
               </motion.div>
 
@@ -322,19 +375,9 @@ export const ShopWizardStep4: React.FC = () => {
                     </motion.label>
                   ))}
                 </div>
+                {/* Payment Methods Error Message (Using ErrorMessage Component) */}
                 {errors.paymentMethods && (
-                  <motion.p
-                    initial={{ opacity: 0, y: -5 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    style={{
-                      fontFamily: 'Inter, sans-serif',
-                      fontSize: '11px',
-                      color: '#ef4444',
-                      marginTop: '6px'
-                    }}
-                  >
-                    {errors.paymentMethods}
-                  </motion.p>
+                  <ErrorMessage message={errors.paymentMethods} />
                 )}
               </motion.div>
             </div>
