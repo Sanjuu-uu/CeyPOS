@@ -3,12 +3,13 @@ import { motion } from 'framer-motion';
 import { useShopWizard } from '../../../context/ShopWizardContext';
 import './styles/ShopWizard.css';
 
+// Update interface to accept the modal setter function
 interface ShopWizardProgressBarProps {
   className?: string;
+  setIsSkipModalOpen: React.Dispatch<React.SetStateAction<boolean>>;
 }
 
-export const ShopWizardProgressBar: React.FC<ShopWizardProgressBarProps> = ({ className = '' }) => {
-  // Use the correct function name from context
+export const ShopWizardProgressBar: React.FC<ShopWizardProgressBarProps> = ({ className = '', setIsSkipModalOpen }) => {
   const { currentStep, nextStep, previousStep, canProceed } = useShopWizard();
   const totalSteps = 6;
 
@@ -18,11 +19,21 @@ export const ShopWizardProgressBar: React.FC<ShopWizardProgressBarProps> = ({ cl
     }
   };
 
-  const handlePrevious = () => {
-    if (currentStep > 1) {
-      previousStep(); // Use the correct function name
+  const handleSkip = () => {
+    // Now just opens the modal in the parent component
+    if (currentStep < totalSteps) {
+      setIsSkipModalOpen(true); 
     }
   };
+
+  const handlePrevious = () => {
+    if (currentStep > 1) {
+      previousStep();
+    }
+  };
+
+  // Determine if the current step can be skipped (assuming only Step 3 for now)
+  const isCurrentStepSkippable = currentStep === 3;
 
   return (
     <div className={`w-full flex flex-col items-center ${className}`}>
@@ -47,10 +58,10 @@ export const ShopWizardProgressBar: React.FC<ShopWizardProgressBarProps> = ({ cl
                 gap: '6px'
               }}
             >
-              <svg 
-                style={{ width: '14px', height: '14px' }} 
-                fill="none" 
-                stroke="currentColor" 
+              <svg
+                style={{ width: '14px', height: '14px' }}
+                fill="none"
+                stroke="currentColor"
                 viewBox="0 0 24 24"
               >
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
@@ -61,16 +72,16 @@ export const ShopWizardProgressBar: React.FC<ShopWizardProgressBarProps> = ({ cl
         </div>
         <div className="relative" style={{ width: '33%' }}>
           {/* Progress Bar with Gaps */}
-          <div style={{ 
-            display: 'flex', 
-            justifyContent: 'space-between', 
+          <div style={{
+            display: 'flex',
+            justifyContent: 'space-between',
             width: '100%',
             height: '6px',
-            gap: '3px' // Add gap between segments
+            gap: '3px'
           }}>
             {/* 6 Segments with Gaps */}
             {Array.from({ length: 6 }, (_, index) => (
-              <div 
+              <div
                 key={index}
                 style={{
                   flex: 1,
@@ -86,9 +97,9 @@ export const ShopWizardProgressBar: React.FC<ShopWizardProgressBarProps> = ({ cl
                 {index < Math.ceil(((currentStep - 1) / (totalSteps - 1)) * 6) && (
                   <motion.div
                     initial={{ width: 0 }}
-                    animate={{ 
-                      width: index < Math.floor(((currentStep - 1) / (totalSteps - 1)) * 6) ? '100%' : 
-                            `${(((currentStep - 1) / (totalSteps - 1)) * 6 - Math.floor(((currentStep - 1) / (totalSteps - 1)) * 6)) * 100}%` 
+                    animate={{
+                      width: index < Math.floor(((currentStep - 1) / (totalSteps - 1)) * 6) ? '100%' :
+                            `${(((currentStep - 1) / (totalSteps - 1)) * 6 - Math.floor(((currentStep - 1) / (totalSteps - 1)) * 6)) * 100}%`
                     }}
                     transition={{ duration: 0.3, ease: 'easeOut' }}
                     style={{
@@ -105,7 +116,33 @@ export const ShopWizardProgressBar: React.FC<ShopWizardProgressBarProps> = ({ cl
             ))}
           </div>
         </div>
-        <div className="flex-1 flex justify-end">
+        <div className="flex-1 flex justify-end gap-3">
+          {/* Skip Button - Triggers the modal via props */}
+          {isCurrentStepSkippable && currentStep < totalSteps && (
+            <motion.button
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+              onClick={handleSkip}
+              className="button-primary"
+              style={{
+                height: '32px',
+                minWidth: '60px',
+                padding: '0 14px',
+                fontSize: '12px',
+                fontWeight: 500,
+                backgroundColor: '#c5f542',
+                color: '#000000',
+                border: '1px solid #c5f542',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              Skip
+            </motion.button>
+          )}
+
+          {/* Next/Complete Button */}
           <motion.button
             whileHover={{ scale: canProceed ? 1.02 : 1 }}
             whileTap={{ scale: canProceed ? 0.98 : 1 }}
@@ -130,10 +167,10 @@ export const ShopWizardProgressBar: React.FC<ShopWizardProgressBarProps> = ({ cl
           >
             {currentStep >= totalSteps ? 'Complete' : 'Next'}
             {currentStep < totalSteps && (
-              <svg 
-                style={{ width: '14px', height: '14px' }} 
-                fill="none" 
-                stroke="currentColor" 
+              <svg
+                style={{ width: '14px', height: '14px' }}
+                fill="none"
+                stroke="currentColor"
                 viewBox="0 0 24 24"
               >
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />

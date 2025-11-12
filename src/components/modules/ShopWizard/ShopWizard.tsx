@@ -1,7 +1,7 @@
-import React, { useState } from "react"; // Import useState
+import React, { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useShopWizard } from "../../../context/ShopWizardContext";
-import { useUser, useClerk } from "@clerk/clerk-react"; // Import Clerk hooks
+import { useUser, useClerk } from "@clerk/clerk-react";
 import { ShopWizardStep1 } from "./ShopWizardStep1";
 import { ShopWizardStep2 } from "./ShopWizardStep2";
 import { ShopWizardStep3 } from "./ShopWizardStep3";
@@ -10,7 +10,7 @@ import { ShopWizardStep5 } from "./ShopWizardStep5";
 import { ShopWizardStep6 } from "./ShopWizardStep6";
 import { ShopWizardProgressBar } from "./ShopWizardProgressBar";
 import backgroundImage from "./assets/blog-20background-1.png";
-import "./styles/ShopWizard.css"; // Make sure to add new styles to this file
+import "./styles/ShopWizard.css";
 
 const slideVariants = {
   initial: (direction: string) => ({
@@ -48,7 +48,7 @@ const containerVariants = {
   },
 };
 
-// Animation variants for the modal
+// Animation variants for the modal (Used by both Cancel and Skip modals)
 const modalBackdropVariants = {
   initial: { opacity: 0 },
   animate: { opacity: 1 },
@@ -62,9 +62,15 @@ const modalContentVariants = {
 };
 
 export const ShopWizard: React.FC = () => {
-  const { currentStep, animationDirection } = useShopWizard();
+  const { currentStep, animationDirection, nextStep } = useShopWizard();
+  
+  // State for Cancel Modal
   const [isCancelModalOpen, setIsCancelModalOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  
+  // NEW State for Skip Modal
+  const [isSkipModalOpen, setIsSkipModalOpen] = useState(false);
+  
   const { user } = useUser();
   const { signOut } = useClerk();
 
@@ -103,6 +109,13 @@ export const ShopWizard: React.FC = () => {
       setIsDeleting(false);
     }
   };
+
+  // Handles confirmation to skip the current step
+  const handleSkipConfirm = () => {
+    setIsSkipModalOpen(false); // Close modal
+    nextStep(); // Proceed to the next step
+  };
+
 
   return (
     <>
@@ -170,11 +183,10 @@ export const ShopWizard: React.FC = () => {
 
             <div className="navigation-right">
               <div className="navigation-button-group">
-                {/* --- MODIFIED BUTTON --- */}
                 <button
                   type="button"
                   onClick={() => setIsCancelModalOpen(true)}
-                  className="button-danger-small" // Use new red button style
+                  className="button-danger-small"
                   disabled={isDeleting}
                 >
                   Cancel
@@ -224,17 +236,21 @@ export const ShopWizard: React.FC = () => {
           style={{
             backgroundColor: "rgba(255, 255, 255, 0.95)",
             backdropFilter: "blur(10px)",
-            flexShrink: 0, // Prevent footer from shrinking
-            zIndex: 10, // Ensure footer stays on top
+            flexShrink: 0,
+            zIndex: 10,
           }}
         >
           <div className="max-w-5xl mx-auto">
-            <ShopWizardProgressBar className="w-full" />
+            {/* PASS THE MODAL STATE SETTER TO THE PROGRESS BAR */}
+            <ShopWizardProgressBar 
+                className="w-full" 
+                setIsSkipModalOpen={setIsSkipModalOpen} 
+            />
           </div>
         </motion.div>
       </motion.div>
 
-      {/* --- CANCEL CONFIRMATION MODAL (Updated Professional Look) --- */}
+      {/* --- CANCEL CONFIRMATION MODAL --- */}
       <AnimatePresence>
         {isCancelModalOpen && (
           <motion.div
@@ -252,7 +268,7 @@ export const ShopWizard: React.FC = () => {
               zIndex: 50,
               backdropFilter: "blur(4px)",
             }}
-            onClick={() => !isDeleting && setIsCancelModalOpen(false)} // Close on overlay click
+            onClick={() => !isDeleting && setIsCancelModalOpen(false)}
           >
             <motion.div
               variants={modalContentVariants}
@@ -260,16 +276,14 @@ export const ShopWizard: React.FC = () => {
                 backgroundColor: "white",
                 borderRadius: "12px",
                 width: "100%",
-                maxWidth: "420px", // Slightly wider for the icon
+                maxWidth: "420px",
                 boxShadow:
                   "0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)",
-                overflow: "hidden", // To ensure rounded corners clip the content
+                overflow: "hidden",
               }}
-              onClick={(e) => e.stopPropagation()} // Prevent modal from closing when clicking inside
+              onClick={(e) => e.stopPropagation()}
             >
-              {/* Modal Content */}
               <div style={{ display: "flex", padding: "24px" }}>
-                {/* Icon */}
                 <div
                   style={{
                     flexShrink: 0,
@@ -277,7 +291,7 @@ export const ShopWizard: React.FC = () => {
                     width: "40px",
                     height: "40px",
                     borderRadius: "50%",
-                    backgroundColor: "#fef2f2c4", // bg-red-50
+                    backgroundColor: "#fef2f2c4",
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
@@ -290,7 +304,7 @@ export const ShopWizard: React.FC = () => {
                     style={{
                       width: "24px",
                       height: "24px",
-                      color: "#DC2626", // text-red-600
+                      color: "#DC2626",
                     }}
                   >
                     <path
@@ -300,8 +314,6 @@ export const ShopWizard: React.FC = () => {
                     />
                   </svg>
                 </div>
-
-                {/* Text Content */}
                 <div style={{ minWidth: 0 }}>
                   <h3
                     style={{
@@ -328,13 +340,11 @@ export const ShopWizard: React.FC = () => {
                   </p>
                 </div>
               </div>
-
-              {/* Modal Footer (Button Bar) */}
               <div
                 style={{
-                  backgroundColor: "#F9FAFB", // bg-gray-50
+                  backgroundColor: "#F9FAFB",
                   padding: "16px 24px",
-                  borderTop: "1px solid #E5E7EB", // border-gray-200
+                  borderTop: "1px solid #E5E7EB",
                   display: "flex",
                   gap: "12px",
                   justifyContent: "flex-end",
@@ -344,7 +354,7 @@ export const ShopWizard: React.FC = () => {
                   type="button"
                   onClick={() => setIsCancelModalOpen(false)}
                   disabled={isDeleting}
-                  className="button-secondary-small" // Use new secondary style
+                  className="button-secondary-small"
                   style={{ opacity: isDeleting ? 0.7 : 1 }}
                 >
                   No, continue
@@ -353,13 +363,156 @@ export const ShopWizard: React.FC = () => {
                   type="button"
                   onClick={handleCancelConfirm}
                   disabled={isDeleting}
-                  className="button-danger-solid-small" // Use new SOLID red style
+                  className="button-danger-solid-small"
                   style={{
                     opacity: isDeleting ? 0.7 : 1,
-                    minWidth: "130px", // Prevent layout shift
+                    minWidth: "130px",
                   }}
                 >
                   {isDeleting ? "Deleting..." : "Yes, cancel & delete"}
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* --- SKIP CONFIRMATION MODAL (New Full-Screen Modal) --- */}
+      <AnimatePresence>
+        {isSkipModalOpen && (
+          <motion.div
+            variants={modalBackdropVariants}
+            initial="initial"
+            animate="animate"
+            exit="exit"
+            style={{
+              position: "fixed",
+              inset: 0,
+              backgroundColor: "rgba(0, 0, 0, 0.5)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              zIndex: 50,
+              backdropFilter: "blur(4px)",
+            }}
+            onClick={() => setIsSkipModalOpen(false)} // Close on overlay click
+          >
+            <motion.div
+              variants={modalContentVariants}
+              style={{
+                backgroundColor: "white",
+                borderRadius: "12px",
+                width: "100%",
+                maxWidth: "420px",
+                boxShadow:
+                  "0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)",
+                overflow: "hidden",
+              }}
+              onClick={(e) => e.stopPropagation()} // Prevent modal from closing when clicking inside
+            >
+              {/* Modal Content */}
+              <div style={{ display: "flex", padding: "24px" }}>
+                {/* Icon (Primary color) */}
+                <div
+                  style={{
+                    flexShrink: 0,
+                    marginRight: "16px",
+                    width: "40px",
+                    height: "40px",
+                    borderRadius: "50%",
+                    backgroundColor: "#f0fff4", // Light green background
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    style={{
+                      width: "24px",
+                      height: "24px",
+                      color: "#c5f542", // Primary green color
+                    }}
+                  >
+                    <path d="M12 22C17.5228 22 22 17.5228 22 12C22 6.47715 17.5228 2 12 2C6.47715 2 2 6.47715 2 12C2 17.5228 6.47715 22 12 22Z" />
+                    <path d="M9 12l2 2 4-4" /> {/* Checkmark */}
+                  </svg>
+                </div>
+
+                {/* Text Content */}
+                <div style={{ minWidth: 0 }}>
+                  <h3
+                    style={{
+                      fontSize: "18px",
+                      fontWeight: 600,
+                      color: "var(--gray--900, #111827)",
+                      marginTop: 0,
+                      marginBottom: "8px",
+                    }}
+                  >
+                    Confirm Skip Step?
+                  </h3>
+                  <p
+                    style={{
+                      fontSize: "14px",
+                      color: "var(--gray--600, #4B5563)",
+                      lineHeight: 1.5,
+                      margin: 0,
+                    }}
+                  >
+                    Are you sure you want to skip this step? You can always fill
+                    in these details later from your dashboard.
+                  </p>
+                </div>
+              </div>
+
+              {/* Modal Footer (Button Bar) */}
+              <div
+                style={{
+                  backgroundColor: "#F9FAFB",
+                  padding: "16px 24px",
+                  borderTop: "1px solid #E5E7EB",
+                  display: "flex",
+                  gap: "12px",
+                  justifyContent: "flex-end",
+                }}
+              >
+                <button
+                  type="button"
+                  onClick={() => setIsSkipModalOpen(false)}
+                  className="button-secondary-small"
+                  style={{
+                    minWidth: "110px",
+                    height: '32px',
+                    padding: '0 14px',
+                    fontSize: '12px',
+                    fontWeight: 500,
+                    borderRadius: '8px'
+                  }}
+                >
+                  No, stay here
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSkipConfirm}
+                  className="button-primary-small"
+                  style={{
+                    backgroundColor: '#c5f542',
+                    color: '#000000',
+                    border: '1px solid #c5f542',
+                    minWidth: "130px",
+                    height: '32px',
+                    padding: '0 14px',
+                    fontSize: '12px',
+                    fontWeight: 500,
+                    borderRadius: '8px'
+                  }}
+                >
+                  Yes, Skip Step
                 </button>
               </div>
             </motion.div>

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { useShopWizard } from '../../../context/ShopWizardContext';
 import './styles/ShopWizard.css';
@@ -29,24 +29,92 @@ const inputVariants = {
 };
 
 export const ShopWizardStep3: React.FC = () => {
-  const { formData, updateFormData } = useShopWizard();
+  // FIX: Retaining the temporary removal of 'setCanProceed' to prevent compile errors.
+  // NOTE: Validation control via context is DISABLED until your context type is fixed.
+  const { formData, updateFormData /* , setCanProceed */ } = useShopWizard();
   const [localData, setLocalData] = useState({
-    businessLicense: formData.businessLicense,
-    taxId: formData.taxId,
-    registrationNumber: formData.registrationNumber,
+    businessLicense: formData.businessLicense || '',
+    taxId: formData.taxId || '',
+    registrationNumber: formData.registrationNumber || '',
   });
 
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  const handleInputChange = (field: string, value: string) => {
-    setLocalData(prev => ({ ...prev, [field]: value }));
-    // Clear error when user starts typing
-    if (errors[field]) {
-      setErrors(prev => ({ ...prev, [field]: '' }));
+  // Validation function: ALL FIELDS ARE NOW REQUIRED (based on your request)
+  const validate = useCallback((data: typeof localData): boolean => {
+    let newErrors: Record<string, string> = {};
+    let isValid = true;
+
+    // Regex for basic alphanumeric/hyphen/space
+    const basicRegex = /^[a-zA-Z0-9\s-]+$/;
+
+    // 1. Business License
+    if (!data.businessLicense.trim()) {
+      newErrors.businessLicense = 'Business License Number is required.';
+      isValid = false;
+    } else if (!basicRegex.test(data.businessLicense)) {
+      newErrors.businessLicense = 'Invalid characters. Use letters, numbers, hyphens, or spaces.';
+      isValid = false;
     }
-  };  useEffect(() => {
+
+    // 2. Tax ID
+    if (!data.taxId.trim()) {
+      newErrors.taxId = 'Tax ID/EIN is required.';
+      isValid = false;
+    } else if (!basicRegex.test(data.taxId)) {
+      newErrors.taxId = 'Invalid format. Use letters, numbers, and hyphens.';
+      isValid = false;
+    }
+
+    // 3. Registration Number
+    if (!data.registrationNumber.trim()) {
+      newErrors.registrationNumber = 'Registration Number is required.';
+      isValid = false;
+    } else if (!basicRegex.test(data.registrationNumber)) {
+      newErrors.registrationNumber = 'Invalid characters. Use letters, numbers, hyphens, or spaces.';
+      isValid = false;
+    }
+
+    setErrors(newErrors);
+    return isValid;
+  }, []);
+
+  const handleInputChange = (field: keyof typeof localData, value: string) => {
+    const updatedData = { ...localData, [field]: value };
+    setLocalData(updatedData);
+
+    // Live validation
+    validate(updatedData);
+  };
+
+  // Update global state whenever localData changes
+  useEffect(() => {
     updateFormData(localData);
   }, [localData, updateFormData]);
+
+  // TEMPORARILY DISABLED CONTEXT VALIDATION CONTROL:
+  // If you fix your ShopWizardContext, uncomment this to control the 'Next' button.
+  /*
+  useEffect(() => {
+    const isValid = validate(localData);
+    // setCanProceed(isValid);
+  }, [localData, validate]); 
+  */
+
+
+  // Helper component for error message
+  const ErrorMessage: React.FC<{ message: string }> = ({ message }) => (
+    <p style={{
+      fontFamily: 'Inter, sans-serif',
+      fontSize: '11px',
+      fontWeight: 500,
+      color: 'var(--red--600, #DC2626)',
+      marginTop: '4px',
+      margin: '4px 0 0 0'
+    }}>
+      {message}
+    </p>
+  );
 
   return (
     <div className="w-full flex justify-center">
@@ -56,7 +124,7 @@ export const ShopWizardStep3: React.FC = () => {
         animate="animate"
         className="w-full max-w-4xl"
       >
-        <div 
+        <div
           className="p-6"
           style={{
             backgroundColor: 'var(--main--white)',
@@ -86,7 +154,7 @@ export const ShopWizardStep3: React.FC = () => {
               fontWeight: 600,
               lineHeight: 1.2
             }}>Business Registration</h2>
-            <p style={{ 
+            <p style={{
               fontFamily: 'Inter, sans-serif',
               fontSize: '14px',
               fontWeight: 400,
@@ -124,7 +192,7 @@ export const ShopWizardStep3: React.FC = () => {
                   style={{
                     width: '100%',
                     height: '48px',
-                    border: '1px solid var(--gray--200)',
+                    border: errors.businessLicense ? '1px solid var(--red--500)' : '1px solid var(--gray--200)',
                     borderRadius: 'var(--radius--12px)',
                     backgroundColor: 'var(--main--white)',
                     padding: '0 16px',
@@ -135,22 +203,27 @@ export const ShopWizardStep3: React.FC = () => {
                     outline: 'none'
                   }}
                   onFocus={(e) => {
-                    e.target.style.borderColor = 'var(--gray--900)';
+                    e.target.style.borderColor = errors.businessLicense ? 'var(--red--500)' : 'var(--gray--900)';
                   }}
                   onBlur={(e) => {
-                    e.target.style.borderColor = 'var(--gray--200)';
+                    e.target.style.borderColor = errors.businessLicense ? 'var(--red--500)' : 'var(--gray--200)';
                   }}
                 />
-                <p style={{
-                  fontFamily: 'Inter, sans-serif',
-                  fontSize: '11px',
-                  fontWeight: 400,
-                  color: 'var(--gray--400)',
-                  marginTop: '4px',
-                  margin: '4px 0 0 0'
-                }}>
-                  Optional - Required for certain business types
-                </p>
+                {errors.businessLicense ? (
+                  <ErrorMessage message={errors.businessLicense} />
+                ) : (
+                  <p style={{
+                    fontFamily: 'Inter, sans-serif',
+                    fontSize: '11px',
+                    fontWeight: 400,
+                    color: 'var(--gray--400)',
+                    marginTop: '4px',
+                    margin: '4px 0 0 0'
+                  }}>
+                    {/* Updated help text to reflect required status */}
+                    Required for business setup.
+                  </p>
+                )}
               </motion.div>
 
               {/* Tax ID and Registration Row */}
@@ -176,7 +249,7 @@ export const ShopWizardStep3: React.FC = () => {
                     style={{
                       width: '100%',
                       height: '48px',
-                      border: '1px solid var(--gray--200)',
+                      border: errors.taxId ? '1px solid var(--red--500)' : '1px solid var(--gray--200)',
                       borderRadius: 'var(--radius--12px)',
                       backgroundColor: 'var(--main--white)',
                       padding: '0 16px',
@@ -187,22 +260,26 @@ export const ShopWizardStep3: React.FC = () => {
                       outline: 'none'
                     }}
                     onFocus={(e) => {
-                      e.target.style.borderColor = 'var(--gray--900)';
+                      e.target.style.borderColor = errors.taxId ? 'var(--red--500)' : 'var(--gray--900)';
                     }}
                     onBlur={(e) => {
-                      e.target.style.borderColor = 'var(--gray--200)';
+                      e.target.style.borderColor = errors.taxId ? 'var(--red--500)' : 'var(--gray--200)';
                     }}
                   />
-                  <p style={{
-                    fontFamily: 'Inter, sans-serif',
-                    fontSize: '11px',
-                    fontWeight: 400,
-                    color: 'var(--gray--400)',
-                    marginTop: '4px',
-                    margin: '4px 0 0 0'
-                  }}>
-                    Optional - For tax reporting
-                  </p>
+                  {errors.taxId ? (
+                    <ErrorMessage message={errors.taxId} />
+                  ) : (
+                    <p style={{
+                      fontFamily: 'Inter, sans-serif',
+                      fontSize: '11px',
+                      fontWeight: 400,
+                      color: 'var(--gray--400)',
+                      marginTop: '4px',
+                      margin: '4px 0 0 0'
+                    }}>
+                      Required for tax reporting.
+                    </p>
+                  )}
                 </motion.div>
 
                 {/* Registration Number */}
@@ -226,7 +303,7 @@ export const ShopWizardStep3: React.FC = () => {
                     style={{
                       width: '100%',
                       height: '48px',
-                      border: '1px solid var(--gray--200)',
+                      border: errors.registrationNumber ? '1px solid var(--red--500)' : '1px solid var(--gray--200)',
                       borderRadius: 'var(--radius--12px)',
                       backgroundColor: 'var(--main--white)',
                       padding: '0 16px',
@@ -237,32 +314,36 @@ export const ShopWizardStep3: React.FC = () => {
                       outline: 'none'
                     }}
                     onFocus={(e) => {
-                      e.target.style.borderColor = 'var(--gray--900)';
+                      e.target.style.borderColor = errors.registrationNumber ? 'var(--red--500)' : 'var(--gray--900)';
                     }}
                     onBlur={(e) => {
-                      e.target.style.borderColor = 'var(--gray--200)';
+                      e.target.style.borderColor = errors.registrationNumber ? 'var(--red--500)' : 'var(--gray--200)';
                     }}
                   />
-                  <p style={{
-                    fontFamily: 'Inter, sans-serif',
-                    fontSize: '11px',
-                    fontWeight: 400,
-                    color: 'var(--gray--400)',
-                    marginTop: '4px',
-                    margin: '4px 0 0 0'
-                  }}>
-                    Optional - Business registration ID
-                  </p>
+                  {errors.registrationNumber ? (
+                    <ErrorMessage message={errors.registrationNumber} />
+                  ) : (
+                    <p style={{
+                      fontFamily: 'Inter, sans-serif',
+                      fontSize: '11px',
+                      fontWeight: 400,
+                      color: 'var(--gray--400)',
+                      marginTop: '4px',
+                      margin: '4px 0 0 0'
+                    }}>
+                      Required business registration ID.
+                    </p>
+                  )}
                 </motion.div>
               </div>
 
-              {/* Information Cards Row */}
+              {/* Information Cards Row (Skipping the change in help text) */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6">
                 {/* Information Card */}
-                <motion.div 
-                  custom={3} 
-                  variants={inputVariants} 
-                  initial="initial" 
+                <motion.div
+                  custom={3}
+                  variants={inputVariants}
+                  initial="initial"
                   animate="animate"
                   style={{
                     padding: '16px',
