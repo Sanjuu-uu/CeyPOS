@@ -67,15 +67,16 @@ const timezones = [
   'UTC+12:00 (New Zealand)',
 ];
 
+// Updated payment methods array with status for disabling/upcoming feature
 const paymentMethods = [
-  { value: 'cash', label: 'Cash', icon: '💵', description: 'Physical currency' },
-  { value: 'credit-card', label: 'Credit Cards', icon: '💳', description: 'Visa, Mastercard, etc.' },
-  { value: 'debit-card', label: 'Debit Cards', icon: '🏧', description: 'Bank debit cards' },
-  { value: 'paypal', label: 'PayPal', icon: '🌐', description: 'Online payments' },
-  { value: 'bank-transfer', label: 'Bank Transfer', icon: '🏦', description: 'Direct bank transfers' },
-  { value: 'mobile-payment', label: 'Mobile Payments', icon: '📱', description: 'Apple Pay, Google Pay' },
-  { value: 'cryptocurrency', label: 'Cryptocurrency', icon: '₿', description: 'Bitcoin, Ethereum, etc.' },
-  { value: 'check', label: 'Checks', icon: '📄', description: 'Paper checks' },
+  { value: 'cash', label: 'Cash', icon: '💵', description: 'Physical currency', status: 'available' },
+  { value: 'debit-card', label: 'Debit Cards', icon: '🏧', description: 'Bank debit cards', status: 'available' },
+  { value: 'bank-transfer', label: 'Bank Transfer', icon: '🏦', description: 'Direct bank transfers', status: 'available' },
+  { value: 'mobile-payment', label: 'Mobile Payments', icon: '📱', description: 'QR payments', status: 'available' },
+  { value: 'credit-card', label: 'Credit Cards', icon: '💳', description: 'installment payments', status: 'upcoming' },
+  { value: 'KOKO', label: 'KOKO', icon: '🌐', description: 'installment payments', status: 'upcoming' },
+  { value: 'cryptocurrency', label: 'Cryptocurrency', icon: '₿', description: 'Bitcoin, Ethereum, etc.', status: 'upcoming' },
+  { value: 'check', label: 'Checks', icon: '📄', description: 'Paper checks', status: 'upcoming' },
 ];
 
 const daysOfWeek = [
@@ -158,7 +159,7 @@ export const ShopWizardStep4: React.FC = () => {
   }, [localData, updateFormData]);
   
   
-  // Helper component for error message (matching Step 3's structure + Step 4's motion)
+  // Helper component for error message
   const ErrorMessage: React.FC<{ message: string }> = ({ message }) => (
     <motion.p
       initial={{ opacity: 0, y: -5 }}
@@ -176,8 +177,6 @@ export const ShopWizardStep4: React.FC = () => {
     </motion.p>
   );
   
-  // NOTE: You would typically call a submit/next function here, like handleNext, 
-  // but for a single step component, we focus on the field interaction.
 
   return (
     <div className="w-full flex justify-center">
@@ -279,7 +278,7 @@ export const ShopWizardStep4: React.FC = () => {
                     </option>
                   ))}
                 </select>
-                {/* Conditional Error/Help Text (Matching Step 3 Pattern) */}
+                {/* Conditional Error/Help Text */}
                 {errors.currency ? (
                   <ErrorMessage message={errors.currency} />
                 ) : (
@@ -309,71 +308,90 @@ export const ShopWizardStep4: React.FC = () => {
                   Payment Methods *
                 </label>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                  {paymentMethods.map((method, index) => (
-                    <motion.label
-                      key={method.value}
-                      custom={2 + index}
-                      variants={inputVariants}
-                      initial="initial"
-                      animate="animate"
-                      className="checkbox-wrapper"
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '8px',
-                        padding: '12px',
-                        borderRadius: 'var(--radius--12px)',
-                        border: '1px solid var(--gray--200)',
-                        backgroundColor: localData.paymentMethods.includes(method.value) 
-                          ? 'rgba(216, 250, 82, 0.1)' 
-                          : 'var(--main--white)',
-                        cursor: 'pointer',
-                        transition: 'all 0.2s ease'
-                      }}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={localData.paymentMethods.includes(method.value)}
-                        onChange={() => handlePaymentMethodToggle(method.value)}
-                        className="checkbox"
+                  {paymentMethods.map((method, index) => {
+                    const isUpcoming = method.status === 'upcoming';
+                    return (
+                      <motion.label
+                        key={method.value}
+                        custom={2 + index}
+                        variants={inputVariants}
+                        initial="initial"
+                        animate="animate"
+                        className="checkbox-wrapper"
                         style={{
-                          appearance: 'none',
-                          width: '20px',
-                          height: '20px',
-                          border: '1px solid var(--gray--200)',
-                          borderRadius: '4px',
-                          backgroundColor: 'var(--main--white)',
-                          position: 'relative',
-                          cursor: 'pointer',
-                          transition: 'all 0.3s'
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '8px',
+                          padding: '12px',
+                          borderRadius: 'var(--radius--12px)',
+                          // Visually disable the card
+                          opacity: isUpcoming ? 0.6 : 1,
+                          pointerEvents: isUpcoming ? 'none' : 'auto', // Disable clicking
+                          cursor: isUpcoming ? 'not-allowed' : 'pointer',
+                          border: isUpcoming ? '1px dashed var(--gray--300)' : '1px solid var(--gray--200)',
+                          backgroundColor: localData.paymentMethods.includes(method.value) 
+                            ? 'rgba(216, 250, 82, 0.1)' 
+                            : 'var(--main--white)',
+                          transition: 'all 0.2s ease'
                         }}
-                      />
-                      <div style={{
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: '2px'
-                      }}>
-                        <span style={{
-                          fontFamily: 'Inter, sans-serif',
-                          fontSize: '12px',
-                          fontWeight: 500,
-                          color: 'var(--gray--900)'
+                      >
+                        <input
+                          type="checkbox"
+                          checked={localData.paymentMethods.includes(method.value)}
+                          onChange={() => handlePaymentMethodToggle(method.value)}
+                          disabled={isUpcoming} // Disable the checkbox
+                          className="checkbox"
+                          style={{
+                            appearance: 'none',
+                            width: '20px',
+                            height: '20px',
+                            border: '1px solid var(--gray--200)',
+                            borderRadius: '4px',
+                            backgroundColor: 'var(--main--white)',
+                            position: 'relative',
+                            cursor: 'pointer',
+                            transition: 'all 0.3s'
+                          }}
+                        />
+                        <div style={{
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '2px'
                         }}>
-                          {method.label}
-                        </span>
-                        {method.description && (
                           <span style={{
                             fontFamily: 'Inter, sans-serif',
-                            fontSize: '10px',
-                            fontWeight: 400,
-                            color: 'var(--gray--400)'
+                            fontSize: '12px',
+                            fontWeight: 500,
+                            color: 'var(--gray--900)'
                           }}>
-                            {method.description}
+                            {method.label}
+                            {/* Upcoming Indicator */}
+                            {isUpcoming && (
+                              <span style={{
+                                  marginLeft: '8px',
+                                  fontStyle: 'italic',
+                                  fontWeight: 400,
+                                  color: 'var(--gray--500)',
+                                  fontSize: '10px'
+                              }}>
+                                (Upcoming)
+                              </span>
+                            )}
                           </span>
-                        )}
-                      </div>
-                    </motion.label>
-                  ))}
+                          {method.description && (
+                            <span style={{
+                              fontFamily: 'Inter, sans-serif',
+                              fontSize: '10px',
+                              fontWeight: 400,
+                              color: 'var(--gray--400)'
+                            }}>
+                              {method.description}
+                            </span>
+                          )}
+                        </div>
+                      </motion.label>
+                    );
+                  })}
                 </div>
                 {/* Payment Methods Error Message (Using ErrorMessage Component) */}
                 {errors.paymentMethods && (
