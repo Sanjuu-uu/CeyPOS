@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { Eye, EyeOff, Mail, Lock, User, ArrowRight } from "lucide-react";
 import { useSignUp } from "@clerk/clerk-react";
 import { useNavigate } from "react-router-dom";
@@ -23,9 +23,63 @@ const Register = () => {
   const [step, setStep] = useState("register"); // 'register' | 'verify'
   const [verificationCode, setVerificationCode] = useState("");
   const [oauthProvider, setOauthProvider] = useState<"google" | "apple" | null>(
-    null
+    null,
   );
   const [humanChallengePending, setHumanChallengePending] = useState(false);
+
+  // --- Live Validation Logic ---
+  const [isNameTouched, setIsNameTouched] = useState(false);
+  const [isEmailTouched, setIsEmailTouched] = useState(false);
+
+  const nameError = useMemo(() => {
+    return !fullName.trim() ? "Full name is required" : null;
+  }, [fullName]);
+
+  const emailError = useMemo(() => {
+    return getEmailValidationError(email);
+  }, [email]);
+
+  // Password Strength Logic
+  const passwordStrength = useMemo(() => {
+    if (!password)
+      return { score: 0, label: "", color: "bg-gray-200", width: "0%" };
+
+    let score = 0;
+    if (password.length >= 8) score += 1;
+    if (/[A-Z]/.test(password)) score += 1;
+    if (/[0-9]/.test(password)) score += 1;
+    if (/[^A-Za-z0-9]/.test(password)) score += 1;
+
+    switch (score) {
+      case 0:
+      case 1:
+        return { score: 1, label: "Weak", color: "bg-red-500", width: "25%" };
+      case 2:
+        return {
+          score: 2,
+          label: "Fair",
+          color: "bg-yellow-500",
+          width: "50%",
+        };
+      case 3:
+        return { score: 3, label: "Good", color: "bg-blue-500", width: "75%" };
+      case 4:
+        return {
+          score: 4,
+          label: "Strong",
+          color: "bg-green-500",
+          width: "100%",
+        };
+      default:
+        return {
+          score: 0,
+          label: "Too Short",
+          color: "bg-gray-200",
+          width: "0%",
+        };
+    }
+  }, [password]);
+  // --- End Live Validation Logic ---
 
   const isAuthLocked =
     isLoading || oauthProvider !== null || humanChallengePending || !isLoaded;
@@ -37,6 +91,17 @@ const Register = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    // Mark all as touched to show errors
+    setIsNameTouched(true);
+    setIsEmailTouched(true);
+
+    if (nameError || emailError || password.length < 8) {
+      // Prevent proceeding if name/email are invalid or password is too short
+      if (!error)
+        setError("Please fix the highlighted errors before continuing.");
+      return;
+    }
 
     if (!isLoaded || !signUp) {
       console.log("Clerk not loaded yet");
@@ -52,17 +117,6 @@ const Register = () => {
       return;
     }
 
-    const emailError = getEmailValidationError(email);
-    if (emailError) {
-      setError(emailError);
-      return;
-    }
-
-    if (password.length < 8) {
-      setError("Password must be at least 8 characters long");
-      return;
-    }
-
     setHumanChallengePending(false);
     setPendingAction("register");
     setError("");
@@ -70,9 +124,15 @@ const Register = () => {
     try {
       console.log("Starting registration...");
 
+      const nameParts = fullName.trim().split(" ");
+      const firstName = nameParts[0] || "";
+      const lastName = nameParts.slice(1).join(" ") || "";
+
       const result = await signUp.create({
         emailAddress: email.trim(),
         password: password,
+        firstName: firstName,
+        lastName: lastName,
       });
 
       console.log("Registration result:", result);
@@ -98,10 +158,10 @@ const Register = () => {
       if (err.errors && err.errors.length > 0) {
         const firstError = err.errors[0];
         const message = firstError.message || firstError.longMessage || "";
-        const code = firstError.code || ""; // --- MODIFICATION: Get error code ---
+        const code = firstError.code || "";
 
         if (
-          code === "form_identifier_exists" || // --- MODIFICATION: Check code ---
+          code === "form_identifier_exists" ||
           message.includes("email address is taken") ||
           message.includes("email_address_taken")
         ) {
@@ -142,7 +202,7 @@ const Register = () => {
         errorCode.includes("third_party_identifier_not_found")
       ) {
         setError(
-          "We could not complete sign up with that account. Please try a different method."
+          "We could not complete sign up with that account. Please try a different method.",
         );
       } else {
         setError("Unable to complete sign up. Please try again.");
@@ -200,40 +260,27 @@ const Register = () => {
       } else if (result.status === "missing_requirements") {
         console.log(
           "Missing requirements after verification:",
-          result.missingFields
+          result.missingFields,
         );
 
+        // Name update logic if needed
         if (fullName.trim()) {
+          const nameParts = fullName.trim().split(" ");
+          const firstName = nameParts[0] || "";
+          const lastName = nameParts.slice(1).join(" ") || "";
           try {
-            const nameParts = fullName.trim().split(" ");
-            const firstName = nameParts[0] || "";
-            const lastName = nameParts.slice(1).join(" ") || "";
-
-            const updateResult = await signUp.update({
-              firstName: firstName,
-              lastName: lastName,
-            });
-
-            console.log("Update result:", updateResult);
-
-            if (updateResult.status === "complete") {
-              await setActive({ session: updateResult.createdSessionId });
-              setTimeout(() => navigate("/shop-wizard"), 500);
-              return;
-            }
-          } catch (updateError) {
-            console.log("Update error:", updateError);
-          }
+            await signUp.update({ firstName, lastName });
+          } catch (ignored) {}
         }
 
         setError(
-          "Email verified successfully! Your account has been created. Please sign in with your credentials."
+          "Email verified successfully! Your account has been created. Please sign in with your credentials.",
         );
         setTimeout(() => navigate("/login"), 2000);
       } else {
         console.log("Unexpected verification status:", result.status);
         setError(
-          "Email verification completed. Please sign in with your email and password."
+          "Email verification completed. Please sign in with your email and password.",
         );
         setTimeout(() => navigate("/login"), 2000);
       }
@@ -537,7 +584,7 @@ const Register = () => {
 
               {/* Register Form */}
               <form onSubmit={handleSubmit} className="space-y-5">
-                {/* Full Name Field */}
+                {/* Full Name Field with Live Validation */}
                 <div>
                   <label
                     htmlFor="fullName"
@@ -557,14 +604,25 @@ const Register = () => {
                         setFullName(e.target.value);
                         clearError();
                       }}
-                      className="block w-full pl-10 pr-3 py-2.5 border border-gray-300 rounded-full focus:outline-none focus:ring-2 focus:ring-gray-500 focus:border-transparent text-sm"
+                      onBlur={() => setIsNameTouched(true)}
+                      className={`block w-full pl-10 pr-3 py-2.5 border rounded-full focus:outline-none focus:ring-2 focus:ring-gray-500 text-sm transition-all duration-300 ${
+                        isNameTouched && nameError
+                          ? "border-red-500 bg-red-50 focus:border-red-500 focus:ring-red-200"
+                          : "border-gray-300 focus:border-transparent"
+                      }`}
                       placeholder="John Smith"
                       autoComplete="name"
                     />
                   </div>
+                  {/* Live Name Error */}
+                  {isNameTouched && nameError && (
+                    <p className="mt-1 ml-3 text-xs text-red-500 animate-pulse">
+                      {nameError}
+                    </p>
+                  )}
                 </div>
 
-                {/* Email Field */}
+                {/* Email Field with Live Validation */}
                 <div>
                   <label
                     htmlFor="email"
@@ -584,15 +642,26 @@ const Register = () => {
                         setEmail(e.target.value);
                         clearError();
                       }}
-                      className="block w-full pl-10 pr-3 py-2.5 border border-gray-300 rounded-full focus:outline-none focus:ring-2 focus:ring-gray-500 focus:border-transparent text-sm"
+                      onBlur={() => setIsEmailTouched(true)}
+                      className={`block w-full pl-10 pr-3 py-2.5 border rounded-full focus:outline-none focus:ring-2 focus:ring-gray-500 text-sm transition-all duration-300 ${
+                        isEmailTouched && emailError
+                          ? "border-red-500 bg-red-50 focus:border-red-500 focus:ring-red-200"
+                          : "border-gray-300 focus:border-transparent"
+                      }`}
                       placeholder="example@gmail.com"
                       autoComplete="email"
                       required
                     />
                   </div>
+                  {/* Live Email Error */}
+                  {isEmailTouched && emailError && (
+                    <p className="mt-1 ml-3 text-xs text-red-500 animate-pulse">
+                      {emailError}
+                    </p>
+                  )}
                 </div>
 
-                {/* Password Field */}
+                {/* Password Field with Strength Meter */}
                 <div>
                   <label
                     htmlFor="password"
@@ -612,7 +681,11 @@ const Register = () => {
                         setPassword(e.target.value);
                         clearError();
                       }}
-                      className="block w-full pl-10 pr-10 py-2.5 border border-gray-300 rounded-full focus:outline-none focus:ring-2 focus:ring-gray-500 focus:border-transparent text-sm"
+                      className={`block w-full pl-10 pr-10 py-2.5 border rounded-full focus:outline-none focus:ring-2 focus:ring-gray-500 text-sm transition-all duration-300 ${
+                        password && passwordStrength.score < 2
+                          ? "border-red-300 bg-red-50"
+                          : "border-gray-300 focus:border-transparent"
+                      }`}
                       placeholder="min 8 character"
                       autoComplete="new-password"
                       minLength={8}
@@ -630,6 +703,23 @@ const Register = () => {
                       )}
                     </button>
                   </div>
+
+                  {/* Password Strength Bar */}
+                  {password && (
+                    <div className="mt-2 ml-1 mr-1">
+                      <div className="flex justify-between items-center mb-1">
+                        <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">
+                          Strength: {passwordStrength.label}
+                        </span>
+                      </div>
+                      <div className="h-1.5 w-full bg-gray-100 rounded-full overflow-hidden">
+                        <div
+                          className={`h-full transition-all duration-500 ease-out ${passwordStrength.color}`}
+                          style={{ width: passwordStrength.width }}
+                        />
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* Privacy Policy Checkbox */}
@@ -658,8 +748,14 @@ const Register = () => {
                 {/* Create Account Button */}
                 <button
                   type="submit"
-                  disabled={!acceptPolicy || isAuthLocked}
-                  className="w-full bg-black hover:bg-gray-800 disabled:bg-gray-400 text-white py-3 px-4 rounded-full font-medium transition-all duration-300 flex items-center justify-center text-sm"
+                  disabled={
+                    !acceptPolicy ||
+                    isAuthLocked ||
+                    !!nameError ||
+                    !!emailError ||
+                    password.length < 8
+                  }
+                  className="w-full bg-black hover:bg-gray-800 disabled:bg-gray-300 disabled:cursor-not-allowed text-white py-3 px-4 rounded-full font-medium transition-all duration-300 flex items-center justify-center text-sm"
                 >
                   {pendingAction === "register" ? (
                     <>

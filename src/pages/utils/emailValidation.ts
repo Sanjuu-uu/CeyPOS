@@ -38,7 +38,11 @@ const TEMP_EMAIL_DOMAINS = [
   'wh4f.org', 'whyspam.me', 'willselfdestruct.com', 'winemaven.info',
   'wronghead.com', 'www.e4ward.com', 'www.mailinator.com', 'wwwnew.eu',
   'xagloo.com', 'xemaps.com', 'xents.com', 'yroid.com',
-  'zetmail.com', 'zoaxe.com', 'zoemail.org', 'zomg.info'
+  'zetmail.com', 'zoaxe.com', 'zoemail.org', 'zomg.info','illubd.com',
+  'arqsis.com','binkmail.com','crazymailing.com','devnullmail.com','emailtemporanea.com',
+  'emailtemporar.ro','fakeemailgenerator.com','gettempmail.com','inboxbear.com','instantemailaddress.com',
+  'mail-temporaire.fr','mailcatch.com','my10minutemail.com','nowmymail.net','temp-mail.pro','tempail.com',
+  'tempe-mail.com','tempemail.co','tempemail.net','tempomail.io','yopmail.fr'
 ];
 
 /**

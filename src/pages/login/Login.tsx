@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { Eye, EyeOff, Mail, Lock, ArrowRight, X } from "lucide-react";
 import { useClerk, useSignIn } from "@clerk/clerk-react";
 import { useNavigate } from "react-router-dom";
@@ -47,13 +47,30 @@ const Login = () => {
   const [rememberMe, setRememberMe] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [oauthProvider, setOauthProvider] = useState<"google" | "apple" | null>(
-    null
+    null,
   );
   const [error, setError] = useState("");
   const [step, setStep] = useState<"login" | "login-verify">("login");
   const [verificationCode, setVerificationCode] = useState("");
   const [humanChallengePending, setHumanChallengePending] = useState(false);
   const [showRegisterPrompt, setShowRegisterPrompt] = useState(false);
+
+  // --- Live Validation Logic ---
+  const [isEmailTouched, setIsEmailTouched] = useState(false);
+  const [isPasswordTouched, setIsPasswordTouched] = useState(false);
+
+  const emailValidationError = useMemo(() => {
+    if (!email) return "Email is required";
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return !emailRegex.test(email)
+      ? "Please enter a valid email address"
+      : null;
+  }, [email]);
+
+  const passwordValidationError = useMemo(() => {
+    return !password ? "Password is required" : null;
+  }, [password]);
+  // --- End Validation Logic ---
 
   // --- "Forgot Password" Modal State ---
   const [isForgotPassword, setIsForgotPassword] = useState(false);
@@ -133,19 +150,15 @@ const Login = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
+    // Mark fields as touched to show errors if user tries to submit empty
+    setIsEmailTouched(true);
+    setIsPasswordTouched(true);
+
+    if (emailValidationError || passwordValidationError) {
+      return;
+    }
+
     if (!isSignInLoaded || !signIn || isAuthLocked) return;
-
-    if (!email.trim()) {
-      deactivateRegisterPrompt();
-      setError("Please enter your email address");
-      return;
-    }
-
-    if (!password.trim()) {
-      deactivateRegisterPrompt();
-      setError("Please enter your password");
-      return;
-    }
 
     setHumanChallengePending(false);
     setIsLoading(true);
@@ -178,14 +191,14 @@ const Login = () => {
           console.error("Failed to activate session:", sessionError);
           deactivateRegisterPrompt();
           setError(
-            "Something went wrong while starting your session. Please try again."
+            "Something went wrong while starting your session. Please try again.",
           );
         }
       } else if (result.status === "needs_first_factor") {
         deactivateRegisterPrompt();
         setStep("login-verify");
         setError(
-          "Please check your email for a verification code to complete sign in."
+          "Please check your email for a verification code to complete sign in.",
         );
       } else {
         console.error("Sign in not complete:", result);
@@ -227,15 +240,15 @@ const Login = () => {
       pushMessage(fallbackMessage);
       pushMessage(typeof err?.longMessage === "string" ? err.longMessage : "");
       pushMessage(
-        typeof err?.data?.message === "string" ? err.data.message : ""
+        typeof err?.data?.message === "string" ? err.data.message : "",
       );
       pushMessage(
-        typeof err?.response?.message === "string" ? err.response.message : ""
+        typeof err?.response?.message === "string" ? err.response.message : "",
       );
       pushMessage(
         typeof err?.response?.data?.message === "string"
           ? err.response.data.message
-          : ""
+          : "",
       );
       pushMessage(typeof err?.statusText === "string" ? err.statusText : "");
 
@@ -260,12 +273,12 @@ const Login = () => {
       }
 
       let missingAccountDetected = Array.from(codeCandidates).some((code) =>
-        isMissingAccountError(code, "")
+        isMissingAccountError(code, ""),
       );
 
       if (!missingAccountDetected) {
         missingAccountDetected = Array.from(messageCandidates).some((message) =>
-          isMissingAccountError("", message)
+          isMissingAccountError("", message),
         );
       }
 
@@ -287,19 +300,19 @@ const Login = () => {
       let errorMessage =
         rawMessage || fallbackMessage || combinedMessages[0] || defaultMessage;
       const lowerCaseMessages = combinedMessages.map((message) =>
-        message.toLowerCase()
+        message.toLowerCase(),
       );
 
       if (
         lowerCaseMessages.some(
-          (msg) => msg.includes("captcha") || msg.includes("bot")
+          (msg) => msg.includes("captcha") || msg.includes("bot"),
         )
       ) {
         setHumanChallengePending(true);
         errorMessage = "Please complete the security verification to continue.";
       } else if (
         lowerCaseMessages.some(
-          (msg) => msg.includes("password") && msg.includes("incorrect")
+          (msg) => msg.includes("password") && msg.includes("incorrect"),
         )
       ) {
         errorMessage = "Incorrect password. Please try again.";
@@ -499,7 +512,7 @@ const Login = () => {
         // Fallback for other potential statuses
         console.error("Unexpected password reset status:", result.status);
         setForgotPasswordError(
-          "Could not start password reset. Please try again."
+          "Could not start password reset. Please try again.",
         );
       }
     } catch (err: any) {
@@ -511,7 +524,7 @@ const Login = () => {
 
       if (isMissingAccountError(firstError?.code, message)) {
         setForgotPasswordError(
-          "We couldn't find an account with that email address."
+          "We couldn't find an account with that email address.",
         );
       } else {
         setForgotPasswordError(message);
@@ -1118,7 +1131,7 @@ const Login = () => {
 
                 {/* Login Form */}
                 <form onSubmit={handleSubmit} className="space-y-5">
-                  {/* Email Field */}
+                  {/* Email Field with Live Validation */}
                   <div>
                     <label
                       htmlFor="email"
@@ -1138,15 +1151,26 @@ const Login = () => {
                           setEmail(e.target.value);
                           clearError();
                         }}
-                        className="block w-full pl-10 pr-3 py-2.5 border border-gray-300 rounded-full focus:outline-none focus:ring-2 focus:ring-gray-500 focus:border-transparent text-sm"
+                        onBlur={() => setIsEmailTouched(true)}
+                        className={`block w-full pl-10 pr-3 py-2.5 border rounded-full focus:outline-none focus:ring-2 focus:ring-gray-500 text-sm transition-all duration-300 ${
+                          isEmailTouched && emailValidationError
+                            ? "border-red-500 bg-red-50 focus:border-red-500 focus:ring-red-200"
+                            : "border-gray-300 focus:border-transparent"
+                        }`}
                         placeholder="example@gmail.com"
                         autoComplete="email"
                         required
                       />
                     </div>
+                    {/* Live Email Error Message */}
+                    {isEmailTouched && emailValidationError && (
+                      <p className="mt-1 ml-3 text-xs text-red-500 animate-pulse">
+                        {emailValidationError}
+                      </p>
+                    )}
                   </div>
 
-                  {/* Password Field */}
+                  {/* Password Field with Live Validation */}
                   <div>
                     <label
                       htmlFor="password"
@@ -1166,7 +1190,12 @@ const Login = () => {
                           setPassword(e.target.value);
                           clearError();
                         }}
-                        className="block w-full pl-10 pr-10 py-2.5 border border-gray-300 rounded-full focus:outline-none focus:ring-2 focus:ring-gray-500 focus:border-transparent text-sm"
+                        onBlur={() => setIsPasswordTouched(true)}
+                        className={`block w-full pl-10 pr-10 py-2.5 border rounded-full focus:outline-none focus:ring-2 focus:ring-gray-500 text-sm transition-all duration-300 ${
+                          isPasswordTouched && passwordValidationError
+                            ? "border-red-500 bg-red-50 focus:border-red-500 focus:ring-red-200"
+                            : "border-gray-300 focus:border-transparent"
+                        }`}
                         placeholder="min 8 character"
                         autoComplete="current-password"
                         required
@@ -1183,6 +1212,12 @@ const Login = () => {
                         )}
                       </button>
                     </div>
+                    {/* Live Password Error Message (Optional, as per request mostly for fill status) */}
+                    {isPasswordTouched && passwordValidationError && (
+                      <p className="mt-1 ml-3 text-xs text-red-500">
+                        {passwordValidationError}
+                      </p>
+                    )}
                   </div>
 
                   {/* Remember Me and Forgot Password */}
@@ -1221,8 +1256,13 @@ const Login = () => {
                   {/* Submit Button - Black oval shape */}
                   <button
                     type="submit"
-                    disabled={isAuthLocked || !isSignInLoaded}
-                    className="w-full bg-black hover:bg-gray-800 disabled:bg-gray-400 text-white py-3 px-4 rounded-full font-medium transition-all duration-300 flex items-center justify-center text-sm"
+                    disabled={
+                      isAuthLocked ||
+                      !isSignInLoaded ||
+                      ((!!emailValidationError || !!passwordValidationError) &&
+                        (isEmailTouched || isPasswordTouched))
+                    }
+                    className="w-full bg-black hover:bg-gray-800 disabled:bg-gray-300 disabled:cursor-not-allowed text-white py-3 px-4 rounded-full font-medium transition-all duration-300 flex items-center justify-center text-sm"
                   >
                     {isLoading ? (
                       <>
