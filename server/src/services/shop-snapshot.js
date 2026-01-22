@@ -41,6 +41,23 @@ function getShopSnapshot(shopId) {
       .all(shopId)
       .map((row) => row.method);
 
+    // Business Rules
+    const loyalty = db
+      .prepare("SELECT * FROM business_rules_loyalty WHERE shop_id = ?")
+      .get(shopId) || { enabled: 0, earn_rate: 1.0, redeem_rate: 0.01, min_points: 0 };
+
+    const discounts = db
+      .prepare("SELECT * FROM business_rules_discounts WHERE shop_id = ?")
+      .all(shopId);
+
+    const taxes = db
+      .prepare("SELECT * FROM business_rules_taxes WHERE shop_id = ?")
+      .all(shopId);
+
+    const surcharges = db
+      .prepare("SELECT * FROM business_rules_surcharges WHERE shop_id = ?")
+      .all(shopId);
+
     return {
       shopId,
       inventory,
@@ -49,6 +66,12 @@ function getShopSnapshot(shopId) {
       transactionItems,
       dailySales,
       paymentMethods,
+      businessRules: {
+        loyalty,
+        discounts,
+        taxes,
+        surcharges
+      }
     };
   } finally {
     db.close();

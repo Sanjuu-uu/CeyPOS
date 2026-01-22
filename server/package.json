@@ -9,7 +9,7 @@
   },
   "scripts": {
     "start": "node main-server.js",
-    "dev": "set PORT=4000 && node main-server.js"
+    "dev": "cross-env PORT=4000 node main-server.js"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.18.0",
@@ -23,5 +23,8 @@
     "path": "^0.12.7",
     "xlsx": "^0.18.5",
     "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "cross-env": "^10.1.0"
   }
 }

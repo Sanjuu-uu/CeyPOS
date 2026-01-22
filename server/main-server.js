@@ -14,7 +14,6 @@ const PORT = process.env.PORT || 8080;
 app.use(
   cors({
     origin: function (origin, callback) {
-      // Allow requests with no origin (mobile apps, curl, etc.)
       if (!origin) return callback(null, true);
 
       const allowedOrigins = [
@@ -24,7 +23,6 @@ app.use(
         "https://www.ceypossolutions.com",
       ];
 
-      // In production, allow Railway domains
       if (process.env.NODE_ENV === "production") {
         if (origin.includes("railway.app") || allowedOrigins.includes(origin)) {
           return callback(null, true);
@@ -45,6 +43,7 @@ import inventoryRouter from "./src/routes/inventory.js";
 import shopRouter from "./src/routes/shop.js";
 import salesRoutes from "./src/routes/sales.js";
 import paymentMethodRoutes from "./src/routes/payment-methods.js";
+import businessRulesRoutes from "./src/routes/business-rules.js"; // <--- ADDED
 
 app.get("/api/health", (req, res) => {
   res.json({ status: "ok" });
@@ -68,12 +67,12 @@ app.use("/api/inventory", inventoryRouter);
 app.use("/api/shop", shopRouter);
 app.use("/api/sales", salesRoutes);
 app.use("/api/payment-methods", paymentMethodRoutes);
+app.use("/api/business-rules", businessRulesRoutes); // <--- REGISTERED
 
 // Serve static files from the dist directory (built frontend)
 const distPath = path.join(process.cwd(), "../dist");
 console.log("Looking for dist directory at:", distPath);
 
-// Check if dist directory exists
 if (fs.existsSync(distPath)) {
   console.log("✓ Found dist directory, serving static files");
   app.use(express.static(distPath));
@@ -81,7 +80,6 @@ if (fs.existsSync(distPath)) {
   console.log("✗ Dist directory not found, static files will not be served");
 }
 
-// Handle client-side routing - serve index.html for all non-API routes
 app.get(/^(?!\/api).*/, (req, res) => {
   const indexPath = path.join(distPath, "index.html");
 
@@ -100,13 +98,11 @@ app.get(/^(?!\/api).*/, (req, res) => {
   }
 });
 
-// Global error handler
 app.use((err, req, res, next) => {
   console.error("Unhandled error:", err);
   res.status(500).json({ error: "Internal Server Error" });
 });
 
-// Create HTTP server and attach socket.io-based WS server
 const server = http.createServer(app);
 import { init } from "./src/ws-server.js";
 init(server, {
@@ -122,7 +118,6 @@ server.listen(PORT, () => {
   console.log(`CeyPos Main server running on port ${PORT}`);
 });
 
-// Handle uncaught exceptions and unhandled rejections
 process.on("uncaughtException", (err) => {
   console.error("Uncaught Exception:", err);
 });

@@ -43,6 +43,9 @@ export interface Sale {
   };
   items: CartItem[];
   total: number;
+  subtotal?: number;
+  tax?: number;
+  discount?: number;
   paymentMethod: "cash" | "card" | "mobile";
   timestamp: string;
 }
@@ -71,4 +74,5 @@ export type ModuleName =
   | "support"
   | "import"
   | "sessions"
+  | "business" // Added
   | "components";

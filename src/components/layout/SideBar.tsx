@@ -12,6 +12,7 @@ import {
   FileText,
   LifeBuoy,
   Settings,
+  Briefcase, // Added icon
   PanelLeftOpen,
   PanelLeftClose,
 } from "lucide-react";
@@ -38,7 +39,7 @@ const SidebarItem: React.FC<SidebarItemProps> = ({
     <div
       className={`flex items-center px-3 py-2 cursor-pointer rounded-lg transition-colors duration-200 ${
         isActive
-          ? "bg-[#c5f542] text-gray-900"
+          ? "bg-[#ecff76] text-gray-900"
           : "text-gray-500 hover:bg-gray-100 hover:text-gray-900"
       }`}
       onClick={onClick}
@@ -59,8 +60,6 @@ export const Sidebar: React.FC = () => {
     setIsMobileMenuOpen,
   } = useApp();
 
-  // On mobile (isMobileMenuOpen = true), force “expanded” labels;
-  // on desktop, use isSidebarCollapsed as normal.
   const effectiveCollapsed = isMobileMenuOpen ? false : isSidebarCollapsed;
 
   const menuItems = [
@@ -83,6 +82,11 @@ export const Sidebar: React.FC = () => {
       icon: <Wifi size={20} />,
       label: "Sessions",
       module: "sessions" as ModuleName,
+    },
+    {
+      icon: <Briefcase size={20} />, // New Icon
+      label: "Business",             // New Label
+      module: "business" as ModuleName,
     },
     {
       icon: <Wallet size={20} />,
@@ -140,12 +144,8 @@ export const Sidebar: React.FC = () => {
       <div
         className={`
           fixed top-0 left-0 h-full bg-white border-r border-gray-200 z-50
-
-          /* On mobile (<md): w-60 and slide in/out */
           w-60 transform transition-transform duration-300 ease-in-out
           ${isMobileMenuOpen ? "translate-x-0" : "-translate-x-full"}
-
-          /* On desktop (md+): disable sliding, normal flow, width = 16 or 60 */
           md:relative
           md:translate-x-0  
           ${effectiveCollapsed ? "md:w-16" : "md:w-60"}
@@ -155,7 +155,7 @@ export const Sidebar: React.FC = () => {
         <div className="h-16 flex items-center justify-between px-4 border-b border-gray-200">
           {!effectiveCollapsed && (
             <div className="flex items-center">
-              <div className="bg-[#ECFF76] h-8 w-8 rounded-md flex items-center justify-center">
+              <div className="bg-[#ecff76] h-8 w-8 rounded-md flex items-center justify-center">
                 <span className="font-bold text-gray-900">POS</span>
               </div>
               <span className="ml-2 font-semibold text-gray-900">CeyPOS</span>
@@ -164,10 +164,8 @@ export const Sidebar: React.FC = () => {
           <button
             onClick={() => {
               if (isMobileMenuOpen) {
-                // If the mobile drawer is open, close it:
                 setIsMobileMenuOpen(false);
               } else {
-                // Else toggle desktop collapse:
                 setIsSidebarCollapsed(!isSidebarCollapsed);
               }
             }}

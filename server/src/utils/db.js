@@ -164,6 +164,7 @@ function initSchema(db) {
     total_spent DECIMAL(10,2) DEFAULT 0,
     visit_count INTEGER DEFAULT 0,
     last_visit DATETIME,
+    points_balance INTEGER DEFAULT 0, -- Added points balance
     created_at DATETIME
   );
   
@@ -210,8 +211,51 @@ function initSchema(db) {
     recommended_stock INTEGER,
     suggested_restock_date TEXT
   );
+
+  -- New Business Rules Tables
+  CREATE TABLE IF NOT EXISTS business_rules_loyalty (
+    shop_id TEXT PRIMARY KEY,
+    enabled INTEGER DEFAULT 0,
+    earn_rate DECIMAL(10,2) DEFAULT 1.0,
+    redeem_rate DECIMAL(10,2) DEFAULT 0.01,
+    min_points INTEGER DEFAULT 0
+  );
+
+  CREATE TABLE IF NOT EXISTS business_rules_discounts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    shop_id TEXT,
+    name TEXT,
+    type TEXT,
+    value DECIMAL(10,2)
+  );
+
+  CREATE TABLE IF NOT EXISTS business_rules_taxes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    shop_id TEXT,
+    name TEXT,
+    rate DECIMAL(10,2),
+    is_default INTEGER DEFAULT 0
+  );
+
+  CREATE TABLE IF NOT EXISTS business_rules_surcharges (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    shop_id TEXT,
+    min_amount DECIMAL(10,2),
+    type TEXT,
+    value DECIMAL(10,2)
+  );
   `;
   db.exec(ddl);
+
+  // Safe migration for existing tables if column missing
+  try {
+    const info = db.prepare("PRAGMA table_info(customers)").all();
+    if (!info.some(c => c.name === 'points_balance')) {
+        db.exec("ALTER TABLE customers ADD COLUMN points_balance INTEGER DEFAULT 0");
+    }
+  } catch (e) {
+    // Ignore if already exists
+  }
 }
 
 function upsertShopMeta(db, shopId, meta = {}) {

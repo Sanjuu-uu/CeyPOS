@@ -40,6 +40,19 @@ export interface TransactionItem {
   subtotal: number;
 }
 
+// 1. Add Business Rules Interfaces
+export interface BusinessRules {
+  loyalty: {
+    enabled: boolean;
+    earnRate: number;
+    redeemRate: number;
+    minPointsToRedeem: number;
+  };
+  discounts: Array<{ id?: number; name: string; type: 'percent' | 'fixed'; value: number }>;
+  taxes: Array<{ id?: number; name: string; rate: number; isDefault: boolean }>;
+  surcharges: Array<{ id?: number; minAmount: number; type: 'percent' | 'fixed'; value: number }>;
+}
+
 type InventoryRow = {
   inventory_code: string;
   barcode_id?: string | null;
@@ -103,6 +116,7 @@ interface ShopCache {
   transactionItemsByTx: Map<number, TransactionItemRow[]>;
   sales: Sale[];
   paymentMethods: string[];
+  businessRules: BusinessRules;
 }
 
 const shopCaches: Record<string, ShopCache> = Object.create(null);
@@ -122,6 +136,12 @@ function ensureShopCache(shopKey: string): ShopCache {
       transactionItemsByTx: new Map(),
       sales: [],
       paymentMethods: [],
+      businessRules: {
+        loyalty: { enabled: false, earnRate: 1, redeemRate: 0.01, minPointsToRedeem: 0 },
+        discounts: [],
+        taxes: [],
+        surcharges: []
+      },
     };
   }
   return shopCaches[shopKey];
@@ -260,6 +280,9 @@ function buildSale(
     total: Number(transaction.total ?? 0),
     paymentMethod: (transaction.payment_method || "cash") as Sale["paymentMethod"],
     timestamp: transaction.created_at || new Date().toISOString(),
+    tax: Number(transaction.tax ?? 0),
+    discount: Number(transaction.discount ?? 0),
+    subtotal: Number(transaction.subtotal ?? 0),
   } as Sale;
 }
 
@@ -360,6 +383,27 @@ function applySnapshot(shopKey: string, snapshot: any) {
   const methods: string[] = snapshot.paymentMethods || [];
 
   const cache = ensureShopCache(shopKey);
+  // Load Business Rules
+  if (snapshot.businessRules) {
+    const { loyalty, discounts, taxes, surcharges } = snapshot.businessRules;
+    cache.businessRules = {
+      loyalty: {
+        enabled: Boolean(loyalty?.enabled),
+        earnRate: Number(loyalty?.earn_rate || 1),
+        redeemRate: Number(loyalty?.redeem_rate || 0.01),
+        minPointsToRedeem: Number(loyalty?.min_points || 0),
+      },
+      discounts: (discounts || []).map((d: any) => ({
+        id: d.id, name: d.name, type: d.type, value: Number(d.value)
+      })),
+      taxes: (taxes || []).map((t: any) => ({
+        id: t.id, name: t.name, rate: Number(t.rate), isDefault: Boolean(t.is_default)
+      })),
+      surcharges: (surcharges || []).map((s: any) => ({
+        id: s.id, minAmount: Number(s.min_amount), type: s.type, value: Number(s.value)
+      }))
+    };
+  }
   cache.inventoryByCode.clear();
   invRows.forEach((row) => {
     if (row?.inventory_code) {
@@ -404,6 +448,29 @@ function applySnapshot(shopKey: string, snapshot: any) {
   emit("dailySalesUpdated", { shopId: shopKey, rows: cache.dailySales.slice() });
   emit("salesUpdated", { shopId: shopKey, items: cache.sales.slice() });
   emit("paymentMethodsUpdated", { shopId: shopKey, methods: cache.paymentMethods.slice() });
+  emit("businessRulesUpdated", { shopId: shopKey, rules: cache.businessRules });
+}
+
+// 5. Add API method to save rules
+async function saveBusinessRules(rules: BusinessRules): Promise<void> {
+  if (!currentShopKey) throw new Error("No active shop");
+  const cleanShopId = normalizeShopId(currentShopKey);
+  
+  const res = await fetch(`${API_BASE}/api/business-rules/${cleanShopId}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(rules),
+  });
+
+  if (!res.ok) {
+    const err = await res.json();
+    throw new Error(err.error || "Failed to save business rules");
+  }
+  
+  // Optimistic update
+  const cache = ensureShopCache(currentShopKey);
+  cache.businessRules = rules;
+  emit("businessRulesUpdated", { shopId: currentShopKey, rules });
 }
 
 async function fetchSnapshot(shopKey: string) {
@@ -618,6 +685,8 @@ async function createSaleRecord(sale: Omit<Sale, "id">): Promise<Sale> {
   const shopKey = sale.shopId || currentShopKey;
   if (!shopKey) throw new Error("No active shop selected");
   const cleanShopId = normalizeShopId(shopKey);
+  
+  // Update payload to include real tax and discount values
   const payload = {
     shopId: cleanShopId,
     customer: sale.customerInfo || {},
@@ -628,9 +697,9 @@ async function createSaleRecord(sale: Omit<Sale, "id">): Promise<Sale> {
       unit_price: item.price,
       quantity: item.quantity,
     })),
-    subtotal: sale.items.reduce((sum, item) => sum + item.price * item.quantity, 0),
-    discount: 0,
-    tax: 0,
+    subtotal: sale.subtotal || sale.items.reduce((sum, item) => sum + item.price * item.quantity, 0),
+    discount: sale.discount || 0,
+    tax: sale.tax || 0,
     total: sale.total,
     paymentMethod: sale.paymentMethod,
     createdAt: sale.timestamp || new Date().toISOString(),
@@ -790,6 +859,13 @@ export const db = {
       return cache.paymentMethods.slice();
     },
   },
+  businessRules: {
+    get: (): BusinessRules => {
+        const cache = ensureShopCache(currentShopKey || "");
+        return JSON.parse(JSON.stringify(cache.businessRules)); // Return copy
+    },
+    save: saveBusinessRules
+  }
 };
 
 export default db;

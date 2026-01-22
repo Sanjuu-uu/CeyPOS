@@ -1,9 +1,136 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo, memo } from 'react';
 import { Product } from '../../../types';
 import { useApp } from '../../../context/AppContext';
-import { ShoppingCart, Plus, Minus } from 'lucide-react';
-import { LayoutGrid, List } from 'lucide-react';
+import { Plus, Minus, LayoutGrid, List, Package } from 'lucide-react';
 
+// --- Sub-component: Product Card (Memoized for Performance) ---
+const ProductCard = memo(({ 
+  product, 
+  quantityInCart, 
+  viewMode, 
+  onAdd, 
+  onUpdate 
+}: { 
+  product: Product, 
+  quantityInCart: number, 
+  viewMode: 'grid' | 'row',
+  onAdd: (p: Product) => void,
+  onUpdate: (p: Product, change: number) => void
+}) => {
+  const isOutOfStock = product.stock <= 0;
+  const isMaxStock = product.stock <= quantityInCart;
+
+  if (viewMode === 'row') {
+    return (
+      <div className="bg-white rounded-lg p-3 shadow-sm border border-gray-100 hover:border-[#ecff76]/50 transition-all flex items-center gap-3">
+        <div className="h-14 w-14 bg-gray-100 rounded-md overflow-hidden flex-shrink-0">
+          {product.imageUrl ? (
+            <img src={product.imageUrl} alt={product.name} className="w-full h-full object-cover" loading="lazy" />
+          ) : (
+            <div className="w-full h-full flex items-center justify-center text-gray-300">
+              <Package size={20} />
+            </div>
+          )}
+        </div>
+        
+        <div className="flex-1 min-w-0">
+          <h3 className="font-semibold text-gray-800 text-sm truncate">{product.name}</h3>
+          <div className="flex items-center gap-2 mt-1">
+             <span className="text-xs font-medium text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded">{product.stock} in stock</span>
+          </div>
+        </div>
+
+        <div className="text-right">
+          <div className="font-bold text-gray-900">${product.price.toFixed(2)}</div>
+          {quantityInCart === 0 ? (
+             <button
+                onClick={() => onAdd(product)}
+                disabled={isOutOfStock}
+                className="mt-1 h-8 px-4 bg-[#ecff76] text-gray-900 text-xs font-bold rounded hover:brightness-95 disabled:bg-gray-200 disabled:text-gray-400 transition-colors"
+             >
+               Add
+             </button>
+          ) : (
+            <div className="flex items-center gap-2 mt-1 bg-gray-100 rounded p-0.5">
+              <button onClick={() => onUpdate(product, -1)} className="w-7 h-7 flex items-center justify-center bg-white rounded shadow-sm text-black hover:bg-gray-50">
+                <Minus size={12} />
+              </button>
+              <span className="w-4 text-center text-xs font-bold">{quantityInCart}</span>
+              <button 
+                onClick={() => onUpdate(product, 1)} 
+                disabled={isMaxStock}
+                className="w-7 h-7 flex items-center justify-center bg-white rounded shadow-sm text-black hover:bg-gray-50 disabled:opacity-50"
+              >
+                <Plus size={12} />
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // Grid View
+  return (
+    <div className="group bg-white rounded-xl shadow-sm border border-gray-100 hover:shadow-md hover:border-[#ecff76] transition-all flex flex-col h-full overflow-hidden relative">
+      <div className="aspect-[4/3] bg-gray-100 relative overflow-hidden">
+        {product.imageUrl ? (
+          <img src={product.imageUrl} alt={product.name} className="w-full h-full object-cover transition-transform group-hover:scale-105" loading="lazy" />
+        ) : (
+          <div className="w-full h-full flex items-center justify-center text-gray-300">
+            <Package size={32} />
+          </div>
+        )}
+        <div className="absolute top-2 right-2 bg-white/90 backdrop-blur-sm px-2 py-1 rounded-md text-sm font-bold shadow-sm border border-gray-100">
+          ${product.price.toFixed(2)}
+        </div>
+        {quantityInCart > 0 && (
+          <div className="absolute top-2 left-2 bg-[#ecff76] text-gray-900 w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shadow-md">
+            {quantityInCart}
+          </div>
+        )}
+      </div>
+
+      <div className="p-3 flex flex-col flex-1">
+        <h3 className="font-semibold text-gray-800 text-sm leading-tight mb-1 line-clamp-2">{product.name}</h3>
+        <p className="text-xs text-gray-500 mb-3">{product.stock} available</p>
+        
+        <div className="mt-auto">
+          {quantityInCart === 0 ? (
+            <button
+              onClick={() => onAdd(product)}
+              disabled={isOutOfStock}
+              className="w-full h-9 flex items-center justify-center gap-2 bg-gray-100 text-gray-800 text-sm font-medium rounded-lg hover:bg-[#ecff76] hover:text-gray-900 disabled:bg-gray-50 disabled:text-gray-300 transition-all active:scale-95"
+            >
+              {isOutOfStock ? 'Out of Stock' : 'Add to Cart'}
+            </button>
+          ) : (
+            <div className="flex items-center justify-between bg-gray-100 rounded-lg p-1">
+              <button 
+                onClick={() => onUpdate(product, -1)}
+                className="w-8 h-7 flex items-center justify-center bg-white rounded shadow-sm hover:bg-gray-50 active:scale-95 transition-transform"
+              >
+                <Minus size={14} />
+              </button>
+              <span className="font-bold text-sm text-gray-900">{quantityInCart}</span>
+              <button 
+                onClick={() => onUpdate(product, 1)}
+                disabled={isMaxStock}
+                className="w-8 h-7 flex items-center justify-center bg-white rounded shadow-sm hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed active:scale-95 transition-transform"
+              >
+                <Plus size={14} />
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+});
+
+ProductCard.displayName = 'ProductCard';
+
+// --- Main Grid Component ---
 
 interface ProductGridProps {
   products: Product[];
@@ -11,19 +138,23 @@ interface ProductGridProps {
 
 export const ProductGrid: React.FC<ProductGridProps> = ({ products }) => {
   const { addToCart, cart, updateCartItemQuantity } = useApp();
-  const [viewMode, setViewMode] = useState<'grid' | 'row'>('row');
+  const [viewMode, setViewMode] = useState<'grid' | 'row'>('grid');
+
+  // Performance Optimization: Create a map for O(1) lookup
+  const cartMap = useMemo(() => {
+    const map: Record<string, number> = {};
+    cart.forEach(item => {
+      map[item.id] = item.quantity;
+    });
+    return map;
+  }, [cart]);
 
   const handleAddToCart = (product: Product) => {
     addToCart({ ...product, quantity: 1 });
   };
 
-  const getItemQuantityInCart = (productId: string): number => {
-    const item = cart.find(item => item.id === productId);
-    return item ? item.quantity : 0;
-  };
-
   const handleUpdateQuantity = (product: Product, change: number) => {
-    const currentQuantity = getItemQuantityInCart(product.id);
+    const currentQuantity = cartMap[product.id] || 0;
     const newQuantity = Math.max(0, currentQuantity + change);
 
     if (newQuantity === 0) {
@@ -36,146 +167,53 @@ export const ProductGrid: React.FC<ProductGridProps> = ({ products }) => {
   };
 
   return (
-    <>
-      {/* Toggle View Button */}
-      <div className="flex justify-end mb-4">
-      <button
-        onClick={() => setViewMode(viewMode === 'row' ? 'grid' : 'row')}
-        className="p-3 rounded-full border border-gray-200 bg-white hover:bg-gray-100 shadow transition-all"
-        title={viewMode === 'row' ? 'Switch to Grid View' : 'Switch to List View'}
-      >
-        {viewMode === 'row' ? (
-          <LayoutGrid size={22} className="text-gray-700" />
-        ) : (
-          <List size={22} className="text-gray-700" />
-        )}
-      </button>
-    </div>
-
-      {/* Product Cards */}
-      <div
-        className={`${
-          viewMode === 'grid'
-            ? 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3'
-            : 'flex flex-col'
-        } gap-4 h-full overflow-y-auto`}
-      >
-        {products.length > 0 ? (
-          products.map((product) => {
-            const quantityInCart = getItemQuantityInCart(product.id);
-
-            return (
-              <div
-                key={product.id}
-                className={`bg-white rounded-xl shadow-sm border border-gray-100 transition-all hover:shadow-md ${
-                  viewMode === 'grid' ? '' : 'flex items-center gap-4 p-4'
-                }`}
-              >
-                {/* Product Image */}
-                <div
-                  className={`${
-                    viewMode === 'grid' ? 'h-40' : 'w-20 h-20'
-                  } bg-gray-100 relative overflow-hidden rounded-lg flex-shrink-0`}
-                >
-                  {product.imageUrl ? (
-                    <img
-                      src={product.imageUrl}
-                      alt={product.name}
-                      className="w-full h-full object-cover"
-                    />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center text-gray-400 text-sm">
-                      No Image
-                    </div>
-                  )}
-                  {viewMode === 'grid' && (
-                    <div className="absolute top-2 right-2 bg-[#ECFF76] px-2 py-1 rounded text-xs font-medium">
-                      ${product.price.toFixed(2)}
-                    </div>
-                  )}
-                </div>
-
-                {/* Info + Controls */}
-                <div className={`p-4 ${viewMode === 'grid' ? '' : 'flex-1'}`}>
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <h3 className="font-medium text-gray-800 text-sm mb-1">{product.name}</h3>
-                      <p className="text-xs text-gray-500 mb-2">
-                        {product.category} • Stock: {product.stock}
-                      </p>
-                    </div>
-                    {viewMode === 'row' && (
-                      <div className="bg-[#ECFF76] text-xs font-medium px-2 py-1 rounded text-gray-800">
-                        ${product.price.toFixed(2)}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Add to Cart or Quantity Controls */}
-                  {quantityInCart === 0 ? (
-                    <button
-                    onClick={() => handleAddToCart(product)}
-                    disabled={product.stock === 0}
-                    title="Add to Cart"
-                    className={`${
-                      viewMode === 'grid'
-                        ? 'w-full py-2 text-sm rounded-lg'
-                        : 'px-14 py-2 text-sm rounded-full mx-auto'
-                    } flex items-center justify-center gap-2 transition-colors ${
-                      product.stock === 0
-                        ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                        : 'bg-[#ECFF76] text-gray-800 hover:bg-[#D6E85C]'
-                    }`}
-                  >
-                    <ShoppingCart size={viewMode === 'grid' ? 16 : 16} />
-                    {viewMode === 'grid' ? 'Add to Cart' : 'Add'}
-                  </button>
-
-                  ) : (
-                    <div className={`flex items-center ${viewMode === 'grid' ? 'gap-3 mt-1' : 'gap-2 mt-0'}`}>
-                      <button
-                        onClick={() => handleUpdateQuantity(product, -1)}
-                        className={`${
-                          viewMode === 'grid' ? 'w-8 h-8' : 'w-7 h-7'
-                        } rounded bg-gray-100 flex items-center justify-center text-gray-600 hover:bg-gray-200`}
-                      >
-                        <Minus size={viewMode === 'grid' ? 14 : 12} />
-                      </button>
-                      <span
-                        className={`font-medium text-gray-800 ${
-                          viewMode === 'grid' ? 'text-sm' : 'text-xs'
-                        }`}
-                      >
-                        {quantityInCart}
-                      </span>
-                      <button
-                        onClick={() => handleUpdateQuantity(product, 1)}
-                        disabled={product.stock <= quantityInCart}
-                        className={`${
-                          viewMode === 'grid' ? 'w-8 h-8' : 'w-7 h-7'
-                        } rounded flex items-center justify-center transition-colors ${
-                          product.stock <= quantityInCart
-                            ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                            : 'bg-[#ECFF76] text-gray-800 hover:bg-[#D6E85C]'
-                        }`}
-                      >
-                        <Plus size={viewMode === 'grid' ? 14 : 12} />
-                      </button>
-                    </div>
-                  )}
-                </div>
-              </div>
-            );
-          })
-        ) : (
-          <div className="col-span-full flex items-center justify-center h-64 bg-white rounded-xl border border-gray-100">
-            <div className="text-center">
-              <p className="text-gray-500 mb-2">No products found</p>
-              <p className="text-sm text-gray-400">Try adjusting your search or filters</p>
-            </div>
-          </div>
-        )}
+    <div className="h-full flex flex-col">
+      <div className="flex justify-between items-center mb-4 px-1">
+        <span className="text-sm text-gray-500 font-medium">
+          {products.length} Products Found
+        </span>
+        <div className="flex bg-gray-100 rounded-lg p-1 gap-1">
+          <button
+            onClick={() => setViewMode('grid')}
+            className={`p-1.5 rounded-md transition-all ${viewMode === 'grid' ? 'bg-white shadow-sm text-black' : 'text-gray-400 hover:text-gray-600'}`}
+          >
+            <LayoutGrid size={18} />
+          </button>
+          <button
+            onClick={() => setViewMode('row')}
+            className={`p-1.5 rounded-md transition-all ${viewMode === 'row' ? 'bg-white shadow-sm text-black' : 'text-gray-400 hover:text-gray-600'}`}
+          >
+            <List size={18} />
+          </button>
+        </div>
       </div>
-    </>
+
+      {products.length > 0 ? (
+        <div className={
+          viewMode === 'grid'
+            ? 'grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 pb-20' 
+            : 'flex flex-col gap-2 pb-20'
+        }>
+          {products.map((product) => (
+            <ProductCard 
+              key={product.id}
+              product={product}
+              quantityInCart={cartMap[product.id] || 0}
+              viewMode={viewMode}
+              onAdd={handleAddToCart}
+              onUpdate={handleUpdateQuantity}
+            />
+          ))}
+        </div>
+      ) : (
+        <div className="flex-1 flex flex-col items-center justify-center text-gray-400 pb-20">
+          <div className="bg-gray-100 p-4 rounded-full mb-3">
+             <Package size={40} className="opacity-50" />
+          </div>
+          <p className="font-medium">No products found</p>
+          <p className="text-sm">Try searching for something else</p>
+        </div>
+      )}
+    </div>
   );
 };

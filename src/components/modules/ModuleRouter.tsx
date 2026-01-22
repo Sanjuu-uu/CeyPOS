@@ -14,6 +14,7 @@ import { Settings } from "./settings/Settings";
 import { Support } from "./support/Support";
 import { Import } from "./import/Import";
 import { Sessions } from "./sessions/Sessions";
+import { BusinessRules } from "./business/BusinessRules"; // Import the new component
 
 export const ModuleRouter: React.FC = () => {
   const { currentModule } = useApp();
@@ -44,6 +45,8 @@ export const ModuleRouter: React.FC = () => {
       return <Import />;
     case "sessions":
       return <Sessions />;
+    case "business": // Add route
+      return <BusinessRules />;
     default:
       return <Dashboard />;
   }
