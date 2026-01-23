@@ -16,6 +16,7 @@ export interface Shop {
   address: string;
   contact: string;
   logo?: string;
+  currency?: string;
 }
 
 export interface Product {
@@ -33,6 +34,17 @@ export interface CartItem extends Product {
   quantity: number;
 }
 
+export interface Customer {
+  id: string;
+  shopId: string;
+  name?: string;
+  email?: string;
+  phone?: string;
+  lastPurchaseAt?: string;
+  totalSpend?: number;
+  pointsBalance?: number;
+}
+
 export interface Sale {
   id: string;
   shopId: string;
@@ -46,6 +58,8 @@ export interface Sale {
   subtotal?: number;
   tax?: number;
   discount?: number;
+  pointsEarned?: number; // Added
+  pointsRedeemed?: number; // Added
   paymentMethod: "cash" | "card" | "mobile";
   timestamp: string;
 }
@@ -74,5 +88,5 @@ export type ModuleName =
   | "support"
   | "import"
   | "sessions"
-  | "business" // Added
+  | "business"
   | "components";

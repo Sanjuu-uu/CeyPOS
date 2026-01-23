@@ -1,5 +1,5 @@
 // Realtime client for two-way sync with backend SQLite database
-import { Shop, Product, Sale, User } from "../types";
+import { Shop, Product, Sale, User, Customer } from "../types";
 import clientIo from "socket.io-client";
 
 const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:4000";
@@ -11,14 +11,17 @@ type SocketType = ReturnType<typeof clientIo> & {
 let socket: SocketType | null = null;
 let currentShopKey: string | null = null;
 
-export interface Customer {
-  id: string;
-  shopId: string;
-  name?: string;
-  email?: string;
-  phone?: string;
-  lastPurchaseAt?: string;
-  totalSpend?: number;
+// Export Business Rules Types
+export interface BusinessRules {
+  loyalty: {
+    enabled: boolean;
+    earnRate: number;
+    redeemRate: number;
+    minPointsToRedeem: number;
+  };
+  discounts: Array<{ id?: number; name: string; type: 'percent' | 'fixed'; value: number }>;
+  taxes: Array<{ id?: number; name: string; rate: number; isDefault: boolean }>;
+  surcharges: Array<{ id?: number; minAmount: number; type: 'percent' | 'fixed'; value: number }>;
 }
 
 export interface DailySale {
@@ -40,19 +43,6 @@ export interface TransactionItem {
   subtotal: number;
 }
 
-// 1. Add Business Rules Interfaces
-export interface BusinessRules {
-  loyalty: {
-    enabled: boolean;
-    earnRate: number;
-    redeemRate: number;
-    minPointsToRedeem: number;
-  };
-  discounts: Array<{ id?: number; name: string; type: 'percent' | 'fixed'; value: number }>;
-  taxes: Array<{ id?: number; name: string; rate: number; isDefault: boolean }>;
-  surcharges: Array<{ id?: number; minAmount: number; type: 'percent' | 'fixed'; value: number }>;
-}
-
 type InventoryRow = {
   inventory_code: string;
   barcode_id?: string | null;
@@ -72,6 +62,7 @@ type CustomerRow = {
   total_spent?: number | null;
   visit_count?: number | null;
   last_visit?: string | null;
+  points_balance?: number | null; // Added
   created_at?: string | null;
 };
 
@@ -116,7 +107,7 @@ interface ShopCache {
   transactionItemsByTx: Map<number, TransactionItemRow[]>;
   sales: Sale[];
   paymentMethods: string[];
-  businessRules: BusinessRules;
+  businessRules: BusinessRules; // Added
 }
 
 const shopCaches: Record<string, ShopCache> = Object.create(null);
@@ -146,6 +137,8 @@ function ensureShopCache(shopKey: string): ShopCache {
   }
   return shopCaches[shopKey];
 }
+
+// ... (resetChangeTracker, shouldSkipChange, listeners, emit, on, off... SAME AS BEFORE)
 
 function resetChangeTracker(shopKey: string) {
   lastAppliedChanges[shopKey] = Object.create(null);
@@ -178,7 +171,6 @@ function shouldSkipChange(
   return false;
 }
 
-// Simple event emitter so React components can subscribe to db changes
 const listeners: Record<string, Set<Function>> = {};
 
 function emit(event: string, payload?: any) {
@@ -227,6 +219,7 @@ function toProduct(shopKey: string, row: InventoryRow): Product {
   };
 }
 
+// Fixed toCustomer to include pointsBalance
 function toCustomer(shopKey: string, row: CustomerRow): Customer {
   return {
     id: `customer_${row.customer_id}`,
@@ -235,6 +228,7 @@ function toCustomer(shopKey: string, row: CustomerRow): Customer {
     email: row.email ?? undefined,
     phone: row.phone ?? undefined,
     totalSpend: Number(row.total_spent ?? 0),
+    pointsBalance: Number(row.points_balance ?? 0), // Fixed
     lastPurchaseAt: row.last_visit ?? row.created_at ?? undefined,
   };
 }
@@ -248,6 +242,8 @@ function toDailySale(shopKey: string, row: DailySalesRow): DailySale {
     transactions: Number(row.transactions_count ?? 0),
   };
 }
+
+// ... (buildSale, fetchShopMeta, applyInventoryRows... SAME AS BEFORE)
 
 function buildSale(
   shopKey: string,
@@ -280,9 +276,6 @@ function buildSale(
     total: Number(transaction.total ?? 0),
     paymentMethod: (transaction.payment_method || "cash") as Sale["paymentMethod"],
     timestamp: transaction.created_at || new Date().toISOString(),
-    tax: Number(transaction.tax ?? 0),
-    discount: Number(transaction.discount ?? 0),
-    subtotal: Number(transaction.subtotal ?? 0),
   } as Sale;
 }
 
@@ -298,6 +291,7 @@ async function fetchShopMeta(rawShopId: string) {
     address: meta.address || "",
     contact: meta.phone || "",
     logo: undefined,
+    currency: meta.currency || "$", // Map currency
   } as Shop;
   emit("shopMeta", { shopId: key, meta });
 }
@@ -373,6 +367,7 @@ function upsertTransaction(shopKey: string, row: TransactionRow, items: Transact
   }
 }
 
+// Updated applySnapshot to load Business Rules
 function applySnapshot(shopKey: string, snapshot: any) {
   resetChangeTracker(shopKey);
   const invRows: InventoryRow[] = snapshot.inventory || [];
@@ -383,27 +378,6 @@ function applySnapshot(shopKey: string, snapshot: any) {
   const methods: string[] = snapshot.paymentMethods || [];
 
   const cache = ensureShopCache(shopKey);
-  // Load Business Rules
-  if (snapshot.businessRules) {
-    const { loyalty, discounts, taxes, surcharges } = snapshot.businessRules;
-    cache.businessRules = {
-      loyalty: {
-        enabled: Boolean(loyalty?.enabled),
-        earnRate: Number(loyalty?.earn_rate || 1),
-        redeemRate: Number(loyalty?.redeem_rate || 0.01),
-        minPointsToRedeem: Number(loyalty?.min_points || 0),
-      },
-      discounts: (discounts || []).map((d: any) => ({
-        id: d.id, name: d.name, type: d.type, value: Number(d.value)
-      })),
-      taxes: (taxes || []).map((t: any) => ({
-        id: t.id, name: t.name, rate: Number(t.rate), isDefault: Boolean(t.is_default)
-      })),
-      surcharges: (surcharges || []).map((s: any) => ({
-        id: s.id, minAmount: Number(s.min_amount), type: s.type, value: Number(s.value)
-      }))
-    };
-  }
   cache.inventoryByCode.clear();
   invRows.forEach((row) => {
     if (row?.inventory_code) {
@@ -441,6 +415,28 @@ function applySnapshot(shopKey: string, snapshot: any) {
     ? methods.map((method) => String(method))
     : [];
 
+  // Business Rules
+  if (snapshot.businessRules) {
+    const { loyalty, discounts, taxes, surcharges } = snapshot.businessRules;
+    cache.businessRules = {
+      loyalty: {
+        enabled: Boolean(loyalty?.enabled),
+        earnRate: Number(loyalty?.earn_rate || 1),
+        redeemRate: Number(loyalty?.redeem_rate || 0.01),
+        minPointsToRedeem: Number(loyalty?.min_points || 0),
+      },
+      discounts: (discounts || []).map((d: any) => ({
+        id: d.id, name: d.name, type: d.type, value: Number(d.value)
+      })),
+      taxes: (taxes || []).map((t: any) => ({
+        id: t.id, name: t.name, rate: Number(t.rate), isDefault: Boolean(t.is_default)
+      })),
+      surcharges: (surcharges || []).map((s: any) => ({
+        id: s.id, minAmount: Number(s.min_amount), type: s.type, value: Number(s.value)
+      }))
+    };
+  }
+
   rebuildSales(shopKey);
 
   emit("inventoryUpdated", { shopId: shopKey, items: cache.products.slice() });
@@ -451,27 +447,7 @@ function applySnapshot(shopKey: string, snapshot: any) {
   emit("businessRulesUpdated", { shopId: shopKey, rules: cache.businessRules });
 }
 
-// 5. Add API method to save rules
-async function saveBusinessRules(rules: BusinessRules): Promise<void> {
-  if (!currentShopKey) throw new Error("No active shop");
-  const cleanShopId = normalizeShopId(currentShopKey);
-  
-  const res = await fetch(`${API_BASE}/api/business-rules/${cleanShopId}`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(rules),
-  });
-
-  if (!res.ok) {
-    const err = await res.json();
-    throw new Error(err.error || "Failed to save business rules");
-  }
-  
-  // Optimistic update
-  const cache = ensureShopCache(currentShopKey);
-  cache.businessRules = rules;
-  emit("businessRulesUpdated", { shopId: currentShopKey, rules });
-}
+// ... (fetchSnapshot, handleChange, ensureSocket... SAME AS BEFORE)
 
 async function fetchSnapshot(shopKey: string) {
   const rawShopId = normalizeShopId(shopKey);
@@ -681,12 +657,34 @@ async function createInventoryRecord(
   });
 }
 
+// Add API method to save business rules
+async function saveBusinessRules(rules: BusinessRules): Promise<void> {
+  if (!currentShopKey) throw new Error("No active shop");
+  const cleanShopId = normalizeShopId(currentShopKey);
+  
+  const res = await fetch(`${API_BASE}/api/business-rules/${cleanShopId}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(rules),
+  });
+
+  if (!res.ok) {
+    const err = await res.json();
+    throw new Error(err.error || "Failed to save business rules");
+  }
+  
+  // Optimistic update
+  const cache = ensureShopCache(currentShopKey);
+  cache.businessRules = rules;
+  emit("businessRulesUpdated", { shopId: currentShopKey, rules });
+}
+
+// Fixed createSaleRecord to use mapped fields
 async function createSaleRecord(sale: Omit<Sale, "id">): Promise<Sale> {
   const shopKey = sale.shopId || currentShopKey;
   if (!shopKey) throw new Error("No active shop selected");
   const cleanShopId = normalizeShopId(shopKey);
   
-  // Update payload to include real tax and discount values
   const payload = {
     shopId: cleanShopId,
     customer: sale.customerInfo || {},
@@ -701,6 +699,8 @@ async function createSaleRecord(sale: Omit<Sale, "id">): Promise<Sale> {
     discount: sale.discount || 0,
     tax: sale.tax || 0,
     total: sale.total,
+    pointsEarned: sale.pointsEarned || 0, // SEND POINTS
+    pointsRedeemed: sale.pointsRedeemed || 0,
     paymentMethod: sale.paymentMethod,
     createdAt: sale.timestamp || new Date().toISOString(),
   };
@@ -862,7 +862,7 @@ export const db = {
   businessRules: {
     get: (): BusinessRules => {
         const cache = ensureShopCache(currentShopKey || "");
-        return JSON.parse(JSON.stringify(cache.businessRules)); // Return copy
+        return JSON.parse(JSON.stringify(cache.businessRules));
     },
     save: saveBusinessRules
   }
