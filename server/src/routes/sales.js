@@ -1,162 +1,241 @@
 import { Router } from "express";
 import { openDb, dbExists } from "../utils/db.js";
-import {
-  adjustStockLevels,
-  normalizeProduct,
-} from "../services/inventory-service.js";
+import { adjustStockLevels, normalizeProduct } from "../services/inventory-service.js";
 import { publishChange } from "../realtime/change-bus.js";
+import crypto from "crypto";
 
 const router = Router();
 
-// --- 1. SECURITY: Input Validation Helper ---
-const validateSalePayload = (body) => {
+// --- 1) SECURITY: Validate inputs ---
+const validatePayload = (body) => {
   const errors = [];
-  if (!body.shopId || typeof body.shopId !== 'string') errors.push("Invalid shopId");
+  if (!body.shopId || typeof body.shopId !== "string") errors.push("Invalid shopId");
   if (!Array.isArray(body.items) || body.items.length === 0) errors.push("Items array is empty");
-  if (typeof body.total !== 'number' || body.total < 0) errors.push("Invalid total amount");
-  
-  // Security: Max limit to prevent payload flooding
-  if (body.items.length > 500) errors.push("Too many items in one transaction");
-  
+  if (body.items?.length > 500) errors.push("Too many items (limit 500)");
   return errors;
 };
 
-// --- 2. PERFORMANCE: Database Optimization Helper ---
-const optimizeDb = (db) => {
-  // WAL mode allows simultaneous readers/writers (Huge speed boost)
-  db.pragma('journal_mode = WAL'); 
-  // Sync NORMAL is safe for WAL and much faster than FULL
-  db.pragma('synchronous = NORMAL');
-  // Cache size increased for memory speed
-  db.pragma('cache_size = -64000'); // ~64MB cache
-  
-  // Ensure Indices exist for fast lookups (Idempotent)
-  db.exec(`
-    CREATE INDEX IF NOT EXISTS idx_customers_phone ON customers(phone);
-    CREATE INDEX IF NOT EXISTS idx_customers_email ON customers(email);
-    CREATE INDEX IF NOT EXISTS idx_inventory_code ON inventory(inventory_code);
-    CREATE INDEX IF NOT EXISTS idx_daily_sales_date ON daily_sales(shop_id, date);
-  `);
+// --- 2) PERFORMANCE: Connection tuning only (safe to run per request) ---
+const configureConnection = (db) => {
+  db.pragma("busy_timeout = 5000");
+  db.pragma("synchronous = NORMAL");
+  // NOTE: journal_mode=WAL should be enabled at DB init/startup ideally.
+};
+
+const cleanString = (v) => (v === undefined || v === null ? null : String(v).trim());
+
+const normalizeCustomer = (customer = {}) => ({
+  name: customer.name ? cleanString(customer.name) : null,
+  email: customer.email ? cleanString(customer.email).toLowerCase() : null,
+  phone: customer.phone ? cleanString(customer.phone).replace(/\s+/g, "") : null,
+});
+
+const safeNumber = (v, min = 0) => {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return min;
+  return Math.max(min, n);
 };
 
 router.post("/complete", (req, res) => {
-  // 1. Validate Inputs (Security Layer)
-  const validationErrors = validateSalePayload(req.body);
-  if (validationErrors.length > 0) {
-    return res.status(400).json({ ok: false, error: "validation_error", details: validationErrors });
+  // 1) Fast validation
+  const validationErrors = validatePayload(req.body);
+  if (validationErrors.length) {
+    return res.status(400).json({
+      ok: false,
+      error: "validation_error",
+      details: validationErrors,
+    });
   }
 
-  const {
-    shopId,
-    customer = {},
-    items = [],
-    subtotal = 0,
-    discount = 0,
-    tax = 0,
-    total = 0,
-    pointsEarned = 0,
-    paymentMethod = "cash",
-    createdAt,
-  } = req.body;
+  const { shopId, customer = {}, items = [], paymentMethod = "cash", createdAt } = req.body;
 
   if (!dbExists(shopId)) {
     return res.status(404).json({ ok: false, error: "shop_not_configured" });
   }
 
+  // 2) Sanitize numeric inputs
+  const discount = safeNumber(req.body.discount, 0);
+  const tax = safeNumber(req.body.tax, 0);
+
+  // Prevent abuse (still better if you compute points from total)
+  const pointsEarned = Math.min(5000, safeNumber(req.body.pointsEarned, 0));
+  const pointsRedeemed = safeNumber(req.body.pointsRedeemed, 0);
+
+  const effectiveDate = createdAt || new Date().toISOString();
+
+  // 3) Backend recalculation (trust no frontend totals)
+  let calculatedSubtotal = 0;
+
+  const cleanItems = items.map((item) => {
+    const qty = safeNumber(item.quantity, 0);
+    const price = safeNumber(item.unit_price ?? item.price, 0);
+    const lineTotal = qty * price;
+    calculatedSubtotal += lineTotal;
+
+    const inventoryCode =
+      item.inventory_code ?? item.inventoryCode ?? normalizeProduct(item).inventory_code ?? null;
+
+    return {
+      ...item,
+      quantity: qty,
+      unit_price: price,
+      subtotal: lineTotal,
+      inventoryCode,
+    };
+  });
+
+  // Strict rule: inventoryCode required
+  const missingCodes = cleanItems.filter((it) => !it.inventoryCode);
+  if (missingCodes.length) {
+    return res.status(400).json({
+      ok: false,
+      error: "invalid_item",
+      message: "One or more items are missing inventory_code",
+    });
+  }
+
+  const finalTotal = Math.max(0, calculatedSubtotal - discount + tax);
+
+  const cleanCustomer = normalizeCustomer(customer);
+
   let db;
   try {
     db = openDb(shopId);
-    // 2. Apply Speed Optimizations immediately upon opening
-    optimizeDb(db);
+    configureConnection(db);
   } catch (err) {
-    console.error("complete sale failed: unable to open shop db", err);
+    console.error("complete sale failed: db error", err);
     return res.status(500).json({ ok: false, error: "database_unavailable" });
   }
 
-  let transactionId = null;
-  let customerId = null;
-  let transactionDate = null;
-  let inventoryRows = [];
-
   try {
-    // 3. The Transaction (Atomic & Fast)
     const result = db.transaction(() => {
-      // --- A. Customer Upsert (with Points) ---
+      // --- A) CUSTOMER UPSERT (NO RETURNING, compatible) ---
       let localCustomerId = null;
+      let customerRow = null;
 
-      if (customer?.email || customer?.phone || customer?.name) {
-        // High-speed lookup using the INDEX we created
-        const found = db.prepare(`
-            SELECT customer_id FROM customers
-            WHERE (email = ? AND email IS NOT NULL)
-               OR (phone = ? AND phone IS NOT NULL)
-            LIMIT 1
-          `).get(customer.email ?? null, customer.phone ?? null);
+      if (cleanCustomer.email || cleanCustomer.phone || cleanCustomer.name) {
+        let existing = null;
 
-        const effectiveDate = createdAt || new Date().toISOString();
+        // Email priority (safer)
+        if (cleanCustomer.email) {
+          existing = db.prepare("SELECT * FROM customers WHERE email = ?").get(cleanCustomer.email);
+        }
+        if (!existing && cleanCustomer.phone) {
+          existing = db.prepare("SELECT * FROM customers WHERE phone = ?").get(cleanCustomer.phone);
+        }
 
-        if (found?.customer_id) {
-          localCustomerId = found.customer_id;
-          db.prepare(`
+        const netPointsChange = pointsEarned - pointsRedeemed;
+
+        if (existing) {
+          localCustomerId = existing.customer_id;
+
+          const currentBalance = Number(existing.points_balance) || 0;
+          if (pointsRedeemed > currentBalance) {
+            throw new Error("INSUFFICIENT_POINTS");
+          }
+
+          db.prepare(
+            `
             UPDATE customers
-            SET name = COALESCE(?, name),
-                email = COALESCE(?, email),
-                phone = COALESCE(?, phone),
-                total_spent = COALESCE(total_spent, 0) + ?,
-                visit_count = COALESCE(visit_count, 0) + 1,
-                points_balance = COALESCE(points_balance, 0) + ?,
-                last_visit = ?
-            WHERE customer_id = ?
-          `).run(
-            customer.name ?? null, 
-            customer.email ?? null, 
-            customer.phone ?? null, 
-            total, 
-            pointsEarned, 
-            effectiveDate, 
+               SET name = COALESCE(?, name),
+                   email = COALESCE(?, email),
+                   phone = COALESCE(?, phone),
+                   total_spent = COALESCE(total_spent, 0) + ?,
+                   visit_count = COALESCE(visit_count, 0) + 1,
+                   points_balance = MAX(0, COALESCE(points_balance, 0) + ?),
+                   last_visit = ?
+             WHERE customer_id = ?
+          `
+          ).run(
+            cleanCustomer.name,
+            cleanCustomer.email,
+            cleanCustomer.phone,
+            finalTotal,
+            netPointsChange,
+            effectiveDate,
             localCustomerId
           );
+
+          customerRow = db
+            .prepare("SELECT * FROM customers WHERE customer_id = ?")
+            .get(localCustomerId);
         } else {
-          const info = db.prepare(`
+          // New customer cannot redeem
+          if (pointsRedeemed > 0) throw new Error("NEW_CUSTOMER_CANNOT_REDEEM");
+
+          const info = db
+            .prepare(
+              `
               INSERT INTO customers (
                 name, email, phone,
                 total_spent, visit_count, last_visit,
                 points_balance, created_at
               )
               VALUES (?, ?, ?, ?, 1, ?, ?, ?)
-            `).run(
-              customer.name ?? null, 
-              customer.email ?? null, 
-              customer.phone ?? null, 
-              total, 
-              effectiveDate, 
-              pointsEarned, 
+            `
+            )
+            .run(
+              cleanCustomer.name,
+              cleanCustomer.email,
+              cleanCustomer.phone,
+              finalTotal,
+              effectiveDate,
+              pointsEarned,
               effectiveDate
             );
+
           localCustomerId = Number(info.lastInsertRowid);
+          customerRow = db
+            .prepare("SELECT * FROM customers WHERE customer_id = ?")
+            .get(localCustomerId);
         }
+      } else {
+        // Guest cannot redeem points
+        if (pointsRedeemed > 0) throw new Error("GUEST_CANNOT_REDEEM");
       }
 
-      customerId = localCustomerId;
+      // --- B) TRANSACTION HEADER ---
+      const receiptId = crypto.randomUUID();
+      const transactionCode = crypto.randomUUID().split("-")[0].toUpperCase();
 
-      // --- B. Create Transaction Header ---
-      const txInfo = db.prepare(`
+      const txInfo = db
+        .prepare(
+          `
           INSERT INTO transactions (
             receipt_id, transaction_code, customer_id,
             subtotal, discount, tax, total, payment_method, created_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `).run(
-          cryptoRandom(), 
-          cryptoRandom(), 
-          localCustomerId, 
-          subtotal, discount, tax, total, paymentMethod, 
-          createdAt || new Date().toISOString()
+          )
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `
+        )
+        .run(
+          receiptId,
+          transactionCode,
+          localCustomerId,
+          calculatedSubtotal,
+          discount,
+          tax,
+          finalTotal,
+          paymentMethod,
+          effectiveDate
         );
 
-      const newTransactionId = Number(txInfo.lastInsertRowid);
-      transactionId = newTransactionId;
+      const transactionId = Number(txInfo.lastInsertRowid);
 
-      // --- C. Insert Items & Calculate Stock ---
+      const transactionRow = {
+        transaction_id: transactionId,
+        receipt_id: receiptId,
+        transaction_code: transactionCode,
+        customer_id: localCustomerId,
+        subtotal: calculatedSubtotal,
+        discount,
+        tax,
+        total: finalTotal,
+        payment_method: paymentMethod,
+        created_at: effectiveDate,
+      };
+
+      // --- C) ITEMS + STOCK ---
       const insertItem = db.prepare(`
         INSERT INTO transaction_items (
           transaction_id, item_id, inventory_code, quantity, unit_price, subtotal
@@ -166,120 +245,156 @@ router.post("/complete", (req, res) => {
       let topItemName = null;
       let topQty = -1;
       const stockAdjustments = [];
+      const savedItems = [];
 
-      // Pre-compile normalization to save CPU cycles inside loop
-      for (const it of items) {
-        const qty = Number(it.quantity ?? 0);
-        const unit = Number(it.unit_price ?? it.price ?? 0);
-        const line = unit * qty;
+      for (const it of cleanItems) {
+        insertItem.run(
+          transactionId,
+          it.item_id ?? null,
+          it.inventoryCode,
+          it.quantity,
+          it.unit_price,
+          it.subtotal
+        );
 
-        // Use supplied code or normalize (CPU intensive, so check first)
-        const inventoryCode = it.inventory_code ?? it.inventoryCode ?? normalizeProduct(it).inventory_code;
+        savedItems.push({
+          transaction_id: transactionId,
+          item_id: it.item_id ?? null,
+          inventory_code: it.inventoryCode,
+          quantity: it.quantity,
+          unit_price: it.unit_price,
+          subtotal: it.subtotal,
+        });
 
-        insertItem.run(newTransactionId, it.item_id ?? null, inventoryCode ?? null, qty, unit, line);
-
-        if (qty > topQty) {
-          topQty = qty;
-          topItemName = it.name ?? inventoryCode ?? "N/A";
+        if (it.quantity > topQty) {
+          topQty = it.quantity;
+          topItemName = it.name ?? it.inventoryCode ?? "N/A";
         }
-        
-        if (inventoryCode && qty > 0) {
-          stockAdjustments.push({ inventory_code: inventoryCode, delta: -qty });
+
+        if (it.quantity > 0) {
+          stockAdjustments.push({ inventory_code: it.inventoryCode, delta: -it.quantity });
         }
       }
 
-      // --- D. Update Stock (Inventory Service) ---
-      let updatedInventoryRows = []; // <--- FIXED: Declared variable here
+      let inventoryRows = [];
       if (stockAdjustments.length) {
-        updatedInventoryRows = adjustStockLevels(db, stockAdjustments) || [];
+        inventoryRows = adjustStockLevels(db, stockAdjustments) || [];
       }
-      inventoryRows = updatedInventoryRows;
 
-      // --- E. Update Daily Sales (Aggregated) ---
-      const day = (createdAt ? new Date(createdAt) : new Date()).toISOString().slice(0, 10);
-      transactionDate = day;
+      // --- D) DAILY SALES (NO RETURNING) ---
+      const day = effectiveDate.split("T")[0];
 
-      db.prepare(`
+      db.prepare(
+        `
         INSERT INTO daily_sales (shop_id, date, total_sales, transactions_count, top_item)
         VALUES (?, ?, ?, 1, ?)
         ON CONFLICT(shop_id, date) DO UPDATE SET
           total_sales = COALESCE(total_sales, 0) + ?,
           transactions_count = COALESCE(transactions_count, 0) + 1,
-          top_item = COALESCE(top_item, excluded.top_item)
-      `).run(shopId, day, total, topItemName, total);
+          top_item = excluded.top_item
+      `
+      ).run(shopId, day, finalTotal, topItemName, finalTotal);
 
-      return { transactionId: newTransactionId, customerId: localCustomerId, date: day };
+      const dailySalesRow = db
+        .prepare("SELECT * FROM daily_sales WHERE shop_id = ? AND date = ?")
+        .get(shopId, day);
+
+      return {
+        transactionId,
+        transactionRow,
+        transactionItems: savedItems,
+        dailySalesRow,
+        inventoryRows,
+        customerRow,
+        date: day,
+      };
     })();
 
-    // 4. Quick Response (Don't wait for Realtime Publish)
+    // ✅ Close DB immediately (fast)
+    if (db) db.close();
+
+    // ✅ Response
     res.json({
       ok: true,
       transactionId: result.transactionId,
-      customerId: result.customerId,
+      customerId: result.customerRow ? result.customerRow.customer_id : null,
       date: result.date,
     });
 
-    // 5. Background Process: Realtime Updates (Non-blocking)
+    // ✅ Realtime updates (no DB reads)
     setImmediate(() => {
       try {
-        // Fetch fresh data for UI updates
-        const transactionRow = db.prepare("SELECT * FROM transactions WHERE transaction_id = ?").get(result.transactionId);
-        const transactionItems = db.prepare("SELECT * FROM transaction_items WHERE transaction_id = ?").all(result.transactionId);
-        const dailySalesRow = db.prepare("SELECT * FROM daily_sales WHERE shop_id = ? AND date = ?").get(shopId, result.date);
-        
         publishChange({
           shopId,
           entity: "transactions",
           action: "created",
-          payload: { transaction: transactionRow, items: transactionItems },
+          payload: {
+            transaction: result.transactionRow,
+            items: result.transactionItems,
+          },
         });
 
-        if (inventoryRows.length) {
+        if (result.inventoryRows?.length) {
           publishChange({
             shopId,
             entity: "inventory",
             action: "stock-adjust",
-            payload: { rows: inventoryRows },
+            payload: { rows: result.inventoryRows },
             metadata: { source: "sale" },
           });
         }
 
-        if (dailySalesRow) {
+        if (result.dailySalesRow) {
           publishChange({
             shopId,
             entity: "daily_sales",
             action: "upsert",
-            payload: { row: dailySalesRow },
+            payload: { row: result.dailySalesRow },
           });
         }
 
-        if (result.customerId) {
-          const customerRow = db.prepare("SELECT * FROM customers WHERE customer_id = ?").get(result.customerId);
-          if (customerRow) {
-            publishChange({
-              shopId,
-              entity: "customers",
-              action: "upsert",
-              payload: { row: customerRow },
-            });
-          }
+        if (result.customerRow) {
+          publishChange({
+            shopId,
+            entity: "customers",
+            action: "upsert",
+            payload: { row: result.customerRow },
+          });
         }
       } catch (notifyErr) {
-        console.warn("Background realtime update failed (Sale was successful though):", notifyErr);
-      } finally {
-        if(db && db.open) db.close(); // Close DB connection after background work is done
+        console.warn("Realtime update failed:", notifyErr);
       }
     });
-
   } catch (err) {
     console.error("complete sale failed", err);
-    if(db && db.open) db.close(); // Ensure close on error
+    if (db && db.open) db.close();
+
+    if (err.message === "INSUFFICIENT_POINTS") {
+      return res.status(400).json({
+        ok: false,
+        error: "insufficient_points",
+        message: "Insufficient points balance.",
+      });
+    }
+
+    if (err.message === "NEW_CUSTOMER_CANNOT_REDEEM") {
+      return res.status(400).json({
+        ok: false,
+        error: "invalid_points_redemption",
+        message: "Cannot redeem points for a new customer.",
+      });
+    }
+
+    if (err.message === "GUEST_CANNOT_REDEEM") {
+      return res.status(400).json({
+        ok: false,
+        error: "invalid_points_redemption",
+        message: "Guest checkout cannot redeem points.",
+      });
+    }
+
     res.status(500).json({ ok: false, error: "sale_failed" });
   }
 });
-
-function cryptoRandom() {
-  return Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
-}
 
 export default router;

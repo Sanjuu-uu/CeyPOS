@@ -14,8 +14,10 @@ import {
   X,
   User,
   Tag,
+  AlertCircle,
   Gift,
-  AlertCircle
+  Coins,
+  Save
 } from "lucide-react";
 import { useApp } from "../../../context/AppContext";
 import { db, BusinessRules } from "../../../lib/db";
@@ -49,7 +51,11 @@ export const ShoppingCart: React.FC = () => {
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [newCustomerInfo, setNewCustomerInfo] = useState({ name: "", email: "", phone: "" });
   
-  const [cashReceived, setCashReceived] = useState("");
+  // --- Redemption & Change Logic ---
+  const [redeemPointsInput, setRedeemPointsInput] = useState<string>(""); 
+  const [convertChangeToPoints, setConvertChangeToPoints] = useState(false);
+  const [saveChangeAmount, setSaveChangeAmount] = useState<string>(""); 
+  const [cashReceived, setCashReceived] = useState<string>("");
 
   // Load Rules & Defaults
   useEffect(() => {
@@ -57,7 +63,6 @@ export const ShoppingCart: React.FC = () => {
     const loadedRules = db.businessRules?.get();
     if (loadedRules) {
         setRules(loadedRules);
-        // Set default taxes
         const defaultTaxes = loadedRules.taxes
             .filter((t: any) => t.isDefault)
             .map((t: any) => t.id);
@@ -98,23 +103,62 @@ export const ShoppingCart: React.FC = () => {
     return applicable.value;
   }, [taxableAmount, selectedPaymentMethod, rules]);
 
-  const finalTotal = Math.max(0, taxableAmount + taxAmount + surchargeAmount);
+  const potentialTotal = taxableAmount + taxAmount + surchargeAmount;
+  
+  // ✅ FIX 1: Allow decimals in Redemption
+  const actualPointsRedeemed = useMemo(() => {
+    if (!customer || !rules?.loyalty.enabled) return 0;
+    
+    const inputPoints = parseFloat(redeemPointsInput) || 0; // Allow float
+    const balance = customer.pointsBalance || 0;
+    const redeemRate = rules.loyalty.redeemRate || 0.01;
+    
+    // Exact points needed (decimals allowed)
+    const maxNeeded = Number((potentialTotal / redeemRate).toFixed(2));
+    
+    // Min of: Input, Balance, or Amount needed to pay bill
+    return Math.min(inputPoints, balance, maxNeeded);
+  }, [customer, rules, redeemPointsInput, potentialTotal]);
 
-  // Loyalty Points Calculation
+  const redemptionValue = useMemo(() => {
+    if (!actualPointsRedeemed || !rules) return 0;
+    return actualPointsRedeemed * (rules.loyalty.redeemRate || 0.01);
+  }, [actualPointsRedeemed, rules]);
+
+  const finalTotal = Math.max(0, potentialTotal - redemptionValue);
+
+  // ✅ FIX 2: Allow decimals in Points Earning
   const pointsToEarn = useMemo(() => {
     if (!rules?.loyalty.enabled) return 0;
     const earnRate = rules.loyalty.earnRate || 1;
-    // Prevent division by zero
     if (earnRate <= 0) return 0;
-    return Math.floor(finalTotal / earnRate);
+    // Removed Math.floor() -> toFixed(2) keeps decimals like 2.67
+    return Number((finalTotal / earnRate).toFixed(2)); 
   }, [finalTotal, rules]);
 
-  const changeAmount = useMemo(() => {
-    const received = parseFloat(cashReceived) || 0;
-    return Math.max(0, received - finalTotal);
-  }, [cashReceived, finalTotal]);
+  // --- Change Logic ---
+  const rawChange = parseFloat(cashReceived) - finalTotal;
+  const totalChangeAvailable = Math.max(0, rawChange);
+
+  const amountToConvert = useMemo(() => {
+    if (!convertChangeToPoints || totalChangeAvailable <= 0) return 0;
+    const userAmount = parseFloat(saveChangeAmount);
+    if (isNaN(userAmount)) return 0;
+    return Math.min(userAmount, totalChangeAvailable);
+  }, [convertChangeToPoints, saveChangeAmount, totalChangeAvailable]);
+
+  // ✅ FIX 3: Allow decimals in Change Conversion
+  const pointsFromChange = useMemo(() => {
+    if (amountToConvert <= 0 || !rules?.loyalty.redeemRate) return 0;
+    // Removed Math.floor() -> toFixed(2)
+    return Number((amountToConvert / rules.loyalty.redeemRate).toFixed(2));
+  }, [amountToConvert, rules]);
+
+  const cashChangeToReturn = totalChangeAvailable - amountToConvert;
 
   const isInsufficientPayment = useMemo(() => {
+      // Small tolerance for float math
+      if (finalTotal <= 0.001) return false;
       if (selectedPaymentMethod !== 'cash') return false;
       const received = parseFloat(cashReceived) || 0;
       return received < (finalTotal - 0.01);
@@ -134,6 +178,7 @@ export const ShoppingCart: React.FC = () => {
     if (existing) {
       setCustomer(existing);
       setSearchPhone("");
+      setRedeemPointsInput("");
     } else {
       setNewCustomerInfo({ name: "", email: "", phone: searchPhone });
       setShowRegisterModal(true);
@@ -153,6 +198,15 @@ export const ShoppingCart: React.FC = () => {
     setShowRegisterModal(false);
   };
 
+  const toggleSaveChange = (checked: boolean) => {
+    setConvertChangeToPoints(checked);
+    if (checked) {
+        setSaveChangeAmount(totalChangeAvailable.toFixed(2)); // Pre-fill exact amount
+    } else {
+        setSaveChangeAmount("");
+    }
+  };
+
   const handleCheckout = async () => {
     if (cart.length === 0 || !currentShop || saving || isInsufficientPayment) return;
     setSaving(true);
@@ -170,8 +224,9 @@ export const ShoppingCart: React.FC = () => {
         tax: taxAmount,
         discount: discountAmount,
         total: finalTotal,
-        pointsEarned: pointsToEarn, // Pass points here
-        pointsRedeemed: 0, // Placeholder for future redemption logic
+        // Sum earned points + change points (decimals preserved)
+        pointsEarned: Number((pointsToEarn + pointsFromChange).toFixed(2)),
+        pointsRedeemed: actualPointsRedeemed,
         paymentMethod: selectedPaymentMethod,
         timestamp: new Date().toISOString(),
       };
@@ -187,6 +242,9 @@ export const ShoppingCart: React.FC = () => {
          setCustomer(null);
          setSelectedDiscountId(null);
          setSearchPhone("");
+         setRedeemPointsInput("");
+         setConvertChangeToPoints(false);
+         setSaveChangeAmount("");
          setSaving(false);
       }, 2000);
 
@@ -205,18 +263,28 @@ export const ShoppingCart: React.FC = () => {
             </div>
             <h2 className="text-2xl font-bold text-gray-900 mb-2">Payment Successful!</h2>
             <p className="text-gray-500 mb-6">Total Paid: {currencySymbol}{finalTotal.toFixed(2)}</p>
+            
             {rules?.loyalty.enabled && customer && (
-                <div className="bg-gray-50 px-4 py-2 rounded-full text-sm font-medium text-gray-600 mb-6">
-                    <span className="font-bold text-black">+{pointsToEarn} Points</span> added to balance
+                <div className="space-y-2 mb-6">
+                    {(pointsToEarn > 0 || pointsFromChange > 0) && (
+                        <div className="bg-gray-50 px-4 py-2 rounded-full text-sm font-medium text-gray-600 border border-gray-100">
+                            <span className="font-bold text-black">+{Number((pointsToEarn + pointsFromChange).toFixed(2))} Points</span> added
+                            {pointsFromChange > 0 && <div className="text-xs text-blue-600 mt-1">({currencySymbol}{parseFloat(saveChangeAmount || '0').toFixed(2)} change saved)</div>}
+                        </div>
+                    )}
+                    {actualPointsRedeemed > 0 && (
+                        <div className="text-xs text-red-500 font-medium">
+                            -{actualPointsRedeemed} Points Redeemed
+                        </div>
+                    )}
                 </div>
             )}
-            <p className="text-sm text-gray-400">Redirecting to new order...</p>
+            
+            <p className="text-sm text-gray-400 mt-2">Redirecting to new order...</p>
         </div>
     );
   }
 
-  // ... (Rest of the JSX remains the same as previous step)
-  // Ensure you include the rest of the file logic I provided in the previous response for the render
   return (
     <div className="flex flex-col h-full bg-white relative">
       
@@ -273,7 +341,7 @@ export const ShoppingCart: React.FC = () => {
         )}
       </div>
 
-      {/* Cart Items */}
+      {/* Cart Items List */}
       <div className="flex-1 overflow-y-auto p-4 space-y-3">
         {cart.length > 0 ? (
           cart.map((item) => (
@@ -343,7 +411,7 @@ export const ShoppingCart: React.FC = () => {
                      </div>
                   </div>
                   <button 
-                    onClick={() => setCustomer(null)}
+                    onClick={() => { setCustomer(null); setRedeemPointsInput(""); setConvertChangeToPoints(false); }}
                     className="text-xs text-red-500 hover:bg-red-50 p-2 rounded"
                   >
                     <X size={16}/>
@@ -380,7 +448,6 @@ export const ShoppingCart: React.FC = () => {
                     <span>{currencySymbol}{cartTotal.toFixed(2)}</span>
                 </div>
 
-                {/* Discounts Selector */}
                 {rules?.discounts && rules.discounts.length > 0 && (
                     <div className="flex justify-between items-center text-xs text-gray-500">
                         <span className="flex items-center gap-1"><Tag size={10}/> Discount</span>
@@ -398,14 +465,7 @@ export const ShoppingCart: React.FC = () => {
                         </select>
                     </div>
                 )}
-                {discountAmount > 0 && (
-                    <div className="flex justify-between text-xs text-green-600 font-medium">
-                        <span>Discount Applied</span>
-                        <span>- {currencySymbol}{discountAmount.toFixed(2)}</span>
-                    </div>
-                )}
                 
-                {/* Taxes List */}
                 {rules?.taxes && rules.taxes.map(tax => (
                     <div key={tax.id} className="flex justify-between items-center text-xs text-gray-500">
                         <label className="flex items-center gap-1 cursor-pointer">
@@ -423,6 +483,14 @@ export const ShoppingCart: React.FC = () => {
                         <span>{activeTaxIds.includes(tax.id!) ? `${currencySymbol}${(taxableAmount * (tax.rate/100)).toFixed(2)}` : '-'}</span>
                     </div>
                 ))}
+
+                {/* --- REDEEM POINTS ROW --- */}
+                {actualPointsRedeemed > 0 && (
+                    <div className="flex justify-between items-center text-xs font-bold text-green-600 bg-green-50 p-1.5 rounded">
+                        <span className="flex items-center gap-1"><Coins size={10}/> Points Used ({actualPointsRedeemed})</span>
+                        <span>- {currencySymbol}{redemptionValue.toFixed(2)}</span>
+                    </div>
+                )}
               </div>
 
               {/* Total Display */}
@@ -450,6 +518,42 @@ export const ShoppingCart: React.FC = () => {
         ) : (
            <div className="space-y-4 animate-in slide-in-from-bottom-5">
               
+              {/* --- CUSTOM POINTS REDEMPTION --- */}
+              {rules?.loyalty.enabled && customer && (customer.pointsBalance || 0) > 0 && (
+                  <div className="bg-gray-50 border border-gray-200 rounded-xl p-3">
+                      <div className="flex items-center justify-between mb-2">
+                          <div className="flex items-center gap-2">
+                              <Coins size={16} className="text-gray-500"/>
+                              <span className="text-sm font-bold text-gray-900">Redeem Points</span>
+                          </div>
+                          <span className="text-xs text-gray-500">Bal: {customer.pointsBalance}</span>
+                      </div>
+                      
+                      <div className="flex gap-2 h-9">
+                          <input 
+                             type="number"
+                             value={redeemPointsInput}
+                             onChange={(e) => setRedeemPointsInput(e.target.value)}
+                             placeholder="Points to use"
+                             className="flex-1 bg-white border border-gray-200 rounded-lg px-3 py-2 text-xs outline-none focus:border-[#ecff76] focus:ring-1 focus:ring-[#ecff76]"
+                          />
+                          <button 
+                             // Auto-calculate exact points needed to cover bill
+                             onClick={() => setRedeemPointsInput(Math.min(customer.pointsBalance || 0, Number((potentialTotal / (rules.loyalty.redeemRate || 0.01)).toFixed(2))).toString())}
+                             className="bg-black text-white text-xs px-3 rounded-lg hover:bg-gray-800"
+                          >
+                             Max
+                          </button>
+                      </div>
+                      
+                      {redemptionValue > 0 && (
+                          <div className="mt-2 text-right text-xs font-bold text-green-600">
+                              Saving {currencySymbol}{redemptionValue.toFixed(2)}
+                          </div>
+                      )}
+                  </div>
+              )}
+
               {/* Payment Methods */}
               <div className="grid grid-cols-3 gap-2">
                  {[
@@ -474,7 +578,6 @@ export const ShoppingCart: React.FC = () => {
 
               {/* Dynamic Inputs */}
               <div className="bg-white p-3 rounded-lg border border-gray-200">
-                  {/* Surcharge Warning */}
                   {surchargeAmount > 0 && (
                       <div className="flex justify-between items-center text-xs text-orange-600 bg-orange-50 p-2 rounded mb-2">
                           <span className="flex items-center gap-1"><AlertCircle size={12}/> Card Fee Applied</span>
@@ -488,29 +591,81 @@ export const ShoppingCart: React.FC = () => {
                               <span>Total Due:</span>
                               <span className="font-bold text-lg">{currencySymbol}{finalTotal.toFixed(2)}</span>
                           </div>
-                          <div>
-                              <input 
-                                  type="number" 
-                                  autoFocus
-                                  placeholder="Amount Received"
-                                  className="w-full text-right text-lg font-bold p-2 border-b-2 border-gray-200 focus:border-[#ecff76] outline-none"
-                                  value={cashReceived}
-                                  onChange={e => setCashReceived(e.target.value)}
-                              />
-                          </div>
-                          <div className="flex justify-between items-center pt-2">
-                              <span className="text-sm text-gray-500">Change:</span>
-                              <span className={`text-xl font-bold ${changeAmount < 0 ? 'text-red-500' : 'text-green-600'}`}>
-                                  {currencySymbol}{changeAmount.toFixed(2)}
-                              </span>
-                          </div>
+                          {finalTotal > 0 ? (
+                              <>
+                                  <div>
+                                      <input 
+                                          type="number" 
+                                          autoFocus
+                                          placeholder="Amount Received"
+                                          className="w-full text-right text-lg font-bold p-2 border-b-2 border-gray-200 focus:border-[#ecff76] outline-none"
+                                          value={cashReceived}
+                                          onChange={e => setCashReceived(e.target.value)}
+                                      />
+                                  </div>
+                                  <div className="flex justify-between items-center pt-2">
+                                      <span className="text-sm text-gray-500">Change:</span>
+                                      <span className={`text-xl font-bold ${cashChangeToReturn < 0 ? 'text-red-500' : 'text-green-600'}`}>
+                                          {currencySymbol}{cashChangeToReturn.toFixed(2)}
+                                      </span>
+                                  </div>
+                                  
+                                  {/* --- CONVERT CHANGE TO POINTS --- */}
+                                  {rules?.loyalty.enabled && customer && totalChangeAvailable > 0 && (
+                                      <div className="mt-3 bg-blue-50 p-3 rounded-lg border border-blue-100 shadow-sm transition-all">
+                                          <div className="flex items-center justify-between mb-2">
+                                              <label className="flex items-center gap-2 cursor-pointer select-none">
+                                                  <input 
+                                                      type="checkbox"
+                                                      checked={convertChangeToPoints}
+                                                      onChange={(e) => toggleSaveChange(e.target.checked)}
+                                                      className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500 accent-blue-600"
+                                                  />
+                                                  <span className="text-xs font-bold text-blue-800 flex items-center gap-1">
+                                                      <Save size={12}/> Save Change as Points
+                                                  </span>
+                                              </label>
+                                          </div>
+                                          
+                                          {convertChangeToPoints && (
+                                              <div className="animate-in fade-in slide-in-from-top-1 space-y-2">
+                                                  <div className="flex items-center gap-2 bg-white rounded-lg border border-blue-200 p-1">
+                                                      <span className="pl-2 text-xs text-gray-400">{currencySymbol}</span>
+                                                      <input 
+                                                          type="number" 
+                                                          value={saveChangeAmount} 
+                                                          onChange={e => setSaveChangeAmount(e.target.value)} 
+                                                          className="flex-1 py-1 text-sm font-bold text-gray-900 outline-none"
+                                                          placeholder="0.00"
+                                                      />
+                                                      <button 
+                                                          onClick={() => setSaveChangeAmount(totalChangeAvailable.toFixed(2))} 
+                                                          className="bg-blue-100 text-blue-700 text-[10px] font-bold px-2 py-1 rounded hover:bg-blue-200"
+                                                      >
+                                                          MAX
+                                                      </button>
+                                                  </div>
+                                                  <div className="flex justify-between text-[10px] font-medium text-gray-600 px-1">
+                                                      {/* FIX: Show exact decimal points */}
+                                                      <span>Points: <b className="text-blue-700">+{pointsFromChange}</b></span>
+                                                      <span>Return Cash: <b>{currencySymbol}{cashChangeToReturn.toFixed(2)}</b></span>
+                                                  </div>
+                                              </div>
+                                          )}
+                                      </div>
+                                  )}
+                              </>
+                          ) : (
+                              <div className="text-center text-green-600 font-bold py-2 bg-green-50 rounded-lg border border-green-100">
+                                  Fully paid by points!
+                              </div>
+                          )}
                       </div>
                   )}
 
                   {selectedPaymentMethod === 'card' && (
                       <div className="text-center py-2 text-gray-500 text-sm">
-                          Total to Charge: <span className="font-bold text-black">{currencySymbol}{finalTotal.toFixed(2)}</span>
-                          <p className="text-xs mt-1 text-gray-400">Use terminal to swipe card...</p>
+                          Charge: <span className="font-bold text-black">{currencySymbol}{finalTotal.toFixed(2)}</span>
                       </div>
                   )}
                   
