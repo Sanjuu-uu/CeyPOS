@@ -61,7 +61,8 @@ type ShopStatus = {
 function PostAuthApp() {
   const { user } = useUser();
 
-  const metadata = user?.unsafeMetadata ?? {};
+  const rawMetadata = user?.unsafeMetadata;
+  const metadata = useMemo(() => rawMetadata ?? {}, [rawMetadata]);
   const metadataShopId =
     typeof metadata.shopId === "string" ? metadata.shopId : "";
   const metadataDbFileName =
@@ -380,6 +381,7 @@ function PostAuthContent({
     onShopStatusChange,
     retryToken,
     user,
+    validationState,
   ]);
 
   if (!isLoaded || !user) {

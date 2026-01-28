@@ -42,7 +42,7 @@ export const ShopWizardStep3: React.FC = () => {
 
   // Validation function: ALL FIELDS ARE NOW REQUIRED (based on your request)
   const validate = useCallback((data: typeof localData): boolean => {
-    let newErrors: Record<string, string> = {};
+    const newErrors: Record<string, string> = {};
     let isValid = true;
 
     // Regex for basic alphanumeric/hyphen/space

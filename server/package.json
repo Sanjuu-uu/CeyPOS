@@ -5,24 +5,21 @@
   "main": "main-server.js",
   "type": "module",
   "engines": {
-    "node": "20.x"
+    "node": ">=20"
   },
   "scripts": {
     "start": "node main-server.js",
     "dev": "cross-env PORT=4000 node main-server.js"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.18.0",
     "better-sqlite3": "^12.4.1",
     "cors": "^2.8.5",
-    "dotenv": "^16.0.3",
+    "dotenv": "^16.4.5",
     "express": "^4.18.2",
-    "http": "0.0.1-security",
-    "multer": "^1.4.5-lts.1",
-    "openai": "^5.23.1",
-    "path": "^0.12.7",
-    "xlsx": "^0.18.5",
-    "zod": "^3.25.76"
+    "exceljs": "^4.4.0",
+    "multer": "^2.0.2",
+    "socket.io": "^4.8.1",
+    "sqlite3": "^5.1.7"
   },
   "devDependencies": {
     "cross-env": "^10.1.0"

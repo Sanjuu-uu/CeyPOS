@@ -1,5 +1,5 @@
 import express from "express";
-import { openDb } from "../utils/db.js";
+import { openShopDatabase } from "../utils/shop-database.js";
 
 const router = express.Router();
 
@@ -8,7 +8,7 @@ router.put("/:shopId", (req, res) => {
   const { loyalty, discounts, taxes, surcharges } = req.body;
 
   try {
-    const db = openDb(shopId);
+    const db = openShopDatabase(shopId);
     
     const updateRules = db.transaction(() => {
       // 1. Loyalty

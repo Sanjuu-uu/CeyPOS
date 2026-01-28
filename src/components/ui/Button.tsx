@@ -20,8 +20,6 @@ export const Button: React.FC<ButtonProps> = ({
   children,
   ...props
 }) => {
-  const baseStyles = 'grid-column-gap: 8px; grid-row-gap: 8px; border-radius: 40px; text-align: center; flex-direction: row; justify-content: center; align-items: center; font-family: Inter, sans-serif; font-weight: 500; transition: all .3s; display: inline-flex; text-decoration: none;';
-  
   const variantStyles = {
     primary: 'bg-[#c5f542] text-gray-900 hover:bg-[#b8e635] border-none',
     secondary: 'bg-gray-200 text-gray-900 hover:bg-gray-300 border-none',

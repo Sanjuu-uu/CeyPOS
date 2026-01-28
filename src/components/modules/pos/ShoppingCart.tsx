@@ -21,7 +21,7 @@ import {
 } from "lucide-react";
 import { useApp } from "../../../context/AppContext";
 import { db, BusinessRules } from "../../../lib/db";
-import { Customer } from "../../../types";
+import { Customer, Sale } from "../../../types";
 
 type PaymentMethod = "card" | "cash" | "mobile";
 
@@ -34,7 +34,7 @@ export const ShoppingCart: React.FC = () => {
     currentShop,
   } = useApp();
 
-  const currencySymbol = (currentShop as any)?.currency || '$';
+    const currencySymbol = currentShop?.currency ?? '$';
 
   const [viewState, setViewState] = useState<'cart' | 'checkout' | 'success'>('cart');
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<PaymentMethod>("cash");
@@ -59,14 +59,15 @@ export const ShoppingCart: React.FC = () => {
 
   // Load Rules & Defaults
   useEffect(() => {
-    // @ts-ignore
-    const loadedRules = db.businessRules?.get();
+        const loadedRules = db.businessRules.get();
     if (loadedRules) {
         setRules(loadedRules);
-        const defaultTaxes = loadedRules.taxes
-            .filter((t: any) => t.isDefault)
-            .map((t: any) => t.id);
-        setActiveTaxIds(defaultTaxes);
+                const defaultTaxes = loadedRules.taxes
+                    .filter((tax): tax is { id: number; name: string; rate: number; isDefault: boolean } =>
+                        Boolean(tax.isDefault) && typeof tax.id === 'number',
+                    )
+                    .map((tax) => tax.id);
+                setActiveTaxIds(defaultTaxes);
     }
   }, [currentShop]);
 
@@ -171,9 +172,8 @@ export const ShoppingCart: React.FC = () => {
     e?.preventDefault();
     if (!searchPhone.trim() || !currentShop) return;
 
-    // @ts-ignore
     const customers = db.customers.getByShopId(currentShop.id);
-    const existing = customers.find((c: Customer) => c.phone === searchPhone.trim());
+    const existing = customers.find((entry) => entry.phone === searchPhone.trim());
 
     if (existing) {
       setCustomer(existing);
@@ -212,7 +212,7 @@ export const ShoppingCart: React.FC = () => {
     setSaving(true);
 
     try {
-      const newSale = {
+            const newSale: Omit<Sale, "id"> = {
         shopId: currentShop.id,
         customerInfo: customer ? {
             name: customer.name || "",
@@ -231,7 +231,6 @@ export const ShoppingCart: React.FC = () => {
         timestamp: new Date().toISOString(),
       };
 
-      // @ts-ignore
       await db.sales.create(newSale);
       
       setViewState('success');

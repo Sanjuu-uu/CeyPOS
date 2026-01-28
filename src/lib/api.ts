@@ -1,7 +1,7 @@
 export const API_BASE =
   import.meta.env.VITE_API_BASE || "";
 
-export async function postJSON<T = any>(
+export async function postJSON<T = unknown>(
   path: string,
   body: unknown
 ): Promise<T> {

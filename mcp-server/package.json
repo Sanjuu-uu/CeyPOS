@@ -5,7 +5,7 @@
   "main": "index.js",
   "type": "module",
   "engines": {
-    "node": "20.x"
+    "node": ">=20"
   },
   "scripts": {
     "start": "npx tsx index.ts",
@@ -13,12 +13,14 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.18.0",
-    "openai": "^5.23.1",
+    "@google/generative-ai": "^0.24.1",
+    "axios": "^1.11.0",
     "dotenv": "^16.4.5",
-    "sqlite3": "^5.1.6"
+    "sqlite3": "^5.1.6",
+    "zod": "^3.25.8"
   },
   "devDependencies": {
-    "tsx": "^4.19.1"
+    "tsx": "^4.21.0"
   },
   "author": "Ceynode",
   "license": "MIT"

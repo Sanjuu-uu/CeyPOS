@@ -17,7 +17,7 @@ export interface ShopFormData {
   ownerName: string;
   email: string;
   phone: string;
-  shopType: 'retail' | 'restaurant' | 'service' | 'wholesale' | '';
+  shopType: string;
   
   // Step 2: Location Info
   address: string;
@@ -158,7 +158,8 @@ export const ShopWizardProvider: React.FC<ShopWizardProviderProps> = ({
 
     const accumulator: Partial<ShopFormData> = {};
 
-    Object.entries(initialFormData).forEach(([key, value]) => {
+    (Object.keys(initialFormData) as Array<keyof ShopFormData>).forEach((key) => {
+      const value = initialFormData[key];
       if (value === undefined || value === null) {
         return;
       }
@@ -167,17 +168,22 @@ export const ShopWizardProvider: React.FC<ShopWizardProviderProps> = ({
         if (value.trim().length === 0) {
           return;
         }
-        (accumulator as any)[key] = value;
+        accumulator[key] = value as ShopFormData[typeof key];
         return;
       }
 
       if (Array.isArray(value)) {
-        (accumulator as any)[key] = value.filter((item) => typeof item === 'string' && item.trim().length > 0);
+        const filtered = value.filter(
+          (item): item is string => typeof item === 'string' && item.trim().length > 0,
+        );
+        if (filtered.length > 0) {
+          accumulator[key] = filtered as ShopFormData[typeof key];
+        }
         return;
       }
 
       if (typeof value === 'object') {
-        (accumulator as any)[key] = { ...value };
+        accumulator[key] = { ...(value as object) } as ShopFormData[typeof key];
       }
     });
 
@@ -233,16 +239,21 @@ export const ShopWizardProvider: React.FC<ShopWizardProviderProps> = ({
         }
       }
 
-      Object.entries(sanitizedInitialForm).forEach(([key, value]) => {
+      (Object.keys(sanitizedInitialForm) as Array<keyof ShopFormData>).forEach((key) => {
         if (key === 'email') {
           return;
         }
 
-        const currentValue = (next as any)[key];
+        const value = sanitizedInitialForm[key];
+        if (value === undefined || value === null) {
+          return;
+        }
+
+        const currentValue = next[key];
 
         if (typeof value === 'string') {
           if (!currentValue) {
-            (next as any)[key] = value;
+            next[key] = value as ShopFormData[typeof key];
             hasMutated = true;
           }
           return;
@@ -251,15 +262,15 @@ export const ShopWizardProvider: React.FC<ShopWizardProviderProps> = ({
         if (Array.isArray(value)) {
           const currentArray = Array.isArray(currentValue) ? currentValue : [];
           if (currentArray.length === 0 && value.length > 0) {
-            (next as any)[key] = [...value];
+            next[key] = [...value] as ShopFormData[typeof key];
             hasMutated = true;
           }
           return;
         }
 
-        if (typeof value === 'object' && value) {
+        if (typeof value === 'object') {
           if (!currentValue) {
-            (next as any)[key] = { ...value };
+            next[key] = { ...(value as object) } as ShopFormData[typeof key];
             hasMutated = true;
           }
         }

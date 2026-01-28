@@ -2,12 +2,12 @@ import React from 'react';
 import { Plus, Trash2 } from 'lucide-react';
 import { Button } from '../../ui/Button';
 import { NumericInput } from './BusinessComponents';
-import { DiscountRule } from './BusinessRules';
+import { DiscountRule, type AddItemFn } from './BusinessRules';
 
 interface DiscountSettingsProps {
   discounts: DiscountRule[];
   setDiscounts: React.Dispatch<React.SetStateAction<DiscountRule[]>>;
-  addItem: (setter: any, template: any) => void;
+  addItem: AddItemFn;
   currencySymbol: string;
 }
 

@@ -2,12 +2,12 @@ import React from 'react';
 import { Plus, Trash2, Check } from 'lucide-react';
 import { Button } from '../../ui/Button';
 import { NumericInput } from './BusinessComponents';
-import { TaxRule } from './BusinessRules';
+import { TaxRule, type AddItemFn } from './BusinessRules';
 
 interface TaxSettingsProps {
   taxes: TaxRule[];
   setTaxes: React.Dispatch<React.SetStateAction<TaxRule[]>>;
-  addItem: (setter: any, template: any) => void;
+  addItem: AddItemFn;
 }
 
 export const TaxSettings: React.FC<TaxSettingsProps> = ({ taxes, setTaxes, addItem }) => {

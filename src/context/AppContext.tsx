@@ -71,7 +71,7 @@ export const AppProvider: React.FC<AppProviderProps> = ({
       }
 
       try {
-        await (db as any).connectWebSocket(externalShopId);
+        await db.connectWebSocket(externalShopId);
         const loadedShop = db.shops.getById(`shop_${externalShopId}`);
         if (loadedShop) {
           setCurrentShop(loadedShop);

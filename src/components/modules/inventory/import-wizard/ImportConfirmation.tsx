@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { CheckCircleIcon, AlertTriangleIcon, PackageIcon, TagIcon, DollarSignIcon } from 'lucide-react';
+import { CheckCircleIcon, AlertTriangleIcon, PackageIcon } from 'lucide-react';
 
 interface ValidationData {
   total: number;

@@ -1,6 +1,6 @@
 // WebSocket server for real-time two-way sync per shop
 import { Server } from "socket.io";
-import { dbExists } from "./utils/db.js";
+import { shopDatabaseExists } from "./utils/shop-database.js";
 import { getInventory, upsertProducts } from "./services/inventory-service.js";
 import { getShopSnapshot } from "./services/shop-snapshot.js";
 import { bus as changeBus, publishChange } from "./realtime/change-bus.js";
@@ -68,7 +68,7 @@ function init(httpServer, opts = {}) {
     // ensure DB exists and schema initialized - only for existing shops
     try {
       // Only open if database already exists, don't create new ones
-      if (!dbExists(shopId)) {
+      if (!shopDatabaseExists(shopId)) {
         console.warn(`Shop database does not exist for ${shopId} - disconnecting`);
         socket.emit("error", { message: "Shop database not found. Please complete shop setup first." });
         socket.disconnect(true);

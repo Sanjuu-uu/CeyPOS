@@ -6,6 +6,25 @@ import { db } from '../../../lib/db';
 import { useApp } from '../../../context/AppContext';
 import { Product } from '../../../types';
 
+type InventoryUpdatedPayload = {
+  shopId?: string;
+  items?: Product[];
+};
+
+const isInventoryUpdatedPayload = (payload: unknown): payload is InventoryUpdatedPayload => {
+  if (!payload || typeof payload !== 'object') {
+    return false;
+  }
+  const candidate = payload as Record<string, unknown>;
+  const shopId = candidate.shopId;
+  const items = candidate.items;
+  const validShopId = shopId === undefined || typeof shopId === 'string';
+  const validItems =
+    items === undefined ||
+    (Array.isArray(items) && items.every((item) => typeof item === 'object' && item !== null));
+  return validShopId && validItems;
+};
+
 export const POS: React.FC = () => {
   const { currentShop } = useApp();
   const [searchTerm, setSearchTerm] = useState('');
@@ -31,17 +50,26 @@ export const POS: React.FC = () => {
     loadProducts();
 
     // Listen for real-time inventory updates
-    const unsubInv = (db as any).on('inventoryUpdated', (payload: any) => {
-      if (!payload) return;
-      const payloadShopId = String(payload.shopId).replace(/^shop_/, '');
-      const cur = String(shopId).replace(/^shop_/, '');
-      if (payloadShopId === cur || String(payload.shopId) === shopId) {
-        loadProducts();
+    const handler = (payload: unknown) => {
+      if (!isInventoryUpdatedPayload(payload) || !payload.shopId) {
+        return;
       }
-    });
+      const normalizedPayloadShop = String(payload.shopId).replace(/^shop_/, '');
+      const normalizedCurrent = String(shopId).replace(/^shop_/, '');
+      if (normalizedPayloadShop === normalizedCurrent || payload.shopId === shopId) {
+        if (Array.isArray(payload.items)) {
+          setProducts(payload.items);
+          setIsLoading(false);
+        } else {
+          loadProducts();
+        }
+      }
+    };
+
+    const unsubscribeInventory = db.on('inventoryUpdated', handler);
 
     return () => {
-      unsubInv();
+      unsubscribeInventory();
     };
   }, [currentShop]);
 

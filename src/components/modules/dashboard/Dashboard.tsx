@@ -14,6 +14,42 @@ import { Sale } from "../../../types";
 import { useUser } from "@clerk/clerk-react";
 import { useNavigate } from "react-router-dom";
 
+type SalesUpdatedPayload = {
+  shopId?: string;
+  items?: Sale[];
+};
+
+type SaleCreatedPayload = {
+  shopId?: string;
+  sale?: Sale;
+};
+
+const isSalesUpdatedPayload = (payload: unknown): payload is SalesUpdatedPayload => {
+  if (!payload || typeof payload !== "object") {
+    return false;
+  }
+  const candidate = payload as Record<string, unknown>;
+  const items = candidate.items;
+  const validItems =
+    items === undefined ||
+    (Array.isArray(items) && items.every((item) => typeof item === "object" && item !== null));
+  const shopId = candidate.shopId;
+  const validShopId = shopId === undefined || typeof shopId === "string";
+  return validShopId && validItems;
+};
+
+const isSaleCreatedPayload = (payload: unknown): payload is SaleCreatedPayload => {
+  if (!payload || typeof payload !== "object") {
+    return false;
+  }
+  const candidate = payload as Record<string, unknown>;
+  const shopId = candidate.shopId;
+  const sale = candidate.sale;
+  const validShopId = shopId === undefined || typeof shopId === "string";
+  const validSale = sale === undefined || (typeof sale === "object" && sale !== null);
+  return validShopId && validSale;
+};
+
 export const Dashboard: React.FC = () => {
   const { currentShop, setCurrentModule } = useApp();
   const { isLoaded: isUserLoaded } = useUser();
@@ -56,16 +92,22 @@ export const Dashboard: React.FC = () => {
       applySales(nextSales);
     };
 
-    const handleSalesUpdated = (payload: any) => {
-      if (!payload?.shopId || payload.shopId !== shopId) {
+    const handleSalesUpdated = (payload: unknown) => {
+      if (!isSalesUpdatedPayload(payload)) {
         return;
       }
-      const items: Sale[] = payload?.items || db.sales.getByShopId(shopId);
+      if (!payload.shopId || payload.shopId !== shopId) {
+        return;
+      }
+      const items: Sale[] = payload.items || db.sales.getByShopId(shopId);
       applySales(items);
     };
 
-    const handleSaleCreated = (payload: any) => {
-      if (!payload?.shopId || payload.shopId !== shopId) {
+    const handleSaleCreated = (payload: unknown) => {
+      if (!isSaleCreatedPayload(payload)) {
+        return;
+      }
+      if (!payload.shopId || payload.shopId !== shopId) {
         return;
       }
       bootstrap();

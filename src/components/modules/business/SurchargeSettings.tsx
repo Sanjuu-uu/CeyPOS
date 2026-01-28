@@ -2,12 +2,12 @@ import React from 'react';
 import { Plus, Trash2, AlertCircle } from 'lucide-react';
 import { Button } from '../../ui/Button';
 import { NumericInput } from './BusinessComponents';
-import { SurchargeRule } from './BusinessRules';
+import { SurchargeRule, type AddItemFn } from './BusinessRules';
 
 interface SurchargeSettingsProps {
   surcharges: SurchargeRule[];
   setSurcharges: React.Dispatch<React.SetStateAction<SurchargeRule[]>>;
-  addItem: (setter: any, template: any) => void;
+  addItem: AddItemFn;
   currencySymbol: string;
 }
 

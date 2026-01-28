@@ -1,17 +1,17 @@
 import express from "express";
 import { randomUUID } from "crypto";
 import {
-  createShopDb,
-  dbPathForShop,
-  upsertShopMeta,
-  upsertOperatingHours,
-  replacePaymentMethods,
-  openDb,
-  openDbIfExists,
-  dbExists,
-  getDbFileName,
-  sanitizeForFilename,
-} from "../utils/db.js";
+  createShopDatabase,
+  getShopDatabasePath,
+  upsertShopMetadata,
+  upsertShopOperatingHours,
+  replaceShopPaymentMethods,
+  openShopDatabase,
+  openShopDatabaseIfExists,
+  shopDatabaseExists,
+  getShopDatabaseFileName,
+  sanitizeShopIdentifier,
+} from "../utils/shop-database.js";
 import { getShopSnapshot } from "../services/shop-snapshot.js";
 
 const router = express.Router();
@@ -24,7 +24,7 @@ router.post("/register", (req, res) => {
       return res.status(400).json({ error: "shopId is required" });
     }
 
-    if (dbExists(shopId)) {
+    if (shopDatabaseExists(shopId)) {
       return res.status(409).json({ error: "Shop already exists", shopId });
     }
 
@@ -34,14 +34,14 @@ router.post("/register", (req, res) => {
       address: location,
     };
 
-    const db = createShopDb(shopId, meta);
+    const db = createShopDatabase(shopId, meta);
     db.close();
 
     return res.status(201).json({
       ok: true,
       shopId,
-      dbFileName: getDbFileName(shopId),
-      db_path: dbPathForShop(shopId),
+      dbFileName: getShopDatabaseFileName(shopId),
+      db_path: getShopDatabasePath(shopId),
     });
   } catch (err) {
     console.error("/shop/register error", err);
@@ -67,7 +67,7 @@ router.post("/setup", (req, res) => {
       return res.status(400).json({ error: "Owner email is required" });
     }
 
-    const sanitizedEmail = sanitizeForFilename(ownerEmail);
+    const sanitizedEmail = sanitizeShopIdentifier(ownerEmail);
 
     // Map frontend fields -> DB columns
     const meta = {
@@ -91,10 +91,10 @@ router.post("/setup", (req, res) => {
     const applyAdditionalData = (dbInstance, shopIdValue) => {
       try {
         if (formData.operatingHours) {
-          upsertOperatingHours(dbInstance, shopIdValue, formData.operatingHours);
+          upsertShopOperatingHours(dbInstance, shopIdValue, formData.operatingHours);
         }
         if (formData.paymentMethods) {
-          replacePaymentMethods(dbInstance, shopIdValue, formData.paymentMethods);
+          replaceShopPaymentMethods(dbInstance, shopIdValue, formData.paymentMethods);
         }
       } catch (metaErr) {
         console.error("Failed to persist extended shop data", metaErr);
@@ -104,15 +104,15 @@ router.post("/setup", (req, res) => {
 
     // Update existing shop database if identifier supplied
     if (existingShopId) {
-      if (!dbExists(existingShopId)) {
+      if (!shopDatabaseExists(existingShopId)) {
         return res.status(404).json({
           error: "Shop database not found for provided identifier",
         });
       }
 
-      const db = openDb(existingShopId);
+      const db = openShopDatabase(existingShopId);
       try {
-        upsertShopMeta(db, existingShopId, meta);
+        upsertShopMetadata(db, existingShopId, meta);
         applyAdditionalData(db, existingShopId);
       } finally {
         db.close();
@@ -121,8 +121,8 @@ router.post("/setup", (req, res) => {
       return res.status(200).json({
         ok: true,
         shopId: existingShopId,
-        dbFileName: getDbFileName(existingShopId),
-        db_path: dbPathForShop(existingShopId),
+        dbFileName: getShopDatabaseFileName(existingShopId),
+        db_path: getShopDatabasePath(existingShopId),
       });
     }
 
@@ -132,9 +132,9 @@ router.post("/setup", (req, res) => {
     do {
       uniqueSuffix = `id${randomUUID().replace(/-/g, "").slice(0, 12)}`;
       generatedShopId = `${sanitizedEmail}_${uniqueSuffix}`;
-    } while (dbExists(generatedShopId));
+    } while (shopDatabaseExists(generatedShopId));
 
-    const db = createShopDb(generatedShopId, meta);
+    const db = createShopDatabase(generatedShopId, meta);
     try {
       applyAdditionalData(db, generatedShopId);
     } finally {
@@ -144,8 +144,8 @@ router.post("/setup", (req, res) => {
     return res.status(201).json({
       ok: true,
       shopId: generatedShopId,
-      dbFileName: getDbFileName(generatedShopId),
-      db_path: dbPathForShop(generatedShopId),
+      dbFileName: getShopDatabaseFileName(generatedShopId),
+      db_path: getShopDatabasePath(generatedShopId),
     });
   } catch (err) {
     console.error("/shop/setup error", err);
@@ -166,7 +166,7 @@ router.get("/:shopId/meta", (req, res) => {
       return res.status(400).json({ error: "shopId is required" });
     }
 
-    const db = openDb(shopId);
+    const db = openShopDatabase(shopId);
     const meta = db
       .prepare("SELECT * FROM shop_meta WHERE shop_id = ?")
       .get(shopId);
@@ -188,7 +188,7 @@ router.get("/:shopId/meta", (req, res) => {
       meta,
       operatingHours: hours,
       paymentMethods: methods,
-      dbFileName: getDbFileName(shopId),
+      dbFileName: getShopDatabaseFileName(shopId),
     });
   } catch (err) {
     console.error("GET /shop/:shopId/meta error", err);
@@ -207,7 +207,7 @@ router.get("/:shopId/snapshot", (req, res) => {
       return res.status(400).json({ error: "shopId is required" });
     }
 
-    if (!dbExists(shopId)) {
+    if (!shopDatabaseExists(shopId)) {
       return res.status(404).json({ error: "Shop database not found" });
     }
 
@@ -227,12 +227,12 @@ router.get("/:shopId/exists", (req, res) => {
       return res.status(400).json({ error: "shopId is required" });
     }
 
-    const exists = dbExists(shopId);
+    const exists = shopDatabaseExists(shopId);
     if (!exists) {
       return res.json({ exists: false });
     }
 
-    const db = openDbIfExists(shopId);
+    const db = openShopDatabaseIfExists(shopId);
     if (!db) {
       return res.json({ exists: false });
     }
@@ -246,7 +246,7 @@ router.get("/:shopId/exists", (req, res) => {
       exists: true,
       hasMetadata: !!meta,
       meta: meta || null,
-      dbFileName: getDbFileName(shopId),
+      dbFileName: getShopDatabaseFileName(shopId),
     });
   } catch (err) {
     console.error("GET /shop/:shopId/exists error", err);

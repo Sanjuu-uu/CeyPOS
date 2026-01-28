@@ -55,6 +55,7 @@ const paymentMethodLabels = {
   'mobile-payment': 'Mobile Payments',
   'cryptocurrency': 'Cryptocurrency',
   'check': 'Checks',
+  'KOKO': 'KOKO',
 };
 
 export const ShopWizardStep5: React.FC = () => {
@@ -63,7 +64,7 @@ export const ShopWizardStep5: React.FC = () => {
   const formatOperatingHours = () => {
     const daysOfWeek = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
     const dayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
-    
+
     return daysOfWeek.map((day, index) => {
       const hours = formData.operatingHours[day as keyof typeof formData.operatingHours];
       return {
@@ -72,6 +73,9 @@ export const ShopWizardStep5: React.FC = () => {
       };
     });
   };
+
+  const formattedOperatingHours = formatOperatingHours();
+  const selectedPaymentMethods = formData.paymentMethods ?? [];
 
   return (
     <div className="w-full flex justify-center">
@@ -498,26 +502,104 @@ export const ShopWizardStep5: React.FC = () => {
                   }}>
                     Payments
                   </p>
-                  <p style={{
-                    fontFamily: 'Inter, sans-serif',
-                    fontSize: '12px',
-                    fontWeight: 500,
-                    color: 'var(--gray--900)',
-                    margin: 0
-                  }}>
-                    {formData.paymentMethods && formData.paymentMethods.length > 0 
-                      ? `${formData.paymentMethods.length} methods`
-                      : 'None selected'
-                    }
-                  </p>
+                  {selectedPaymentMethods.length > 0 ? (
+                    <ul style={{
+                      listStyle: 'disc inside',
+                      fontFamily: 'Inter, sans-serif',
+                      fontSize: '12px',
+                      fontWeight: 500,
+                      color: 'var(--gray--900)',
+                      margin: '0',
+                      paddingLeft: '16px',
+                    }}>
+                      {selectedPaymentMethods.map((method) => (
+                        <li key={method}>
+                          {paymentMethodLabels[method as keyof typeof paymentMethodLabels] ?? method}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p style={{
+                      fontFamily: 'Inter, sans-serif',
+                      fontSize: '12px',
+                      fontWeight: 500,
+                      color: 'var(--gray--900)',
+                      margin: 0,
+                    }}>
+                      None selected
+                    </p>
+                  )}
                 </div>
               </div>
             </motion.div>
           </div>
 
-          {/* Confirmation Message */}
+          {/* Operating Hours Overview */}
           <motion.div
             custom={4}
+            variants={sectionVariants}
+            initial="initial"
+            animate="animate"
+            style={{
+              padding: '16px',
+              borderRadius: 'var(--radius--12px)',
+              border: '1px solid var(--gray--100)',
+              backgroundColor: '#ffffff',
+              marginBottom: '16px',
+            }}
+          >
+            <h4 style={{
+              fontFamily: 'Inter, sans-serif',
+              fontSize: '13px',
+              fontWeight: 600,
+              color: 'var(--gray--900)',
+              margin: '0 0 8px 0',
+            }}>
+              Operating Hours
+            </h4>
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
+                gap: '8px',
+              }}
+            >
+              {formattedOperatingHours.map((entry) => (
+                <div
+                  key={entry.day}
+                  style={{
+                    padding: '8px',
+                    border: '1px solid var(--gray--100)',
+                    borderRadius: 'var(--radius--8px)',
+                    backgroundColor: 'var(--gray--50)',
+                  }}
+                >
+                  <p style={{
+                    fontFamily: 'Inter, sans-serif',
+                    fontSize: '11px',
+                    fontWeight: 500,
+                    color: 'var(--gray--600)',
+                    margin: '0 0 4px 0',
+                  }}>
+                    {entry.day}
+                  </p>
+                  <p style={{
+                    fontFamily: 'Inter, sans-serif',
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    color: 'var(--gray--900)',
+                    margin: 0,
+                  }}>
+                    {entry.hours}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </motion.div>
+
+          {/* Confirmation Message */}
+          <motion.div
+            custom={5}
             variants={sectionVariants}
             initial="initial"
             animate="animate"

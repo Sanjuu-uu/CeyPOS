@@ -2,34 +2,34 @@ import path from "path";
 import fs from "fs";
 import Database from "better-sqlite3";
 
-const DB_DIR =
+const SHOP_DATABASE_DIRECTORY =
   process.env.RAILWAY_VOLUME_MOUNT_PATH ||
   path.resolve(process.cwd(), "../database");
 
-function ensureDbDir() {
-  if (!fs.existsSync(DB_DIR)) {
-    fs.mkdirSync(DB_DIR, { recursive: true });
+function ensureShopDatabaseDirectory() {
+  if (!fs.existsSync(SHOP_DATABASE_DIRECTORY)) {
+    fs.mkdirSync(SHOP_DATABASE_DIRECTORY, { recursive: true });
   }
 }
 
-function sanitizeForFilename(value = "") {
+function sanitizeShopIdentifier(value = "") {
   return String(value)
     .trim()
     .toLowerCase()
     .replace(/[^a-z0-9@._+-]/g, "_");
 }
 
-function candidateDbFilenames(shopId) {
+function candidateDatabaseFilenames(shopId) {
   const base = String(shopId).replace(/\.db$/i, "");
   const primary = `${base}.db`;
   const legacy = `shop_${base}.db`;
   return [primary, legacy];
 }
 
-function resolveExistingDbPath(shopId) {
-  ensureDbDir();
-  for (const fileName of candidateDbFilenames(shopId)) {
-    const fullPath = path.join(DB_DIR, fileName);
+function resolveExistingShopDatabasePath(shopId) {
+  ensureShopDatabaseDirectory();
+  for (const fileName of candidateDatabaseFilenames(shopId)) {
+    const fullPath = path.join(SHOP_DATABASE_DIRECTORY, fileName);
     if (fs.existsSync(fullPath)) {
       return fullPath;
     }
@@ -37,21 +37,26 @@ function resolveExistingDbPath(shopId) {
   return null;
 }
 
-function dbPathForShop(shopId, { allowCreate = false } = {}) {
-  ensureDbDir();
-  if (allowCreate) {
-    const base = String(shopId).replace(/\.db$/i, "");
-    return path.join(DB_DIR, `${base}.db`);
+function getShopDatabasePath(shopId, { allowCreate = false } = {}) {
+  ensureShopDatabaseDirectory();
+
+  if (!allowCreate) {
+    const resolved = resolveExistingShopDatabasePath(shopId);
+    if (resolved) {
+      return resolved;
+    }
   }
-  const resolved = resolveExistingDbPath(shopId);
-  if (resolved) {
-    return resolved;
-  }
-  return path.join(DB_DIR, `${String(shopId).replace(/\.db$/i, "")}.db`);
+
+  const base = String(shopId).replace(/\.db$/i, "");
+  return path.join(SHOP_DATABASE_DIRECTORY, `${base}.db`);
 }
 
-function getDbFileName(shopId) {
-  const resolved = resolveExistingDbPath(shopId);
+function shopDatabaseExists(shopId) {
+  return Boolean(resolveExistingShopDatabasePath(shopId));
+}
+
+function getShopDatabaseFileName(shopId) {
+  const resolved = resolveExistingShopDatabasePath(shopId);
   if (!resolved) {
     const base = String(shopId).replace(/\.db$/i, "");
     return `${base}.db`;
@@ -59,12 +64,8 @@ function getDbFileName(shopId) {
   return path.basename(resolved);
 }
 
-function dbExists(shopId) {
-  return Boolean(resolveExistingDbPath(shopId));
-}
-
-function openDb(shopId) {
-  const existingPath = resolveExistingDbPath(shopId);
+function openShopDatabase(shopId) {
+  const existingPath = resolveExistingShopDatabasePath(shopId);
   if (!existingPath) {
     throw new Error(`Shop database not found for ${shopId}`);
   }
@@ -73,8 +74,8 @@ function openDb(shopId) {
   return db;
 }
 
-function openDbIfExists(shopId) {
-  const existingPath = resolveExistingDbPath(shopId);
+function openShopDatabaseIfExists(shopId) {
+  const existingPath = resolveExistingShopDatabasePath(shopId);
   if (!existingPath) {
     return null;
   }
@@ -83,27 +84,7 @@ function openDbIfExists(shopId) {
   return db;
 }
 
-function createShopDb(shopId, shopMeta) {
-  const safeId = String(shopId).replace(/\.db$/i, "");
-  if (/[\\/]/.test(safeId)) {
-    throw new Error("Invalid shopId - path separators are not allowed");
-  }
-
-  const dbPath = dbPathForShop(safeId, { allowCreate: true });
-  if (fs.existsSync(dbPath)) {
-    throw new Error(`Database already exists for shop ${safeId}`);
-  }
-
-  const db = new Database(dbPath);
-  db.pragma("journal_mode = WAL");
-  initSchema(db);
-  if (shopMeta) {
-    upsertShopMeta(db, safeId, shopMeta);
-  }
-  return db;
-}
-
-function initSchema(db) {
+function initializeShopDatabaseSchema(db) {
   const ddl = `
   CREATE TABLE IF NOT EXISTS shop_meta (
     shop_id TEXT PRIMARY KEY,
@@ -164,7 +145,7 @@ function initSchema(db) {
     total_spent DECIMAL(10,2) DEFAULT 0,
     visit_count INTEGER DEFAULT 0,
     last_visit DATETIME,
-    points_balance INTEGER DEFAULT 0, -- Added points balance
+    points_balance INTEGER DEFAULT 0,
     created_at DATETIME
   );
   
@@ -212,7 +193,6 @@ function initSchema(db) {
     suggested_restock_date TEXT
   );
 
-  -- New Business Rules Tables
   CREATE TABLE IF NOT EXISTS business_rules_loyalty (
     shop_id TEXT PRIMARY KEY,
     enabled INTEGER DEFAULT 0,
@@ -245,20 +225,40 @@ function initSchema(db) {
     value DECIMAL(10,2)
   );
   `;
+
   db.exec(ddl);
 
-  // Safe migration for existing tables if column missing
   try {
     const info = db.prepare("PRAGMA table_info(customers)").all();
-    if (!info.some(c => c.name === 'points_balance')) {
-        db.exec("ALTER TABLE customers ADD COLUMN points_balance INTEGER DEFAULT 0");
+    if (!info.some((column) => column.name === "points_balance")) {
+      db.exec("ALTER TABLE customers ADD COLUMN points_balance INTEGER DEFAULT 0");
     }
-  } catch (e) {
-    // Ignore if already exists
+  } catch (error) {
+    // ignore if migration already applied
   }
 }
 
-function upsertShopMeta(db, shopId, meta = {}) {
+function createShopDatabase(shopId, shopMeta) {
+  const safeId = String(shopId).replace(/\.db$/i, "");
+  if (/[\\/]/.test(safeId)) {
+    throw new Error("Invalid shopId - path separators are not allowed");
+  }
+
+  const dbPath = getShopDatabasePath(safeId, { allowCreate: true });
+  if (fs.existsSync(dbPath)) {
+    throw new Error(`Database already exists for shop ${safeId}`);
+  }
+
+  const db = new Database(dbPath);
+  db.pragma("journal_mode = WAL");
+  initializeShopDatabaseSchema(db);
+  if (shopMeta) {
+    upsertShopMetadata(db, safeId, shopMeta);
+  }
+  return db;
+}
+
+function upsertShopMetadata(db, shopId, meta = {}) {
   const upsert = db.prepare(
     `INSERT INTO shop_meta (
        shop_id, shop_name, owner_name, owner_email, phone, shop_type,
@@ -309,7 +309,7 @@ function upsertShopMeta(db, shopId, meta = {}) {
   });
 }
 
-function upsertOperatingHours(db, shopId, operatingHours = {}) {
+function upsertShopOperatingHours(db, shopId, operatingHours = {}) {
   const upsert = db.prepare(
     `INSERT INTO shop_operating_hours (shop_id, day, open, close, closed)
      VALUES (@shop_id, @day, @open, @close, @closed)
@@ -319,27 +319,27 @@ function upsertOperatingHours(db, shopId, operatingHours = {}) {
        closed=excluded.closed`
   );
   const txn = db.transaction((entries) => {
-    for (const e of entries) upsert.run(e);
+    for (const entry of entries) upsert.run(entry);
   });
   const days = Object.keys(operatingHours);
-  const rows = days.map((d) => ({
+  const rows = days.map((day) => ({
     shop_id: shopId,
-    day: d,
-    open: operatingHours[d]?.open ?? null,
-    close: operatingHours[d]?.close ?? null,
-    closed: operatingHours[d]?.closed ? 1 : 0,
+    day,
+    open: operatingHours[day]?.open ?? null,
+    close: operatingHours[day]?.close ?? null,
+    closed: operatingHours[day]?.closed ? 1 : 0,
   }));
   if (rows.length) txn(rows);
 }
 
-function replacePaymentMethods(db, shopId, methods = []) {
+function replaceShopPaymentMethods(db, shopId, methods = []) {
   const del = db.prepare(`DELETE FROM shop_payment_methods WHERE shop_id = ?`);
   const ins = db.prepare(
     `INSERT INTO shop_payment_methods (shop_id, method) VALUES (?, ?)`
   );
   const txn = db.transaction((list) => {
     del.run(shopId);
-    for (const m of list) ins.run(shopId, String(m));
+    for (const method of list) ins.run(shopId, String(method));
   });
   txn(Array.isArray(methods) ? methods : []);
 }
@@ -362,22 +362,41 @@ function insertInventoryRows(db, rows) {
       updated_at=excluded.updated_at
   `);
   const txn = db.transaction((list) => {
-    for (const r of list) insert.run(r);
+    for (const row of list) insert.run(row);
   });
   txn(rows);
 }
 
 export {
-  sanitizeForFilename,
-  dbPathForShop,
-  createShopDb,
-  openDb,
-  openDbIfExists,
-  dbExists,
-  getDbFileName,
-  initSchema,
+  SHOP_DATABASE_DIRECTORY,
+  ensureShopDatabaseDirectory,
+  sanitizeShopIdentifier,
+  candidateDatabaseFilenames,
+  resolveExistingShopDatabasePath,
+  getShopDatabasePath,
+  shopDatabaseExists,
+  getShopDatabaseFileName,
+  openShopDatabase,
+  openShopDatabaseIfExists,
+  createShopDatabase,
+  initializeShopDatabaseSchema,
+  upsertShopMetadata,
+  upsertShopOperatingHours,
+  replaceShopPaymentMethods,
   insertInventoryRows,
-  upsertShopMeta,
-  upsertOperatingHours,
-  replacePaymentMethods,
+};
+
+// Backward-compatible export aliases (will be removed in a future cleanup)
+export {
+  sanitizeShopIdentifier as sanitizeForFilename,
+  getShopDatabasePath as dbPathForShop,
+  createShopDatabase as createShopDb,
+  openShopDatabase as openDb,
+  openShopDatabaseIfExists as openDbIfExists,
+  shopDatabaseExists as dbExists,
+  getShopDatabaseFileName as getDbFileName,
+  initializeShopDatabaseSchema as initSchema,
+  upsertShopMetadata as upsertShopMeta,
+  upsertShopOperatingHours as upsertOperatingHours,
+  replaceShopPaymentMethods as replacePaymentMethods,
 };

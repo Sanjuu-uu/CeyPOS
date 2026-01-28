@@ -1,13 +1,15 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useApp } from '../../../context/AppContext';
 import { db } from '../../../lib/db';
 import { Card } from './Card';
 import { ChevronDown, ChevronRight, Database, RefreshCw } from 'lucide-react';
 
+type TableCell = string | number;
+
 interface TableData {
   name: string;
   columns: string[];
-  rows: any[][];
+  rows: TableCell[][];
   expanded: boolean;
 }
 
@@ -16,8 +18,10 @@ export const DatabasePreview: React.FC = () => {
   const [tables, setTables] = useState<TableData[]>([]);
   const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
 
-  const loadDatabaseData = () => {
-    if (!currentShop) return;
+  const loadDatabaseData = useCallback(() => {
+    if (!currentShop) {
+      return;
+    }
 
     const tablesData: TableData[] = [];
 
@@ -96,10 +100,9 @@ export const DatabasePreview: React.FC = () => {
         expanded: false
       });
     }
-
     setTables(tablesData);
     setLastUpdated(new Date());
-  };
+  }, [currentShop]);
 
   useEffect(() => {
     loadDatabaseData();
@@ -116,7 +119,7 @@ export const DatabasePreview: React.FC = () => {
     return () => {
       unsubscribers.forEach(unsub => unsub());
     };
-  }, [currentShop]);
+  }, [loadDatabaseData]);
 
   const toggleTableExpansion = (tableName: string) => {
     setTables(prev => prev.map(table => 

@@ -1,11 +1,13 @@
 // Realtime client for two-way sync with backend SQLite database
-import { Shop, Product, Sale, User, Customer } from "../types";
+import { Shop, Product, Sale, User, Customer, CartItem } from "../types";
 import clientIo from "socket.io-client";
 
 const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:4000";
 
+type SocketEmitCallback = (response: unknown) => void;
+
 type SocketType = ReturnType<typeof clientIo> & {
-  emit: (event: string, payload?: any, callback?: (response: any) => void) => void;
+  emit: (event: string, payload?: unknown, callback?: SocketEmitCallback) => void;
 };
 
 let socket: SocketType | null = null;
@@ -96,6 +98,92 @@ type TransactionItemRow = {
   subtotal?: number | null;
 };
 
+type RawDiscountRule = {
+  id?: number;
+  name?: string | null;
+  type?: 'percent' | 'fixed' | null;
+  value?: number | null;
+};
+
+type RawTaxRule = {
+  id?: number;
+  name?: string | null;
+  rate?: number | null;
+  is_default?: number | null;
+};
+
+type RawSurchargeRule = {
+  id?: number;
+  min_amount?: number | null;
+  type?: 'percent' | 'fixed' | null;
+  value?: number | null;
+};
+
+type RawLoyaltyRule = {
+  enabled?: number | boolean | null;
+  earn_rate?: number | null;
+  redeem_rate?: number | null;
+  min_points?: number | null;
+};
+
+interface RawBusinessRulesSnapshot {
+  loyalty?: RawLoyaltyRule | null;
+  discounts?: RawDiscountRule[] | null;
+  taxes?: RawTaxRule[] | null;
+  surcharges?: RawSurchargeRule[] | null;
+}
+
+interface ShopSnapshotPayload {
+  shopId?: string;
+  inventory?: InventoryRow[] | null;
+  customers?: CustomerRow[] | null;
+  transactions?: TransactionRow[] | null;
+  transactionItems?: TransactionItemRow[] | null;
+  dailySales?: DailySalesRow[] | null;
+  paymentMethods?: Array<string | number> | null;
+  businessRules?: RawBusinessRulesSnapshot | null;
+}
+
+type InventoryChangePayload = {
+  rows?: InventoryRow[];
+  codes?: Array<string | number>;
+};
+
+type PaymentMethodsChangePayload = {
+  methods?: Array<string | number>;
+};
+
+type BusinessRulesChangePayload = {
+  rules?: BusinessRules;
+};
+
+interface ChangeEventPayload {
+  shopId?: string;
+  entity?: string;
+  action?: string;
+  changeId?: string;
+  timestamp?: string;
+  payload?: unknown;
+}
+
+interface InventoryUpsertResponse {
+  ok: boolean;
+  rows?: InventoryRow[];
+  error?: string;
+}
+
+interface InventoryDeleteResponse {
+  ok?: boolean;
+  codes?: Array<string | number>;
+  error?: string;
+}
+
+interface PaymentMethodsResponse {
+  ok?: boolean;
+  methods?: Array<string | number>;
+  error?: string;
+}
+
 interface ShopCache {
   inventoryByCode: Map<string, InventoryRow>;
   products: Product[];
@@ -171,9 +259,11 @@ function shouldSkipChange(
   return false;
 }
 
-const listeners: Record<string, Set<Function>> = {};
+type Listener = (payload: unknown) => void;
 
-function emit(event: string, payload?: any) {
+const listeners: Record<string, Set<Listener>> = Object.create(null);
+
+function emit(event: string, payload?: unknown) {
   const set = listeners[event];
   if (!set) return;
   for (const cb of Array.from(set)) {
@@ -185,21 +275,95 @@ function emit(event: string, payload?: any) {
   }
 }
 
-function on(event: string, cb: Function) {
-  listeners[event] = listeners[event] || new Set();
-  listeners[event].add(cb);
+function on(event: string, cb: Listener) {
+  if (!listeners[event]) {
+    listeners[event] = new Set();
+  }
+  listeners[event]!.add(cb);
   return () => off(event, cb);
 }
 
-function off(event: string, cb: Function) {
+function off(event: string, cb: Listener) {
   listeners[event]?.delete(cb);
 }
 
 const shopsCache: Record<string, Shop> = {};
 const usersCache: User[] = [];
 
+function sanitizeShopIdentifier(value: string): string {
+  return value.trim().toLowerCase().replace(/[^a-z0-9@._+-]/g, "_");
+}
+
 function normalizeShopId(shopId: string) {
-  return String(shopId || "").replace(/^shop_/, "");
+  const trimmed = String(shopId ?? "")
+    .replace(/^shop_/, "")
+    .replace(/\.db$/i, "")
+    .trim();
+  return sanitizeShopIdentifier(trimmed);
+}
+
+function toNumber(value: unknown, fallback = 0): number {
+  const parsed = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function toBoolean(value: unknown, fallback = false): boolean {
+  if (typeof value === "boolean") {
+    return value;
+  }
+  if (typeof value === "number") {
+    return value !== 0;
+  }
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (normalized === "true" || normalized === "1") {
+      return true;
+    }
+    if (normalized === "false" || normalized === "0") {
+      return false;
+    }
+  }
+  return fallback;
+}
+
+function asString(value: unknown, fallback = ""): string {
+  if (value === null || value === undefined) {
+    return fallback;
+  }
+  const str = String(value);
+  return str || fallback;
+}
+
+function asRuleType(value: unknown): "percent" | "fixed" {
+  return value === "fixed" ? "fixed" : "percent";
+}
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function isInventoryRow(value: unknown): value is InventoryRow {
+  return isObject(value) && typeof value.inventory_code === "string";
+}
+
+function isCustomerRow(value: unknown): value is CustomerRow {
+  return isObject(value) && typeof value.customer_id === "number";
+}
+
+function isDailySalesRow(value: unknown): value is DailySalesRow {
+  return isObject(value) && typeof value.date === "string";
+}
+
+function isTransactionRow(value: unknown): value is TransactionRow {
+  return isObject(value) && typeof value.transaction_id === "number";
+}
+
+function isTransactionItemRow(value: unknown): value is TransactionItemRow {
+  return isObject(value) && typeof value.transaction_id === "number";
+}
+
+function toStringArray(values: unknown): string[] {
+  return Array.isArray(values) ? values.map((value) => String(value)) : [];
 }
 
 function toShopKey(shopId: string) {
@@ -251,7 +415,7 @@ function buildSale(
   transaction: TransactionRow
 ): Sale {
   const items = cache.transactionItemsByTx.get(transaction.transaction_id) || [];
-  const cartItems = items.map((item): any => {
+  const cartItems: CartItem[] = items.map((item): CartItem => {
     const inventory = item.inventory_code
       ? cache.inventoryByCode.get(String(item.inventory_code))
       : undefined;
@@ -367,15 +531,69 @@ function upsertTransaction(shopKey: string, row: TransactionRow, items: Transact
   }
 }
 
+function toBusinessRules(raw: RawBusinessRulesSnapshot | null | undefined): BusinessRules | null {
+  if (!raw) {
+    return null;
+  }
+
+  const loyaltySource = raw.loyalty ?? {};
+
+  const discounts = Array.isArray(raw.discounts)
+    ? raw.discounts
+        .filter((entry): entry is RawDiscountRule => Boolean(entry))
+        .map((entry) => ({
+          id: typeof entry.id === "number" ? entry.id : undefined,
+          name: asString(entry.name, ""),
+          type: asRuleType(entry.type),
+          value: toNumber(entry.value, 0),
+        }))
+    : [];
+
+  const taxes = Array.isArray(raw.taxes)
+    ? raw.taxes
+        .filter((entry): entry is RawTaxRule => Boolean(entry))
+        .map((entry) => ({
+          id: typeof entry.id === "number" ? entry.id : undefined,
+          name: asString(entry.name, ""),
+          rate: toNumber(entry.rate, 0),
+          isDefault: toBoolean(entry.is_default, false),
+        }))
+    : [];
+
+  const surcharges = Array.isArray(raw.surcharges)
+    ? raw.surcharges
+        .filter((entry): entry is RawSurchargeRule => Boolean(entry))
+        .map((entry) => ({
+          id: typeof entry.id === "number" ? entry.id : undefined,
+          minAmount: toNumber(entry.min_amount, 0),
+          type: asRuleType(entry.type),
+          value: toNumber(entry.value, 0),
+        }))
+    : [];
+
+  return {
+    loyalty: {
+      enabled: toBoolean(loyaltySource.enabled, false),
+      earnRate: toNumber(loyaltySource.earn_rate, 1),
+      redeemRate: toNumber(loyaltySource.redeem_rate, 0.01),
+      minPointsToRedeem: toNumber(loyaltySource.min_points, 0),
+    },
+    discounts,
+    taxes,
+    surcharges,
+  };
+}
+
 // Updated applySnapshot to load Business Rules
-function applySnapshot(shopKey: string, snapshot: any) {
+function applySnapshot(shopKey: string, snapshot: ShopSnapshotPayload | null | undefined) {
   resetChangeTracker(shopKey);
-  const invRows: InventoryRow[] = snapshot.inventory || [];
-  const customerRows: CustomerRow[] = snapshot.customers || [];
-  const transactions: TransactionRow[] = snapshot.transactions || [];
-  const txItems: TransactionItemRow[] = snapshot.transactionItems || [];
-  const dailyRows: DailySalesRow[] = snapshot.dailySales || [];
-  const methods: string[] = snapshot.paymentMethods || [];
+  const payload = snapshot ?? {};
+  const invRows = Array.isArray(payload.inventory) ? payload.inventory : [];
+  const customerRows = Array.isArray(payload.customers) ? payload.customers : [];
+  const transactions = Array.isArray(payload.transactions) ? payload.transactions : [];
+  const txItems = Array.isArray(payload.transactionItems) ? payload.transactionItems : [];
+  const dailyRows = Array.isArray(payload.dailySales) ? payload.dailySales : [];
+  const methods = Array.isArray(payload.paymentMethods) ? payload.paymentMethods : [];
 
   const cache = ensureShopCache(shopKey);
   cache.inventoryByCode.clear();
@@ -411,30 +629,12 @@ function applySnapshot(shopKey: string, snapshot: any) {
     cache.transactionItemsByTx.set(item.transaction_id, list);
   }
 
-  cache.paymentMethods = Array.isArray(methods)
-    ? methods.map((method) => String(method))
-    : [];
+  cache.paymentMethods = methods.map((method) => String(method));
 
   // Business Rules
-  if (snapshot.businessRules) {
-    const { loyalty, discounts, taxes, surcharges } = snapshot.businessRules;
-    cache.businessRules = {
-      loyalty: {
-        enabled: Boolean(loyalty?.enabled),
-        earnRate: Number(loyalty?.earn_rate || 1),
-        redeemRate: Number(loyalty?.redeem_rate || 0.01),
-        minPointsToRedeem: Number(loyalty?.min_points || 0),
-      },
-      discounts: (discounts || []).map((d: any) => ({
-        id: d.id, name: d.name, type: d.type, value: Number(d.value)
-      })),
-      taxes: (taxes || []).map((t: any) => ({
-        id: t.id, name: t.name, rate: Number(t.rate), isDefault: Boolean(t.is_default)
-      })),
-      surcharges: (surcharges || []).map((s: any) => ({
-        id: s.id, minAmount: Number(s.min_amount), type: s.type, value: Number(s.value)
-      }))
-    };
+  const businessRules = toBusinessRules(payload.businessRules ?? null);
+  if (businessRules) {
+    cache.businessRules = businessRules;
   }
 
   rebuildSales(shopKey);
@@ -458,10 +658,13 @@ async function fetchSnapshot(shopKey: string) {
   applySnapshot(shopKey, data.snapshot);
 }
 
-function handleChange(event: any) {
-  if (!event?.shopId) return;
+function handleChange(event: ChangeEventPayload | null | undefined) {
+  if (!event?.shopId) {
+    return;
+  }
+
   const shopKey = toShopKey(event.shopId);
-  const entity = String(event.entity || "unknown");
+  const entity = String(event.entity ?? "unknown");
   const changeId = typeof event.changeId === "string" ? event.changeId : undefined;
   const timestamp = typeof event.timestamp === "string" ? event.timestamp : undefined;
 
@@ -469,45 +672,76 @@ function handleChange(event: any) {
     return;
   }
 
-  switch (event.entity) {
+  const payload = event.payload;
+
+  switch (entity) {
     case "inventory": {
-      const action = String(event.action || "upsert");
+      const action = String(event.action ?? "upsert");
+      const source = isObject(payload) ? (payload as Partial<InventoryChangePayload>) : {};
       if (action === "delete") {
-        const codes: string[] = event.payload?.codes || [];
-        removeInventoryRows(shopKey, codes.map((code) => String(code)));
+        const codes = toStringArray((source as { codes?: unknown }).codes);
+        removeInventoryRows(shopKey, codes);
       } else {
-        const rows: InventoryRow[] = event.payload?.rows || [];
+        const rowsSource = Array.isArray((source as { rows?: unknown }).rows)
+          ? ((source as { rows?: unknown }).rows as unknown[])
+          : [];
+        const rows = rowsSource.filter(isInventoryRow) as InventoryRow[];
         applyInventoryRows(shopKey, rows);
       }
       break;
     }
     case "customers": {
-      const row: CustomerRow | null = event.payload?.row || null;
-      if (row) {
-        upsertCustomer(shopKey, row);
+      const sourceRow = isObject(payload)
+        ? (payload as { row?: unknown }).row
+        : undefined;
+      if (isCustomerRow(sourceRow)) {
+        upsertCustomer(shopKey, sourceRow);
       }
       break;
     }
     case "daily_sales": {
-      const row: DailySalesRow | null = event.payload?.row || null;
-      if (row) {
-        upsertDailySale(shopKey, row);
+      const sourceRow = isObject(payload)
+        ? (payload as { row?: unknown }).row
+        : undefined;
+      if (isDailySalesRow(sourceRow)) {
+        upsertDailySale(shopKey, sourceRow);
       }
       break;
     }
     case "transactions": {
-      const tx: TransactionRow | null = event.payload?.transaction || null;
-      const items: TransactionItemRow[] = event.payload?.items || [];
-      if (tx) {
-        upsertTransaction(shopKey, tx, items);
+      const txSource = isObject(payload)
+        ? (payload as { transaction?: unknown }).transaction
+        : undefined;
+      const itemsSource = isObject(payload)
+        ? (payload as { items?: unknown }).items
+        : undefined;
+      const items = Array.isArray(itemsSource)
+        ? itemsSource.filter(isTransactionItemRow)
+        : [];
+      if (isTransactionRow(txSource)) {
+        upsertTransaction(shopKey, txSource, items);
       }
       break;
     }
     case "payment_methods": {
-      const methods: string[] = event.payload?.methods || [];
+      const methodsSource = isObject(payload)
+        ? (payload as PaymentMethodsChangePayload).methods
+        : undefined;
+      const methods = toStringArray(methodsSource);
       const cache = ensureShopCache(shopKey);
-      cache.paymentMethods = methods.map((method) => String(method));
+      cache.paymentMethods = methods;
       emit("paymentMethodsUpdated", { shopId: shopKey, methods: cache.paymentMethods.slice() });
+      break;
+    }
+    case "business_rules": {
+      const rules = isObject(payload)
+        ? (payload as BusinessRulesChangePayload).rules
+        : undefined;
+      if (rules) {
+        const cache = ensureShopCache(shopKey);
+        cache.businessRules = rules;
+        emit("businessRulesUpdated", { shopId: shopKey, rules });
+      }
       break;
     }
     default:
@@ -539,18 +773,18 @@ function ensureSocket(shopKey: string) {
     console.log("WS connected", socket?.id);
   });
 
-  socket.on("initialState", (snapshot: any) => {
+  socket.on("initialState", (snapshot: ShopSnapshotPayload) => {
     const key = toShopKey(snapshot?.shopId ?? rawShopId);
     applySnapshot(key, snapshot);
   });
 
-  socket.on("change", (event: any) => handleChange(event));
+  socket.on("change", (event: ChangeEventPayload) => handleChange(event));
 
-  socket.on("disconnect", (reason: any) => {
+  socket.on("disconnect", (reason: unknown) => {
     console.log("WS disconnected", reason);
   });
 
-  socket.on("connect_error", (error: any) => {
+  socket.on("connect_error", (error: unknown) => {
     console.error("WS connect error", error);
   });
 
@@ -631,27 +865,36 @@ async function createInventoryRecord(
   };
 
   return new Promise((resolve, reject) => {
-    socketInstance.emit("inventory:upsert", payload, (response: any) => {
-      if (!response?.ok) {
+    socketInstance.emit("inventory:upsert", payload, (response: unknown) => {
+      const result = (response as InventoryUpsertResponse) ?? { ok: false };
+      if (!result.ok) {
         reject(
           new Error(
-            response?.error || "Failed to save product. Please try again."
+            result.error || "Failed to save product. Please try again."
           )
         );
         return;
       }
-      const rows: InventoryRow[] = response.rows || [];
+
+      const rows = Array.isArray(result.rows)
+        ? result.rows.filter(isInventoryRow)
+        : [];
+
       if (rows.length) {
         applyInventoryRows(shopKey, rows);
         resolve(toProduct(shopKey, rows[0]));
       } else {
         const cache = ensureShopCache(shopKey);
         const row = cache.inventoryByCode.get(identifier);
-        resolve(row ? toProduct(shopKey, row) : {
-          ...product,
-          id: identifier,
-          shopId: shopKey,
-        });
+        resolve(
+          row
+            ? toProduct(shopKey, row)
+            : {
+                ...product,
+                id: identifier,
+                shopId: shopKey,
+              }
+        );
       }
     });
   });
@@ -783,18 +1026,17 @@ export const db = {
           method: "DELETE",
         }
       );
-      let body: any = null;
+      let body: unknown = null;
       try {
         body = await response.json();
-      } catch (err) {
+      } catch {
         body = null;
       }
-      if (!response.ok || body?.ok === false) {
-        throw new Error(body?.error || "Failed to delete product");
+      const payload = isObject(body) ? (body as InventoryDeleteResponse) : undefined;
+      if (!response.ok || payload?.ok === false) {
+        throw new Error(payload?.error || "Failed to delete product");
       }
-      const codes = Array.isArray(body?.codes)
-        ? body.codes.map((code: any) => String(code))
-        : [String(id)];
+      const codes = payload?.codes ? toStringArray(payload.codes) : [String(id)];
       removeInventoryRows(shopKey, codes);
       return codes;
     },
@@ -828,14 +1070,13 @@ export const db = {
       const shopKey = toShopKey(shopId);
       const cleanShopId = normalizeShopId(shopId || shopKey);
       const response = await fetch(`${API_BASE}/api/payment-methods/${cleanShopId}`);
-      const body = await response.json();
-      if (!response.ok || body?.ok === false) {
-        throw new Error(body?.error || "Failed to load payment methods");
+      const rawBody: unknown = await response.json();
+      const payload = isObject(rawBody) ? (rawBody as PaymentMethodsResponse) : undefined;
+      if (!response.ok || payload?.ok === false) {
+        throw new Error(payload?.error || "Failed to load payment methods");
       }
       const cache = ensureShopCache(shopKey);
-      cache.paymentMethods = Array.isArray(body?.methods)
-        ? body.methods.map((method: any) => String(method))
-        : [];
+      cache.paymentMethods = payload?.methods ? toStringArray(payload.methods) : [];
       emit("paymentMethodsUpdated", { shopId: shopKey, methods: cache.paymentMethods.slice() });
       return cache.paymentMethods.slice();
     },
@@ -847,13 +1088,14 @@ export const db = {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ methods }),
       });
-      const body = await response.json();
-      if (!response.ok || body?.ok === false) {
-        throw new Error(body?.error || "Failed to update payment methods");
+      const rawBody: unknown = await response.json();
+      const payload = isObject(rawBody) ? (rawBody as PaymentMethodsResponse) : undefined;
+      if (!response.ok || payload?.ok === false) {
+        throw new Error(payload?.error || "Failed to update payment methods");
       }
       const cache = ensureShopCache(shopKey);
-      cache.paymentMethods = Array.isArray(body?.methods)
-        ? body.methods.map((method: any) => String(method))
+      cache.paymentMethods = payload?.methods
+        ? toStringArray(payload.methods)
         : methods.map((method) => String(method));
       emit("paymentMethodsUpdated", { shopId: shopKey, methods: cache.paymentMethods.slice() });
       return cache.paymentMethods.slice();

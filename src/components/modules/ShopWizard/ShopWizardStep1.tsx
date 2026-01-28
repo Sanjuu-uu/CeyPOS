@@ -1,6 +1,9 @@
 import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { useShopWizard } from "../../../context/ShopWizardContext";
+import {
+  useShopWizard,
+  type ShopFormData,
+} from "../../../context/ShopWizardContext";
 import "./styles/ShopWizard.css";
 
 // ... (cardVariants, inputVariants, shopTypes, predefinedShopTypeValues, countryCodes all remain the same) ...
@@ -276,19 +279,23 @@ export const ShopWizardStep1: React.FC = () => {
     );
     // If "Other" is selected but the field is empty, send an empty string
     // to force context validation to fail
-    const finalShopType = otherShopTypeError ? "" : uiSelectedType;
+    const finalShopType =
+      uiSelectedType === "other"
+        ? otherShopTypeError
+          ? ""
+          : otherShopType.trim()
+        : uiSelectedType;
 
     // Send the potentially "falsified" data to the context
-    const dataToUpdate = {
+    const dataToUpdate: Partial<ShopFormData> = {
       ...localData,
       phone: combinedPhone,
       shopType: finalShopType,
-      otherShopType: uiSelectedType === "other" ? otherShopType : "",
     };
 
     // This update will now trigger the context's validation
     // If phone or shopType is "", the context will set canProceed = false
-    updateFormData(dataToUpdate as any);
+    updateFormData(dataToUpdate);
   }, [
     localData,
     countryCode,

@@ -1,5 +1,9 @@
 import { Router } from "express";
-import { dbExists, openDb, replacePaymentMethods } from "../utils/db.js";
+import {
+  shopDatabaseExists,
+  openShopDatabase,
+  replaceShopPaymentMethods,
+} from "../utils/shop-database.js";
 import { publishChange } from "../realtime/change-bus.js";
 
 const router = Router();
@@ -9,11 +13,11 @@ router.get("/:shopId", (req, res) => {
   if (!shopId) {
     return res.status(400).json({ ok: false, error: "shop_id_required" });
   }
-  if (!dbExists(shopId)) {
+  if (!shopDatabaseExists(shopId)) {
     return res.status(404).json({ ok: false, error: "shop_not_found" });
   }
 
-  const db = openDb(shopId);
+  const db = openShopDatabase(shopId);
   try {
     const methods = db
       .prepare("SELECT method FROM shop_payment_methods WHERE shop_id = ?")
@@ -35,16 +39,16 @@ router.put("/:shopId", (req, res) => {
   if (!shopId) {
     return res.status(400).json({ ok: false, error: "shop_id_required" });
   }
-  if (!dbExists(shopId)) {
+  if (!shopDatabaseExists(shopId)) {
     return res.status(404).json({ ok: false, error: "shop_not_found" });
   }
   if (!Array.isArray(methods)) {
     return res.status(400).json({ ok: false, error: "methods_must_be_array" });
   }
 
-  const db = openDb(shopId);
+  const db = openShopDatabase(shopId);
   try {
-    replacePaymentMethods(db, shopId, methods);
+    replaceShopPaymentMethods(db, shopId, methods);
     publishChange({
       shopId,
       entity: "payment_methods",

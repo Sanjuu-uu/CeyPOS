@@ -1,7 +1,60 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
-import { queryDatabase, getSchema, getSampleData } from './database.js';
+import {
+  queryShopDatabase,
+  getShopSchema,
+  getShopSampleData,
+} from './shop-database-reader.js';
+
+type QueryResult = Array<Record<string, unknown>>;
+
+const toSuccessContent = (result: QueryResult | Record<string, unknown>) => ({
+  content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }],
+});
+
+const toErrorContent = (error: unknown) => {
+  const message = error instanceof Error ? error.message : String(error ?? 'Unknown error');
+  return {
+    content: [{ type: 'text' as const, text: `Error: ${message}` }],
+    isError: true,
+  } as const;
+};
+
+const inventoryQuerySchema = z
+  .object({
+    shopId: z.string().describe('The shop ID'),
+    query: z.string().describe('SQL query to execute on inventory table'),
+  })
+  .strict();
+
+const salesQuerySchema = z
+  .object({
+    shopId: z.string().describe('The shop ID'),
+    query: z.string().describe('SQL query to execute on sales tables'),
+  })
+  .strict();
+
+const customersQuerySchema = z
+  .object({
+    shopId: z.string().describe('The shop ID'),
+    query: z.string().describe('SQL query to execute on customers table'),
+  })
+  .strict();
+
+const schemaRequestSchema = z
+  .object({
+    shopId: z.string().describe('The shop ID'),
+  })
+  .strict();
+
+const sampleDataSchema = z
+  .object({
+    shopId: z.string().describe('The shop ID'),
+    table: z.string().describe('Table name'),
+    limit: z.number().optional().describe('Number of rows to return'),
+  })
+  .strict();
 
 const server = new McpServer({
   name: 'ceypos-mcp-server',
@@ -9,116 +62,86 @@ const server = new McpServer({
 });
 
 // Tool to query inventory
-server.tool(
+server.registerTool(
   'query_inventory',
-  'Query the inventory table for product information',
   {
-    shopId: z.string().describe('The shop ID'),
-    query: z.string().describe('SQL query to execute on inventory table')
+    description: 'Query the inventory table for product information',
+    inputSchema: inventoryQuerySchema,
   },
   async ({ shopId, query }) => {
     try {
-      const result = await queryDatabase(shopId, query);
-      return {
-        content: [{ type: 'text', text: JSON.stringify(result, null, 2) }]
-      };
+      const result = await queryShopDatabase(shopId, query);
+      return toSuccessContent(result);
     } catch (error) {
-      return {
-        content: [{ type: 'text', text: `Error: ${(error as Error).message}` }],
-        isError: true
-      };
+      return toErrorContent(error);
     }
   }
 );
 
 // Tool to query sales
-server.tool(
+server.registerTool(
   'query_sales',
-  'Query sales-related tables (transactions, transaction_items, daily_sales)',
   {
-    shopId: z.string().describe('The shop ID'),
-    query: z.string().describe('SQL query to execute on sales tables')
+    description: 'Query sales-related tables (transactions, transaction_items, daily_sales)',
+    inputSchema: salesQuerySchema,
   },
   async ({ shopId, query }) => {
     try {
-      const result = await queryDatabase(shopId, query);
-      return {
-        content: [{ type: 'text', text: JSON.stringify(result, null, 2) }]
-      };
+      const result = await queryShopDatabase(shopId, query);
+      return toSuccessContent(result);
     } catch (error) {
-      return {
-        content: [{ type: 'text', text: `Error: ${(error as Error).message}` }],
-        isError: true
-      };
+      return toErrorContent(error);
     }
   }
 );
 
 // Tool to query customers
-server.tool(
+server.registerTool(
   'query_customers',
-  'Query the customers table',
   {
-    shopId: z.string().describe('The shop ID'),
-    query: z.string().describe('SQL query to execute on customers table')
+    description: 'Query the customers table',
+    inputSchema: customersQuerySchema,
   },
   async ({ shopId, query }) => {
     try {
-      const result = await queryDatabase(shopId, query);
-      return {
-        content: [{ type: 'text', text: JSON.stringify(result, null, 2) }]
-      };
+      const result = await queryShopDatabase(shopId, query);
+      return toSuccessContent(result);
     } catch (error) {
-      return {
-        content: [{ type: 'text', text: `Error: ${(error as Error).message}` }],
-        isError: true
-      };
+      return toErrorContent(error);
     }
   }
 );
 
 // Tool to get schema
-server.tool(
+server.registerTool(
   'get_schema',
-  'Get the database schema for a shop',
   {
-    shopId: z.string().describe('The shop ID')
+    description: 'Get the database schema for a shop',
+    inputSchema: schemaRequestSchema,
   },
   async ({ shopId }) => {
     try {
-      const result = await getSchema(shopId);
-      return {
-        content: [{ type: 'text', text: JSON.stringify(result, null, 2) }]
-      };
+      const result = await getShopSchema(shopId);
+      return toSuccessContent(result);
     } catch (error) {
-      return {
-        content: [{ type: 'text', text: `Error: ${(error as Error).message}` }],
-        isError: true
-      };
+      return toErrorContent(error);
     }
   }
 );
 
 // Tool to get sample data
-server.tool(
+server.registerTool(
   'get_sample_data',
-  'Get sample data from a table',
   {
-    shopId: z.string().describe('The shop ID'),
-    table: z.string().describe('Table name'),
-    limit: z.number().optional().describe('Number of rows to return')
+    description: 'Get sample data from a table',
+    inputSchema: sampleDataSchema,
   },
   async ({ shopId, table, limit = 5 }) => {
     try {
-      const result = await getSampleData(shopId, table, limit);
-      return {
-        content: [{ type: 'text', text: JSON.stringify(result, null, 2) }]
-      };
+      const result = await getShopSampleData(shopId, table, limit);
+      return toSuccessContent(result);
     } catch (error) {
-      return {
-        content: [{ type: 'text', text: `Error: ${(error as Error).message}` }],
-        isError: true
-      };
+      return toErrorContent(error);
     }
   }
 );

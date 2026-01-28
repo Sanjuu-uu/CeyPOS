@@ -2,7 +2,14 @@ import React, { useState, useEffect } from 'react';
 import { Button } from '../../ui/Button';
 import { useApp } from '../../../context/AppContext';
 import { db } from '../../../lib/db';
-import { Award, Percent, CreditCard, Landmark, Save } from 'lucide-react';
+import {
+  Award,
+  Percent,
+  CreditCard,
+  Landmark,
+  Save,
+  type LucideIcon,
+} from 'lucide-react';
 
 // Import sub-components
 import { LoyaltySettings } from './LoyaltySettings';
@@ -40,20 +47,25 @@ export interface SurchargeRule {
   value: number | string;
 }
 
+export type AddItemFn = <T extends { id: string | number }>(
+  setter: React.Dispatch<React.SetStateAction<T[]>>,
+  template: Omit<T, 'id'>,
+) => void;
+
 // Fix 2: Define DB Interface to avoid @ts-ignore
 interface BusinessRulesData {
-    loyalty: LoyaltyConfig;
-    discounts: DiscountRule[];
-    taxes: TaxRule[];
-    surcharges: SurchargeRule[];
+  loyalty: LoyaltyConfig;
+  discounts: DiscountRule[];
+  taxes: TaxRule[];
+  surcharges: SurchargeRule[];
 }
 
 interface DatabaseService {
-    businessRules?: {
-        get: () => BusinessRulesData;
-        save: (data: any) => Promise<void>;
-    };
-    on: (event: string, cb: () => void) => () => void;
+  businessRules?: {
+    get: () => BusinessRulesData;
+    save: (data: BusinessRulesData) => Promise<void>;
+  };
+  on: (event: string, cb: () => void) => () => void;
 }
 
 // Cast db to typed interface
@@ -69,16 +81,32 @@ const generateId = (): string => {
   return `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
 };
 
-const ensureUniqueId = (item: any) => ({
+const ensureUniqueId = <T extends { id?: string | number }>(item: T): T & {
+  id: string | number;
+} => ({
   ...item,
-  id: item.id || generateId()
+  id: item.id ?? generateId(),
 });
+
+type TabKey = 'loyalty' | 'discounts' | 'taxes' | 'surcharges';
+
+const NAV_TABS: ReadonlyArray<{
+  id: TabKey;
+  label: string;
+  icon: LucideIcon;
+  desc: string;
+}> = [
+  { id: 'loyalty', label: 'Loyalty Points', icon: Award, desc: 'Rewards program' },
+  { id: 'discounts', label: 'Discounts', icon: Percent, desc: 'Sales & offers' },
+  { id: 'taxes', label: 'Tax Rates', icon: Landmark, desc: 'VAT & Service fees' },
+  { id: 'surcharges', label: 'Surcharges', icon: CreditCard, desc: 'Payment fees' },
+] as const;
 
 export const BusinessRules: React.FC = () => {
   const { currentShop } = useApp();
-  const currencySymbol = (currentShop as any)?.currency || '$';
+  const currencySymbol = currentShop?.currency ?? '$';
 
-  const [activeTab, setActiveTab] = useState<'loyalty' | 'discounts' | 'taxes' | 'surcharges'>('loyalty');
+  const [activeTab, setActiveTab] = useState<TabKey>('loyalty');
   const [isSaving, setIsSaving] = useState(false);
 
   // --- STATE ---
@@ -96,35 +124,49 @@ export const BusinessRules: React.FC = () => {
   // Load Data
   useEffect(() => {
     const loadData = () => {
-        // Fix 2: Safe DB Access
-        const rules = database.businessRules?.get();
-        if (rules) {
-            setLoyalty(rules.loyalty);
-            setDiscounts((rules.discounts || []).map(ensureUniqueId));
-            setTaxes((rules.taxes || []).map(ensureUniqueId));
-            setSurcharges((rules.surcharges || []).map(ensureUniqueId));
-        }
+      const rules = database.businessRules?.get();
+      if (rules) {
+        setLoyalty(rules.loyalty);
+        setDiscounts((rules.discounts ?? []).map(ensureUniqueId));
+        setTaxes((rules.taxes ?? []).map(ensureUniqueId));
+        setSurcharges((rules.surcharges ?? []).map(ensureUniqueId));
+      }
     };
+
     loadData();
-    
-    const unsub = database.on('businessRulesUpdated', loadData);
-    return () => { unsub && unsub(); };
+
+    const unsubscribe = database.on('businessRulesUpdated', loadData);
+    return () => {
+      if (unsubscribe) {
+        unsubscribe();
+      }
+    };
   }, []);
 
   const handleSave = async () => {
     setIsSaving(true);
     try {
         // Sanitize numbers before saving (Handles Issue 4)
-        const cleanState = {
-            loyalty: { 
-                ...loyalty, 
-                earnRate: Number(loyalty.earnRate) || 0, 
-                redeemRate: Number(loyalty.redeemRate) || 0, 
-                minPointsToRedeem: Number(loyalty.minPointsToRedeem) || 0 
-            },
-            discounts: discounts.map(d => ({ ...d, value: Number(d.value) || 0 })),
-            taxes: taxes.map(t => ({ ...t, rate: Number(t.rate) || 0 })),
-            surcharges: surcharges.map(s => ({ ...s, minAmount: Number(s.minAmount) || 0, value: Number(s.value) || 0 }))
+        const cleanState: BusinessRulesData = {
+          loyalty: {
+            ...loyalty,
+            earnRate: Number(loyalty.earnRate) || 0,
+            redeemRate: Number(loyalty.redeemRate) || 0,
+            minPointsToRedeem: Number(loyalty.minPointsToRedeem) || 0,
+          },
+          discounts: discounts.map((rule) => ({
+            ...rule,
+            value: Number(rule.value) || 0,
+          })),
+          taxes: taxes.map((rule) => ({
+            ...rule,
+            rate: Number(rule.rate) || 0,
+          })),
+          surcharges: surcharges.map((rule) => ({
+            ...rule,
+            minAmount: Number(rule.minAmount) || 0,
+            value: Number(rule.value) || 0,
+          })),
         };
 
         if (database.businessRules) {
@@ -138,12 +180,12 @@ export const BusinessRules: React.FC = () => {
   };
 
   // Fix 3: Strongly Typed addItem Generic
-  const addItem = <T extends { id: string | number }>(
-    setter: React.Dispatch<React.SetStateAction<T[]>>, 
-    template: Omit<T, 'id'>
-  ) => {
-    // Cast result to T to satisfy compiler that id is present
-    setter((prev) => [...prev, { ...template, id: generateId() } as unknown as T]);
+  const addItem: AddItemFn = (setter, template) => {
+    setter((previous) => {
+      type Item = typeof previous[number];
+      const nextItem = { ...template, id: generateId() } as Item;
+      return [...previous, nextItem];
+    });
   };
 
   return (
@@ -180,15 +222,10 @@ export const BusinessRules: React.FC = () => {
         
         {/* --- Sidebar Navigation --- */}
         <div className="w-full md:w-64 bg-gray-50 border-b md:border-b-0 md:border-r border-gray-200 p-4 flex md:flex-col gap-2 overflow-x-auto md:overflow-visible">
-          {[
-            { id: 'loyalty', label: 'Loyalty Points', icon: Award, desc: 'Rewards program' },
-            { id: 'discounts', label: 'Discounts', icon: Percent, desc: 'Sales & offers' },
-            { id: 'taxes', label: 'Tax Rates', icon: Landmark, desc: 'VAT & Service fees' },
-            { id: 'surcharges', label: 'Surcharges', icon: CreditCard, desc: 'Payment fees' }
-          ].map((tab) => (
+          {NAV_TABS.map((tab) => (
             <button
               key={tab.id}
-              onClick={() => setActiveTab(tab.id as any)}
+              onClick={() => setActiveTab(tab.id)}
               className={`flex items-center gap-3 p-3 rounded-xl transition-all text-left group min-w-[200px] md:min-w-0 ${
                 activeTab === tab.id 
                   ? 'bg-white shadow-md border border-gray-100' 

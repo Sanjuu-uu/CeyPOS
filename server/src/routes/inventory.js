@@ -1,7 +1,7 @@
 import express from "express";
 import multer from "multer";
 import ExcelJS from "exceljs";
-import { openDb, dbExists } from "../utils/db.js";
+import { openShopDatabase, shopDatabaseExists } from "../utils/shop-database.js";
 import { upsertProducts, deleteProducts } from "../services/inventory-service.js";
 
 const router = express.Router();
@@ -66,7 +66,7 @@ router.post("/upload", (req, res, next) => {
       return res.status(400).json({ error: "Uploaded file is not an Excel file (.xlsx/.xls). Please check the file format." });
     }
 
-    if (!dbExists(shopId)) {
+    if (!shopDatabaseExists(shopId)) {
       console.error(`[INVENTORY UPLOAD ERROR] Missing database`, { time: new Date().toISOString(), shopId });
       return res.status(404).json({ error: "Shop database not found. Please complete shop setup." });
     }
@@ -84,7 +84,7 @@ router.post("/upload", (req, res, next) => {
     };
 
     try {
-      db = openDb(shopId);
+      db = openShopDatabase(shopId);
     } catch (dbErr) {
       console.error(`[INVENTORY UPLOAD ERROR] DB open failed`, { time: new Date().toISOString(), shopId, error: dbErr });
       return res.status(500).json({ error: "Could not open shop database.", detail: String(dbErr.message || dbErr) });
@@ -316,7 +316,7 @@ router.delete("/:shopId/:inventoryCode", async (req, res) => {
     return res.status(400).json({ ok: false, error: "missing_parameters" });
   }
 
-  if (!dbExists(shopId)) {
+  if (!shopDatabaseExists(shopId)) {
     return res.status(404).json({ ok: false, error: "shop_not_found" });
   }
 

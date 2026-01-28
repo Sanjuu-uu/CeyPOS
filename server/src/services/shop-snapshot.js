@@ -1,9 +1,9 @@
-import { openDb } from "../utils/db.js";
+import { openShopDatabase } from "../utils/shop-database.js";
 
 const MAX_TRANSACTIONS = 200;
 
 function getShopSnapshot(shopId) {
-  const db = openDb(shopId);
+  const db = openShopDatabase(shopId);
   try {
     const inventory = db
       .prepare("SELECT * FROM inventory ORDER BY name COLLATE NOCASE")

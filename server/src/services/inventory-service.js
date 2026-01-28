@@ -1,4 +1,4 @@
-import { openDb } from "../utils/db.js";
+import { openShopDatabase } from "../utils/shop-database.js";
 import { publishChange } from "../realtime/change-bus.js";
 
 function normalizeProduct(input = {}) {
@@ -118,7 +118,7 @@ function adjustStockLevels(db, adjustments = []) {
 }
 
 function getInventory(shopId) {
-  const db = openDb(shopId);
+  const db = openShopDatabase(shopId);
   try {
     return fetchInventory(db);
   } finally {
@@ -131,7 +131,7 @@ function upsertProducts(shopId, products = [], options = {}) {
     return [];
   }
   const normalized = products.map((p) => normalizeProduct(p));
-  const db = openDb(shopId);
+  const db = openShopDatabase(shopId);
   try {
     const updatedRows = upsertInventoryRows(db, normalized);
     publishChange({
@@ -152,7 +152,7 @@ function upsertProducts(shopId, products = [], options = {}) {
 
 function applyStockAdjustments(shopId, adjustments = [], options = {}) {
   if (!adjustments.length) return [];
-  const db = openDb(shopId);
+  const db = openShopDatabase(shopId);
   try {
     const updatedRows = adjustStockLevels(db, adjustments);
     if (updatedRows.length) {
@@ -179,7 +179,7 @@ function deleteProducts(shopId, codes = [], options = {}) {
     return [];
   }
 
-  const db = openDb(shopId);
+  const db = openShopDatabase(shopId);
   try {
     const placeholders = normalized.map(() => "?").join(",");
     const existing = db

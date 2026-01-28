@@ -19,6 +19,63 @@ import { Sale } from '../../../types';
 
 type PaymentMethodId = 'card' | 'digital_wallet' | 'mobile' | 'cash';
 
+type SalesUpdatedPayload = {
+  shopId?: string;
+  items?: Sale[];
+};
+
+type SaleCreatedPayload = {
+  shopId?: string;
+  sale?: Sale;
+};
+
+type PaymentMethodsUpdatedPayload = {
+  shopId?: string;
+  methods?: string[];
+};
+
+const isSalesUpdatedPayload = (payload: unknown): payload is SalesUpdatedPayload => {
+  if (!payload || typeof payload !== 'object') {
+    return false;
+  }
+  const candidate = payload as Record<string, unknown>;
+  const items = candidate.items;
+  const validItems =
+    items === undefined ||
+    (Array.isArray(items) && items.every((item) => typeof item === 'object' && item !== null));
+  const shopId = candidate.shopId;
+  const validShopId = shopId === undefined || typeof shopId === 'string';
+  return validShopId && validItems;
+};
+
+const isSaleCreatedPayload = (payload: unknown): payload is SaleCreatedPayload => {
+  if (!payload || typeof payload !== 'object') {
+    return false;
+  }
+  const candidate = payload as Record<string, unknown>;
+  const shopId = candidate.shopId;
+  const sale = candidate.sale;
+  const validShopId = shopId === undefined || typeof shopId === 'string';
+  const validSale = sale === undefined || (typeof sale === 'object' && sale !== null);
+  return validShopId && validSale;
+};
+
+const isPaymentMethodsUpdatedPayload = (
+  payload: unknown,
+): payload is PaymentMethodsUpdatedPayload => {
+  if (!payload || typeof payload !== 'object') {
+    return false;
+  }
+  const candidate = payload as Record<string, unknown>;
+  const shopId = candidate.shopId;
+  const methods = candidate.methods;
+  const validShopId = shopId === undefined || typeof shopId === 'string';
+  const validMethods =
+    methods === undefined ||
+    (Array.isArray(methods) && methods.every((method) => typeof method === 'string'));
+  return validShopId && validMethods;
+};
+
 interface PaymentMethodDefinition {
   id: PaymentMethodId;
   name: string;
@@ -119,16 +176,22 @@ export const Payments: React.FC = () => {
       applyTransactions(sales);
     };
 
-    const handleSalesUpdated = (payload: any) => {
-      if (!payload?.shopId || payload.shopId !== shopId) {
+    const handleSalesUpdated = (payload: unknown) => {
+      if (!isSalesUpdatedPayload(payload)) {
         return;
       }
-      const items: Sale[] = payload?.items || db.sales.getByShopId(shopId);
+      if (!payload.shopId || payload.shopId !== shopId) {
+        return;
+      }
+      const items: Sale[] = payload.items || db.sales.getByShopId(shopId);
       applyTransactions(items);
     };
 
-    const handleSaleCreated = (payload: any) => {
-      if (!payload?.shopId || payload.shopId !== shopId) {
+    const handleSaleCreated = (payload: unknown) => {
+      if (!isSaleCreatedPayload(payload)) {
+        return;
+      }
+      if (!payload.shopId || payload.shopId !== shopId) {
         return;
       }
       bootstrap();
@@ -167,9 +230,12 @@ export const Payments: React.FC = () => {
       setEnabledMethods(coerceMethodIds(cached));
     }
 
-    const handler = (payload: any) => {
+    const handler = (payload: unknown) => {
       if (cancelled) return;
-      if (!payload?.shopId || payload.shopId !== currentShop.id) {
+      if (!isPaymentMethodsUpdatedPayload(payload)) {
+        return;
+      }
+      if (!payload.shopId || payload.shopId !== currentShop.id) {
         return;
       }
       setEnabledMethods(coerceMethodIds(payload.methods));
@@ -261,6 +327,13 @@ export const Payments: React.FC = () => {
     }).format(new Date(dateString));
   };
 
+  const tabs: Array<{ id: typeof activeTab; label: string; icon: React.ReactNode }> = [
+    { id: 'overview', label: 'Overview', icon: <TrendingUp size={16} /> },
+    { id: 'methods', label: 'Payment Methods', icon: <CreditCard size={16} /> },
+    { id: 'transactions', label: 'Transactions', icon: <Wallet size={16} /> },
+    { id: 'settings', label: 'Settings', icon: <Settings size={16} /> },
+  ];
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -277,15 +350,10 @@ export const Payments: React.FC = () => {
       {/* Tab Navigation */}
       <div className="border-b border-gray-200">
         <nav className="-mb-px flex space-x-8">
-          {[
-            { id: 'overview', label: 'Overview', icon: <TrendingUp size={16} /> },
-            { id: 'methods', label: 'Payment Methods', icon: <CreditCard size={16} /> },
-            { id: 'transactions', label: 'Transactions', icon: <Wallet size={16} /> },
-            { id: 'settings', label: 'Settings', icon: <Settings size={16} /> }
-          ].map(tab => (
+          {tabs.map(tab => (
             <button
               key={tab.id}
-              onClick={() => setActiveTab(tab.id as any)}
+              onClick={() => setActiveTab(tab.id)}
               className={`flex items-center space-x-2 py-2 px-1 border-b-2 font-medium text-sm ${
                 activeTab === tab.id
                   ? 'border-verde-primary text-gray-900'

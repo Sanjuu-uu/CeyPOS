@@ -7,6 +7,29 @@ import { useApp } from '../../../context/AppContext';
 import { db } from '../../../lib/db';
 import { Sale } from '../../../types';
 
+interface SalesUpdatedPayload {
+  shopId?: string;
+  items?: Sale[];
+}
+
+interface SaleCreatedPayload {
+  shopId?: string;
+}
+
+const isSalesUpdatedPayload = (payload: unknown): payload is SalesUpdatedPayload =>
+  Boolean(
+    payload &&
+      typeof payload === 'object' &&
+      typeof (payload as SalesUpdatedPayload).shopId === 'string'
+  );
+
+const isSaleCreatedPayload = (payload: unknown): payload is SaleCreatedPayload =>
+  Boolean(
+    payload &&
+      typeof payload === 'object' &&
+      typeof (payload as SaleCreatedPayload).shopId === 'string'
+  );
+
 export const Receipts: React.FC = () => {
   const { currentShop } = useApp();
   const [searchTerm, setSearchTerm] = useState('');
@@ -43,16 +66,18 @@ export const Receipts: React.FC = () => {
       applySales(currentSales);
     };
 
-    const handleSalesUpdated = (payload: any) => {
-      if (!payload?.shopId || payload.shopId !== shopId) {
+    const handleSalesUpdated = (payload: unknown) => {
+      if (!isSalesUpdatedPayload(payload) || payload.shopId !== shopId) {
         return;
       }
-      const items: Sale[] = payload?.items || db.sales.getByShopId(shopId);
+      const items = Array.isArray(payload.items)
+        ? payload.items
+        : db.sales.getByShopId(shopId);
       applySales(items);
     };
 
-    const handleSaleCreated = (payload: any) => {
-      if (!payload?.shopId || payload.shopId !== shopId) {
+    const handleSaleCreated = (payload: unknown) => {
+      if (!isSaleCreatedPayload(payload) || payload.shopId !== shopId) {
         return;
       }
       bootstrap();

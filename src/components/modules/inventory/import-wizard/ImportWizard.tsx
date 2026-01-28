@@ -1,25 +1,25 @@
 import React, { useMemo, useState } from 'react';
-import axios from 'axios';
+import axios, { isAxiosError } from 'axios';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowLeftIcon, ArrowRightIcon, CheckIcon, X } from 'lucide-react';
 import { WizardStepIndicator } from './WizardStepIndicator';
 import { TemplateDownload } from './TemplateDownload';
 import { FileUpload } from './FileUpload';
-import { DataValidation } from './DataValidation';
+import { DataValidation, type ValidationSummary } from './DataValidation';
 import { ImportConfirmation } from './ImportConfirmation';
 import { useShopWizard } from '../../../../context/ShopWizardContext';
 import { useApp } from '../../../../context/AppContext';
 
 interface ImportWizardProps {
   onClose?: () => void;
-  onImportComplete?: (data: any) => void;
+  onImportComplete?: (data: ValidationSummary) => void;
 }
 
 export const ImportWizard: React.FC<ImportWizardProps> = ({ onClose, onImportComplete }) => {
   const [currentStep, setCurrentStep] = useState(1);
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
   const [uploadProgress, setUploadProgress] = useState(0);
-  const [validationData, setValidationData] = useState({
+  const [validationData, setValidationData] = useState<ValidationSummary>({
     total: 0,
     successful: 0,
     errors: 0,
@@ -46,9 +46,16 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ onClose, onImportCom
   ];
 
   const handleFileUpload = async (file: File) => {
-  setUploadedFile(file);
-  setUploadProgress(0);
-  setValidationData({ total: 0, successful: 0, errors: 0, warnings: 0, backendError: null, validationIssues: [] });
+    setUploadedFile(file);
+    setUploadProgress(0);
+    setValidationData({
+      total: 0,
+      successful: 0,
+      errors: 0,
+      warnings: 0,
+      backendError: null,
+      validationIssues: [],
+    });
     try {
       const formData = new FormData();
       formData.append('file', file);
@@ -71,15 +78,30 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ onClose, onImportCom
         backendError: null,
         validationIssues: response.data.validationIssues || [],
       });
-    } catch (err: any) {
+    } catch (error) {
       setUploadProgress(100);
+      let backendError: string | null = 'Upload failed';
+      let validationIssues: ValidationSummary['validationIssues'] = [];
+
+      if (isAxiosError(error)) {
+        const data = error.response?.data as
+          | (Partial<ValidationSummary> & { error?: string })
+          | undefined;
+        if (typeof data?.error === 'string') {
+          backendError = data.error;
+        }
+        if (Array.isArray(data?.validationIssues)) {
+          validationIssues = data.validationIssues as ValidationSummary['validationIssues'];
+        }
+      }
+
       setValidationData({
         total: 0,
         successful: 0,
         errors: 1,
         warnings: 0,
-        backendError: err?.response?.data?.error || 'Upload failed',
-        validationIssues: err?.response?.data?.validationIssues || [],
+        backendError,
+        validationIssues,
       });
     }
   };

@@ -1,6 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
-import { useShopWizard } from '../../../context/ShopWizardContext';
+import {
+  useShopWizard,
+  type ShopFormData,
+} from '../../../context/ShopWizardContext';
 import './styles/ShopWizard.css';
 
 const cardVariants = {
@@ -79,22 +82,10 @@ const paymentMethods = [
   { value: 'check', label: 'Checks', icon: '📄', description: 'Paper checks', status: 'upcoming' },
 ];
 
-const daysOfWeek = [
-  { key: 'monday', label: 'Monday' },
-  { key: 'tuesday', label: 'Tuesday' },
-  { key: 'wednesday', label: 'Wednesday' },
-  { key: 'thursday', label: 'Thursday' },
-  { key: 'friday', label: 'Friday' },
-  { key: 'saturday', label: 'Saturday' },
-  { key: 'sunday', label: 'Sunday' },
-];
-
-interface LocalData {
-  currency: string;
-  timezone: string;
-  operatingHours: any;
-  paymentMethods: string[];
-}
+type LocalData = Pick<
+  ShopFormData,
+  'currency' | 'timezone' | 'operatingHours' | 'paymentMethods'
+>;
 
 export const ShopWizardStep4: React.FC = () => {
   const { formData, updateFormData } = useShopWizard();
@@ -117,6 +108,11 @@ export const ShopWizardStep4: React.FC = () => {
       isValid = false;
     }
 
+    if (!data.timezone) {
+      newErrors.timezone = 'Timezone is required.';
+      isValid = false;
+    }
+
     if (data.paymentMethods.length === 0) {
       newErrors.paymentMethods = 'Please select at least one payment method.';
       isValid = false;
@@ -126,7 +122,10 @@ export const ShopWizardStep4: React.FC = () => {
     return isValid;
   }, []);
 
-  const handleInputChange = (field: keyof LocalData, value: any) => {
+  const handleInputChange = <Key extends keyof LocalData>(
+    field: Key,
+    value: LocalData[Key],
+  ) => {
     const updatedData = { ...localData, [field]: value };
     setLocalData(updatedData);
 
@@ -142,17 +141,6 @@ export const ShopWizardStep4: React.FC = () => {
     handleInputChange('paymentMethods', updatedMethods);
   };
 
-  const handleOperatingHoursChange = (day: string, field: string, value: string | boolean) => {
-    const updatedHours = {
-      ...localData.operatingHours,
-      [day]: {
-        ...localData.operatingHours[day as keyof typeof localData.operatingHours],
-        [field]: value,
-      },
-    };
-    handleInputChange('operatingHours', updatedHours);
-  };
-  
   // Update global state whenever localData changes
   useEffect(() => {
     updateFormData(localData);
@@ -295,8 +283,72 @@ export const ShopWizardStep4: React.FC = () => {
                 )}
               </motion.div>
 
-              {/* Payment Methods */}
+              {/* Timezone Selection */}
               <motion.div custom={1} variants={inputVariants} initial="initial" animate="animate">
+                <label
+                  style={{
+                    fontFamily: 'Inter, sans-serif',
+                    fontSize: '12px',
+                    fontWeight: 500,
+                    color: 'var(--gray--900)',
+                    display: 'block',
+                    marginBottom: '6px',
+                  }}
+                >
+                  Timezone *
+                </label>
+                <select
+                  value={localData.timezone}
+                  onChange={(event) => handleInputChange('timezone', event.target.value)}
+                  className="text-field-outline"
+                  style={{
+                    width: '100%',
+                    height: '48px',
+                    border: `1px solid ${errors.timezone ? 'var(--red--500)' : 'var(--gray--200)'}`,
+                    borderRadius: 'var(--radius--12px)',
+                    backgroundColor: 'var(--main--white)',
+                    padding: '0 16px',
+                    fontFamily: 'Inter, sans-serif',
+                    fontSize: '14px',
+                    lineHeight: '48px',
+                    transition: 'all .3s',
+                    outline: 'none',
+                    cursor: 'pointer',
+                  }}
+                  onFocus={(event) => {
+                    event.target.style.borderColor = errors.timezone ? 'var(--red--500)' : 'var(--gray--900)';
+                  }}
+                  onBlur={(event) => {
+                    event.target.style.borderColor = errors.timezone ? 'var(--red--500)' : 'var(--gray--200)';
+                  }}
+                >
+                  <option value="">Select your timezone</option>
+                  {timezones.map((label) => (
+                    <option key={label} value={label}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
+                {errors.timezone ? (
+                  <ErrorMessage message={errors.timezone} />
+                ) : (
+                  <p
+                    style={{
+                      fontFamily: 'Inter, sans-serif',
+                      fontSize: '11px',
+                      fontWeight: 400,
+                      color: 'var(--gray--400)',
+                      marginTop: '4px',
+                      margin: '4px 0 0 0',
+                    }}
+                  >
+                    Choose the timezone that best matches your operations.
+                  </p>
+                )}
+              </motion.div>
+
+              {/* Payment Methods */}
+              <motion.div custom={2} variants={inputVariants} initial="initial" animate="animate">
                 <label style={{
                   fontFamily: 'Inter, sans-serif',
                   fontSize: '12px',

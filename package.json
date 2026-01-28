@@ -2,19 +2,24 @@
   "name": "ceypos",
   "private": true,
   "version": "1.0.0",
+  "workspaces": [
+    ".",
+    "server",
+    "mcp-server"
+  ],
   "type": "module",
   "engines": {
-    "node": "20.x",
+    "node": ">=20",
     "npm": ">=10.0.0"
   },
   "scripts": {
     "dev": "concurrently \"npm:server\" \"npm:client\"",
     "start": "concurrently \"npm:server\" \"npm:mcp\" \"npm:client\"",
-  "server": "cd server && npm run dev",
-  "server:start": "npm run start --prefix server",
-  "mcp": "cd mcp-server && npm start",
-  "mcp:start": "npm run start --prefix mcp-server",
-  "start:railway": "concurrently \"npm:server:start\" \"npm:mcp:start\"",
+    "server": "cd server && npm run dev",
+    "server:start": "npm run start --prefix server",
+    "mcp": "cd mcp-server && npm start",
+    "mcp:start": "npm run start --prefix mcp-server",
+    "start:railway": "concurrently \"npm:server:start\" \"npm:mcp:start\"",
     "client": "vite",
     "build": "vite build",
     "lint": "eslint .",
@@ -27,6 +32,7 @@
     "@types/react-router-dom": "^5.3.3",
     "axios": "^1.11.0",
     "clsx": "^2.1.1",
+    "@google/generative-ai": "^0.24.1",
     "dotenv": "^17.2.1",
     "exceljs": "^4.4.0",
     "express": "^5.1.0",
@@ -35,12 +41,10 @@
     "lucide": "^0.542.0",
     "lucide-react": "^0.344.0",
     "multer": "^2.0.2",
-    "openai": "^5.23.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-dropzone": "^14.3.8",
     "react-router-dom": "^6.26.0",
-    "recharts": "^2.12.2",
     "socket.io": "^4.8.1",
     "socket.io-client": "^4.8.1",
     "tailwind-merge": "^2.5.2"
@@ -69,6 +73,7 @@
     "tailwindcss": "^3.4.14",
     "typescript": "^5.6.3",
     "typescript-eslint": "^8.3.0",
-    "vite": "^5.4.10"
+    "vite": "^5.4.10",
+    "tsx": "^4.21.0"
   }
 }

@@ -56,7 +56,22 @@ app.post("/api/analytics/chat", async (req, res) => {
       return res.status(400).json({ error: "Missing question or shopId" });
     }
     const result = await processUserQuestion(question, shopId);
-    res.json(result);
+    const visServerRaw = (process.env.VIS_REQUEST_SERVER ?? '').trim();
+    const visServer = visServerRaw.endsWith('/') ? visServerRaw.slice(0, -1) : visServerRaw;
+    const visServiceId = (process.env.VIS_SERVICE_ID ?? '').trim();
+    const visServicePath = (process.env.VIS_SERVICE_PATH ?? '/v1/services/{serviceId}/invoke').trim();
+    const requiresServiceId = visServicePath.includes('{serviceId}');
+    const visualizationConfigured = Boolean(visServer && (!requiresServiceId || visServiceId));
+    const visualizationConfig = {
+      provider: "antv",
+      configured: visualizationConfigured,
+      baseUrl: visualizationConfigured ? visServer : null,
+      serviceId: visualizationConfigured && visServiceId ? visServiceId : null,
+    };
+    res.json({
+      ...result,
+      visualizationConfig,
+    });
   } catch (error) {
     console.error("Chat error:", error);
     res.status(500).json({ error: "Internal server error" });

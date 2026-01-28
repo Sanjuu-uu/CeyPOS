@@ -3,16 +3,15 @@ import React, { useState, useRef, ChangeEvent } from 'react';
 
 import { Button } from '../../ui/Button';
 import { Input } from '../../ui/Input';
-import { 
-  Zap, 
-  Image as ImageIcon, 
-  Calendar, 
-  Clock, 
-  List, 
-  Users, 
-  Send, 
-   
-  Save, 
+import {
+  Zap,
+  Image as ImageIcon,
+  Calendar,
+  Clock,
+  List,
+  Users,
+  Send,
+  Save,
   Copy,
   QrCode,
   Percent,
@@ -21,17 +20,15 @@ import {
   ChevronRight,
   ChevronLeft,
   Plus,
-  
   MessageSquare,
   Mail,
   Smartphone,
   TrendingUp,
-
   CheckCircle,
-  
   Target,
   Timer
 } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import { useApp } from '../../../context/AppContext';
 // import { PaymentSummary } from './PaymentSummary';
 // import { PaymentConfirmation } from './PaymentConfirmation';
@@ -40,13 +37,26 @@ export const Import: React.FC = () => {
   const { currentShop } = useApp();
 
   // ─── State for Tabs & Forms ──────────────────────────────────────────
-  const [activeTab, setActiveTab] = useState<'create' | 'history' | 'analytics' | 'templates' | 'audience'>('create');
+  type TabId = 'create' | 'history' | 'analytics' | 'templates' | 'audience';
+  type CampaignType = 'fastflash' | 'flashpro';
+  type AudienceValue = 'all' | 'recent' | 'inactive' | 'vip' | 'segment' | 'manual';
+  type ScheduleType = 'immediate' | 'scheduled' | 'optimal';
+
+  const tabOptions: Array<{ id: TabId; label: string; icon: LucideIcon }> = [
+    { id: 'create', label: 'Create', icon: Plus },
+    { id: 'analytics', label: 'Analytics', icon: BarChart3 },
+    { id: 'history', label: 'History', icon: List },
+    { id: 'templates', label: 'Templates', icon: Copy },
+    { id: 'audience', label: 'Audience', icon: Users },
+  ];
+
+  const [activeTab, setActiveTab] = useState<TabId>('create');
   const [currentStep, setCurrentStep] = useState(1);
-  const [campaignType, setCampaignType] = useState<'fastflash' | 'flashpro'>('fastflash');
+  const [campaignType, setCampaignType] = useState<CampaignType>('fastflash');
   const [promotionName, setPromotionName] = useState('');
   const [messageContent, setMessageContent] = useState('');
-  const [audience, setAudience] = useState<'all' | 'recent' | 'inactive' | 'vip' | 'segment' | 'manual'>('all');
-  const [scheduleType, setScheduleType] = useState<'immediate' | 'scheduled' | 'optimal'>('immediate');
+  const [audience, setAudience] = useState<AudienceValue>('all');
+  const [scheduleType, setScheduleType] = useState<ScheduleType>('immediate');
   const [scheduleDate, setScheduleDate] = useState<string>('');
   const [scheduleTime, setScheduleTime] = useState<string>('');
   const [template, setTemplate] = useState('');
@@ -61,20 +71,6 @@ export const Import: React.FC = () => {
   const [sendEmail, setSendEmail] = useState<boolean>(false);
   const [sendSMS, setSendSMS] = useState<boolean>(false);
 
-  // ─── State for Payment Flow ─────────────────────────────────────────
-  const [paymentStep, setPaymentStep] = useState<'form' | 'payment' | 'confirmation'>('form');
-  type Payload = {
-    isFastFlash: boolean;
-    promotionName: string;
-    scheduleDate: string;
-    scheduleTime: string;
-    audience: 'all' | 'segment';
-    sendWhatsApp: boolean;
-    sendEmail: boolean;
-    cost: number;
-  };
-  const [lastPayload, setLastPayload] = useState<Payload | null>(null);
-
   // ─── Template and Audience Data ─────────────────────────────────────
   const templates = [
     { id: 'sale', name: 'Flash Sale', content: 'Flash Sale Alert! Get {discount}% OFF on all items. Valid until {date}. Shop now!', icon: '🔥' },
@@ -83,7 +79,13 @@ export const Import: React.FC = () => {
     { id: 'holiday', name: 'Holiday Special', content: 'Special holiday offer just for you! Enjoy exclusive discounts this season.', icon: '🎉' }
   ];
 
-  const audienceOptions = [
+  const audienceOptions: ReadonlyArray<{
+    value: AudienceValue;
+    label: string;
+    desc: string;
+    count: string;
+    icon: LucideIcon;
+  }> = [
     { value: 'all', label: 'All Customers', desc: 'Send to entire customer base', count: '2,543', icon: Users },
     { value: 'recent', label: 'Recent Buyers', desc: 'Customers who bought in last 30 days', count: '892', icon: TrendingUp },
     { value: 'inactive', label: 'Inactive Customers', desc: 'No purchases in 60+ days', count: '1,234', icon: Timer },
@@ -118,8 +120,6 @@ export const Import: React.FC = () => {
     setSendWhatsApp(true);
     setSendEmail(false);
     setSendSMS(false);
-    setPaymentStep('form');
-    setLastPayload(null);
     setTemplate('');
     setLanguage('en');
     setScheduleType('immediate');
@@ -144,35 +144,27 @@ export const Import: React.FC = () => {
       return;
     }
 
-    const payload: Payload = {
-      isFastFlash: campaignType === 'fastflash',
-      promotionName,
-      scheduleDate,
-      scheduleTime,
-      audience: audience === 'all' ? 'all' : 'segment',
-      sendWhatsApp,
-      sendEmail,
-      cost: campaignType === 'fastflash' ? 100 : 250,
-    };
-
-    setLastPayload(payload);
-    setPaymentStep('payment');
+    // TODO: Integrate payment flow once backend is ready
   };
 
-  const handlePay = () => {
-    setTimeout(() => {
-      setPaymentStep('confirmation');
-    }, 500);
+  const isAudienceValue = (value: string): value is AudienceValue =>
+    audienceOptions.some((option) => option.value === value);
+
+  const handleAudienceChange: React.ChangeEventHandler<HTMLInputElement> = (event) => {
+    const { value } = event.target;
+    if (isAudienceValue(value)) {
+      setAudience(value);
+    }
   };
 
-  const handleNewPromotion = () => {
-    resetForm();
-    setActiveTab('create');
-  };
+  const isScheduleType = (value: string): value is ScheduleType =>
+    value === 'immediate' || value === 'scheduled' || value === 'optimal';
 
-  const handleViewHistory = () => {
-    setActiveTab('history');
-    setPaymentStep('form');
+  const handleScheduleTypeChange: React.ChangeEventHandler<HTMLInputElement> = (event) => {
+    const { value } = event.target;
+    if (isScheduleType(value)) {
+      setScheduleType(value);
+    }
   };
 
   const nextStep = () => {
@@ -245,16 +237,10 @@ export const Import: React.FC = () => {
       {/* Navigation Pills - Now at the very top */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-4 pb-2">
         <div className="flex space-x-2 bg-white rounded-2xl p-2 shadow-sm border">
-          {[
-            { id: 'create', label: 'Create', icon: Plus },
-            { id: 'analytics', label: 'Analytics', icon: BarChart3 },
-            { id: 'history', label: 'History', icon: List },
-            { id: 'templates', label: 'Templates', icon: Copy },
-            { id: 'audience', label: 'Audience', icon: Users }
-          ].map(tab => (
+          {tabOptions.map((tab) => (
             <button
               key={tab.id}
-              onClick={() => setActiveTab(tab.id as any)}
+              onClick={() => setActiveTab(tab.id)}
               className={`flex items-center space-x-2 px-6 py-3 rounded-xl font-medium transition-all ${
                 activeTab === tab.id
                   ? 'bg-verde-primary text-white shadow-lg shadow-verde-primary/25'
@@ -524,7 +510,7 @@ export const Import: React.FC = () => {
                               name="audience"
                               value={option.value}
                               checked={audience === option.value}
-                              onChange={(e) => setAudience(e.target.value as any)}
+                              onChange={handleAudienceChange}
                               className="sr-only"
                             />
                             <div className={`flex items-center justify-center w-10 h-10 rounded-xl mr-4 ${
@@ -663,7 +649,7 @@ export const Import: React.FC = () => {
                         name="schedule"
                         value="immediate"
                         checked={scheduleType === 'immediate'}
-                        onChange={(e) => setScheduleType(e.target.value as any)}
+                        onChange={handleScheduleTypeChange}
                         className="sr-only"
                       />
                       <div className={`inline-flex items-center justify-center w-12 h-12 rounded-xl mb-3 ${
@@ -685,7 +671,7 @@ export const Import: React.FC = () => {
                         name="schedule"
                         value="scheduled"
                         checked={scheduleType === 'scheduled'}
-                        onChange={(e) => setScheduleType(e.target.value as any)}
+                        onChange={handleScheduleTypeChange}
                         className="sr-only"
                       />
                       <div className={`inline-flex items-center justify-center w-12 h-12 rounded-xl mb-3 ${
@@ -707,7 +693,7 @@ export const Import: React.FC = () => {
                         name="schedule"
                         value="optimal"
                         checked={scheduleType === 'optimal'}
-                        onChange={(e) => setScheduleType(e.target.value as any)}
+                        onChange={handleScheduleTypeChange}
                         className="sr-only"
                       />
                       <div className={`inline-flex items-center justify-center w-12 h-12 rounded-xl mb-3 ${

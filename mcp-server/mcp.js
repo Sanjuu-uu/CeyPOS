@@ -1,31 +1,118 @@
-import OpenAI from 'openai';
+import { GoogleGenerativeAI } from '@google/generative-ai';
+import axios from 'axios';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { randomUUID } from 'crypto';
 import sqlite3 from 'sqlite3';
 import dotenv from 'dotenv';
-import { dbExists, dbPathForShop } from './db-path.js';
-dotenv.config();
+import {
+  shopDatabaseExists,
+  getShopDatabasePath,
+  sanitizeShopIdentifier,
+} from './shop-database-paths.js';
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+const envCandidates = [
+  path.resolve(process.cwd(), '.env'),
+  path.resolve(__dirname, '.env'),
+  path.resolve(__dirname, '../.env'),
+];
+
+for (const envPath of envCandidates) {
+  if (fs.existsSync(envPath)) {
+    dotenv.config({ path: envPath });
+  }
+}
+
+const DEFAULT_GEMINI_MODEL = (process.env.GEMINI_MODEL || 'gemini-2.5-flash').trim();
+const GEMINI_API_KEY_ENV_PRIORITY = [
+  'MCP_GEMINI_API_KEY',
+  'GEMINI_API_KEY',
+  'GOOGLE_GENERATIVE_AI_API_KEY',
+  'GOOGLE_API_KEY',
+];
+
+const VIS_REQUEST_SERVER_RAW = (process.env.VIS_REQUEST_SERVER ?? '').trim();
+const VIS_REQUEST_SERVER = VIS_REQUEST_SERVER_RAW.endsWith('/')
+  ? VIS_REQUEST_SERVER_RAW.slice(0, -1)
+  : VIS_REQUEST_SERVER_RAW;
+const VIS_SERVICE_ID = (process.env.VIS_SERVICE_ID ?? '').trim();
+const VIS_SERVICE_PATH = (process.env.VIS_SERVICE_PATH ?? '/v1/services/{serviceId}/invoke').trim();
+const VIS_REQUEST_TIMEOUT_MS = (() => {
+  const rawTimeout = process.env.VIS_REQUEST_TIMEOUT_MS ?? process.env.VIS_TIMEOUT_MS ?? '';
+  const parsed = Number.parseInt(rawTimeout, 10);
+  if (Number.isFinite(parsed) && parsed > 0) {
+    return Math.min(parsed, 30000);
+  }
+  return 10000;
+})();
+const VIS_INCLUDE_RAW_RESPONSE = String(process.env.VIS_INCLUDE_RAW_RESPONSE ?? '').toLowerCase() === 'true';
+
+const MAX_TOOL_ITERATIONS = (() => {
+  const rawValue = Number.parseInt(process.env.MCP_GEMINI_MAX_TOOL_ITERATIONS ?? '', 10);
+  if (Number.isFinite(rawValue)) {
+    return Math.min(Math.max(rawValue, 1), 12);
+  }
+  return 6;
+})();
+
+let geminiClient;
+
+function resolveGeminiApiKey() {
+  for (const envVar of GEMINI_API_KEY_ENV_PRIORITY) {
+    const value = process.env[envVar];
+    if (typeof value === 'string' && value.trim()) {
+      return value.trim();
+    }
+  }
+  return null;
+}
+
+function getGeminiClient() {
+  if (!geminiClient) {
+    const apiKey = resolveGeminiApiKey();
+    if (!apiKey) {
+      throw new Error(`Missing Gemini API key. Set one of: ${GEMINI_API_KEY_ENV_PRIORITY.join(', ')}`);
+    }
+    geminiClient = new GoogleGenerativeAI(apiKey);
+  }
+  return geminiClient;
+}
+
+function buildGeminiModel(options = {}) {
+  const { model = DEFAULT_GEMINI_MODEL, tools = GEMINI_TOOLS } = options;
+  return getGeminiClient().getGenerativeModel({
+    model,
+    tools,
+    systemInstruction: SYSTEM_PROMPT,
+  });
+}
 
 const SYSTEM_PROMPT = `You are an AI assistant for CeyPoS, a point-of-sale system. You help users analyze their shop data.
 
-You have access to the following database tables:
-- shop_meta: shop information (shop_id, shop_name, owner_name, etc.)
-- inventory: products (item_id, name, category, price, stock, etc.)
-- customers: customer data (customer_id, name, email, total_spent, etc.)
-- transactions: sales transactions (transaction_id, total, payment_method, created_at, etc.)
-- transaction_items: items in transactions (transaction_id, item_id, quantity, etc.)
-- daily_sales: daily sales summary (date, total_sales, transactions_count, etc.)
-- inventory_forecast: stock predictions (item_id, recommended_stock, etc.)
+The complete shop schema you can query contains these tables:
+- shop_meta: shop_id, shop_name, owner_name, owner_email, phone, shop_type, address, city, state, zip_code, country, business_license, tax_id, registration_number, currency, timezone, created_at
+- shop_operating_hours: shop_id, day, open, close, closed
+- shop_payment_methods: shop_id, method
+- inventory: item_id, inventory_code, barcode_id, name, category, sku, price, stock, stock_last_month, restock_suggestion, image_url, created_at, updated_at
+- customers: customer_id, name, email, phone, total_spent, visit_count, last_visit, points_balance, created_at
+- transactions: transaction_id, receipt_id, transaction_code, customer_id, subtotal, discount, tax, total, payment_method, created_at
+- transaction_items: id, transaction_id, item_id, inventory_code, quantity, unit_price, subtotal
+- daily_sales: id, shop_id, date, total_sales, transactions_count, top_item
+- inventory_forecast: item_id, item_name, avg_daily_sales, recommended_stock, suggested_restock_date
+- business_rules_loyalty: shop_id, enabled, earn_rate, redeem_rate, min_points
+- business_rules_discounts: id, shop_id, name, type, value
+- business_rules_taxes: id, shop_id, name, rate, is_default
+- business_rules_surcharges: id, shop_id, min_amount, type, value
 
-When a user asks a question, use the available tools to query the database and provide accurate, context-aware answers.
+When a user asks what data you can access, first call the get_schema tool to refresh the live schema and base your answer on the returned table definitions so nothing is omitted.
 
-For data visualization requests, use the chart generation tools to create interactive previews. You can generate:
+For any analytical question, use the SQL tools to fetch real data before answering. Never fabricate results.
+
+For data visualization requests, prefer the chart generation tools to create interactive previews. You can generate:
 - KPI cards for metrics
 - Bar charts for comparisons
 - Line charts for trends over time
@@ -45,12 +132,12 @@ const TOOLS = [
         properties: {
           query: {
             type: 'string',
-            description: 'SQL query to execute on inventory table'
-          }
+            description: 'SQL query to execute on inventory table',
+          },
         },
-        required: ['query']
-      }
-    }
+        required: ['query'],
+      },
+    },
   },
   {
     type: 'function',
@@ -62,12 +149,12 @@ const TOOLS = [
         properties: {
           query: {
             type: 'string',
-            description: 'SQL query to execute on sales tables'
-          }
+            description: 'SQL query to execute on sales tables',
+          },
         },
-        required: ['query']
-      }
-    }
+        required: ['query'],
+      },
+    },
   },
   {
     type: 'function',
@@ -79,12 +166,12 @@ const TOOLS = [
         properties: {
           query: {
             type: 'string',
-            description: 'SQL query to execute on customers table'
-          }
+            description: 'SQL query to execute on customers table',
+          },
         },
-        required: ['query']
-      }
-    }
+        required: ['query'],
+      },
+    },
   },
   {
     type: 'function',
@@ -96,12 +183,12 @@ const TOOLS = [
         properties: {
           query: {
             type: 'string',
-            description: 'SQL query to execute'
-          }
+            description: 'SQL query to execute',
+          },
         },
-        required: ['query']
-      }
-    }
+        required: ['query'],
+      },
+    },
   },
   {
     type: 'function',
@@ -113,32 +200,32 @@ const TOOLS = [
         properties: {
           title: {
             type: 'string',
-            description: 'The title of the KPI card'
+            description: 'The title of the KPI card',
           },
           value: {
             type: 'string',
-            description: 'The main value to display'
+            description: 'The main value to display',
           },
           subtitle: {
             type: 'string',
-            description: 'Optional subtitle or additional context'
-          }
+            description: 'Optional subtitle or additional context',
+          },
         },
-        required: ['title', 'value']
-      }
-    }
+        required: ['title', 'value'],
+      },
+    },
   },
   {
     type: 'function',
     function: {
       name: 'generate_bar_chart',
-      description: 'Generate a bar chart preview with data points',
+      description: 'Generate a bar chart by requesting the external AntV visualization service',
       parameters: {
         type: 'object',
         properties: {
           title: {
             type: 'string',
-            description: 'Chart title'
+            description: 'Chart title',
           },
           data: {
             type: 'array',
@@ -147,36 +234,36 @@ const TOOLS = [
               type: 'object',
               properties: {
                 name: { type: 'string' },
-                value: { type: 'number' }
-              }
-            }
+                value: { type: 'number' },
+              },
+            },
           },
           xAxisKey: {
             type: 'string',
             description: 'Key for x-axis (usually "name")',
-            default: 'name'
+            default: 'name',
           },
           yAxisKey: {
             type: 'string',
             description: 'Key for y-axis (usually "value")',
-            default: 'value'
-          }
+            default: 'value',
+          },
         },
-        required: ['title', 'data']
-      }
-    }
+        required: ['title', 'data'],
+      },
+    },
   },
   {
     type: 'function',
     function: {
       name: 'generate_line_chart',
-      description: 'Generate a line chart preview for trends over time',
+      description: 'Generate a line chart by requesting the external AntV visualization service',
       parameters: {
         type: 'object',
         properties: {
           title: {
             type: 'string',
-            description: 'Chart title'
+            description: 'Chart title',
           },
           data: {
             type: 'array',
@@ -185,26 +272,26 @@ const TOOLS = [
               type: 'object',
               properties: {
                 name: { type: 'string' },
-                value: { type: 'number' }
-              }
-            }
-          }
+                value: { type: 'number' },
+              },
+            },
+          },
         },
-        required: ['title', 'data']
-      }
-    }
+        required: ['title', 'data'],
+      },
+    },
   },
   {
     type: 'function',
     function: {
       name: 'generate_pie_chart',
-      description: 'Generate a pie chart preview for proportions',
+      description: 'Generate a pie chart by requesting the external AntV visualization service',
       parameters: {
         type: 'object',
         properties: {
           title: {
             type: 'string',
-            description: 'Chart title'
+            description: 'Chart title',
           },
           data: {
             type: 'array',
@@ -213,19 +300,30 @@ const TOOLS = [
               type: 'object',
               properties: {
                 name: { type: 'string' },
-                value: { type: 'number' }
-              }
-            }
-          }
+                value: { type: 'number' },
+              },
+            },
+          },
         },
-        required: ['title', 'data']
-      }
-    }
-  }
+        required: ['title', 'data'],
+      },
+    },
+  },
 ];
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const GEMINI_TOOLS = [
+  {
+    functionDeclarations: TOOLS.map((tool) => {
+      const fn = tool.function;
+      return {
+        name: fn.name,
+        description: fn.description,
+        parameters: fn.parameters,
+      };
+    }),
+  },
+];
+
 const LOG_DIR = path.join(__dirname, 'logs');
 const MAX_LOG_STRING_LENGTH = 1000;
 const MAX_LOG_ARRAY_ITEMS = 20;
@@ -294,6 +392,201 @@ function safeForLog(value, depth = 0) {
   }
 }
 
+const CHART_TOOL_TYPE_MAP = {
+  generate_bar_chart: 'bar',
+  generate_line_chart: 'line',
+  generate_pie_chart: 'pie',
+};
+
+const SQL_TOOL_NAMES = new Set([
+  'query_inventory',
+  'query_sales',
+  'query_customers',
+  'query_general',
+]);
+
+function hasVisualizationConfiguration() {
+  if (!VIS_REQUEST_SERVER) {
+    return false;
+  }
+  if (VIS_SERVICE_PATH.includes('{serviceId}')) {
+    return Boolean(VIS_SERVICE_ID);
+  }
+  return true;
+}
+
+function buildVisualizationEndpoint() {
+  if (!VIS_REQUEST_SERVER) {
+    return null;
+  }
+
+  let pathTemplate = VIS_SERVICE_PATH || '/v1/services/{serviceId}/invoke';
+  if (pathTemplate.includes('{serviceId}')) {
+    if (!VIS_SERVICE_ID) {
+      return null;
+    }
+    pathTemplate = pathTemplate.replace('{serviceId}', encodeURIComponent(VIS_SERVICE_ID));
+  }
+
+  if (pathTemplate && !pathTemplate.startsWith('/')) {
+    pathTemplate = `/${pathTemplate}`;
+  }
+
+  return `${VIS_REQUEST_SERVER}${pathTemplate}`;
+}
+
+function sanitizeChartData(data) {
+  if (!Array.isArray(data)) {
+    return [];
+  }
+  return data
+    .filter((item) => item && typeof item === 'object')
+    .map((item) => ({ ...item }));
+}
+
+function extractVisualizationAsset(responseData) {
+  if (!responseData) {
+    return {
+      assetUrl: null,
+      requestId: null,
+      expiresAt: null,
+    };
+  }
+
+  if (typeof responseData === 'string') {
+    return {
+      assetUrl: responseData,
+      requestId: null,
+      expiresAt: null,
+    };
+  }
+
+  const assetUrl =
+    responseData.assetUrl ??
+    responseData.url ??
+    responseData.imageUrl ??
+    responseData.chartUrl ??
+    responseData.result?.assetUrl ??
+    responseData.result?.url ??
+    responseData.result?.imageUrl ??
+    null;
+
+  const requestId = responseData.requestId ?? responseData.result?.requestId ?? null;
+  const expiresAt = responseData.expiresAt ?? responseData.result?.expiresAt ?? null;
+
+  return {
+    assetUrl,
+    requestId,
+    expiresAt,
+  };
+}
+
+function buildVisualizationPayload(toolName, args, chartType, title) {
+  return {
+    serviceId: VIS_SERVICE_ID || undefined,
+    chartType,
+    title,
+    data: sanitizeChartData(args?.data),
+    encoding: {
+      x: args?.xAxisKey ?? 'name',
+      y: args?.yAxisKey ?? 'value',
+    },
+    meta: {
+      source: 'ceypos-mcp',
+      toolName,
+      generatedAt: new Date().toISOString(),
+    },
+    options: {
+      subtitle: args?.subtitle ?? null,
+      description: args?.description ?? null,
+    },
+  };
+}
+
+async function requestVisualizationFromAntv(toolName, args = {}) {
+  const chartType = CHART_TOOL_TYPE_MAP[toolName] ?? (toolName.replace(/^generate_/, '') || 'chart');
+  const title = typeof args?.title === 'string' && args.title.trim() ? args.title.trim() : 'Untitled chart';
+
+  if (!hasVisualizationConfiguration()) {
+    return {
+      type: 'visualization_error',
+      provider: 'antv',
+      chartType,
+      title,
+      status: 'not_configured',
+      message: 'Visualization service not configured. Set VIS_REQUEST_SERVER and VIS_SERVICE_ID environment variables.',
+      modelSummary: `Unable to generate a ${chartType} chart titled "${title}" because the AntV visualization service is not configured.`,
+    };
+  }
+
+  const endpoint = buildVisualizationEndpoint();
+  if (!endpoint) {
+    return {
+      type: 'visualization_error',
+      provider: 'antv',
+      chartType,
+      title,
+      status: 'not_configured',
+      message: 'Visualization service endpoint could not be resolved. Check VIS_SERVICE_PATH configuration.',
+      modelSummary: `Unable to generate a ${chartType} chart titled "${title}" because the visualization endpoint could not be resolved.`,
+    };
+  }
+
+  const payload = buildVisualizationPayload(toolName, args, chartType, title);
+
+  try {
+    const { data: responseData } = await axios.post(endpoint, payload, {
+      timeout: VIS_REQUEST_TIMEOUT_MS,
+      headers: { 'Content-Type': 'application/json' },
+    });
+
+    const { assetUrl, requestId, expiresAt } = extractVisualizationAsset(responseData);
+    const result = {
+      type: 'remote_chart',
+      provider: 'antv',
+      chartType,
+      title,
+      status: assetUrl ? 'ready' : 'requested',
+      assetUrl: assetUrl ?? null,
+      requestId: requestId ?? null,
+      expiresAt: expiresAt ?? null,
+    };
+
+    if (VIS_INCLUDE_RAW_RESPONSE) {
+      result.debug = safeForLog(responseData);
+    }
+
+    result.modelSummary = assetUrl
+      ? `AntV visualization service generated a ${chartType} chart titled "${title}".`
+      : `AntV visualization service accepted the ${chartType} chart request titled "${title}"; awaiting the hosted asset.`;
+
+    return result;
+  } catch (error) {
+    const message =
+      error?.response?.data?.message ||
+      error?.response?.data?.error ||
+      error?.message ||
+      'Visualization service error';
+
+    const result = {
+      type: 'visualization_error',
+      provider: 'antv',
+      chartType,
+      title,
+      status: 'failed',
+      message,
+    };
+
+    if (VIS_INCLUDE_RAW_RESPONSE) {
+      result.debug = safeForLog(error?.response?.data ?? null);
+    }
+
+    result.modelSummary = `AntV visualization service failed to generate a ${chartType} chart titled "${title}": ${message}.`;
+
+    return result;
+  }
+}
+
 function createSessionLog(question, rawShopId, normalizedShopId) {
   return {
     id: randomUUID(),
@@ -303,7 +596,11 @@ function createSessionLog(question, rawShopId, normalizedShopId) {
     question,
     toolCalls: [],
     errors: [],
-    openAi: {},
+    model: {
+      provider: null,
+      name: null,
+      interactions: [],
+    },
     finalResponse: null,
     durationMs: null,
   };
@@ -335,12 +632,19 @@ function writeSessionLog(session) {
 
 const normalizeShopId = (shopId) => {
   if (!shopId) return '';
-  return String(shopId).replace(/^shop_/, '').replace(/\.db$/i, '').trim();
+  const core = String(shopId).replace(/^shop_/, '').replace(/\.db$/i, '').trim();
+  return sanitizeShopIdentifier(core);
 };
 
 function runSqlQuery(shopId, query) {
   return new Promise((resolve, reject) => {
-    const dbPath = dbPathForShop(shopId);
+    const normalizedShopId = normalizeShopId(shopId);
+    if (!normalizedShopId || !shopDatabaseExists(normalizedShopId)) {
+      reject(new Error(`Shop database not found for ${shopId}`));
+      return;
+    }
+
+    const dbPath = getShopDatabasePath(normalizedShopId);
     const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READONLY, (openErr) => {
       if (openErr) {
         reject(openErr);
@@ -357,6 +661,26 @@ function runSqlQuery(shopId, query) {
       });
     });
   });
+}
+
+function formatToolResultForModelPayload(result) {
+  if (Array.isArray(result)) {
+    return { rows: result };
+  }
+
+  if (result && typeof result === 'object') {
+    if (typeof result.modelSummary === 'string') {
+      const { modelSummary, ...data } = result;
+      const payload = { summary: modelSummary };
+      if (Object.keys(data).length > 0) {
+        payload.data = data;
+      }
+      return payload;
+    }
+    return result;
+  }
+
+  return { result: result ?? null };
 }
 
 async function processUserQuestion(question, shopId) {
@@ -376,7 +700,7 @@ async function processUserQuestion(question, shopId) {
     return responsePayload;
   }
 
-  if (!dbExists(effectiveShopId)) {
+  if (!shopDatabaseExists(effectiveShopId)) {
     const message = `Shop database not found for ${effectiveShopId}`;
     const error = new Error(message);
     recordError(session, 'validation', error);
@@ -391,112 +715,170 @@ async function processUserQuestion(question, shopId) {
   }
 
   try {
-    const messages = [
-      { role: 'system', content: SYSTEM_PROMPT },
-      { role: 'user', content: question }
+    const model = buildGeminiModel();
+    const contents = [
+      {
+        role: 'user',
+        parts: [{ text: question }],
+      },
     ];
 
-    const initialCompletion = await openai.chat.completions.create({
-      model: 'gpt-4',
-      messages,
-      tools: TOOLS,
-      tool_choice: 'auto'
-    });
-
-    session.openAi.initialCompletion = safeForLog({
-      id: initialCompletion.id,
-      model: initialCompletion.model,
-      usage: initialCompletion.usage ?? null,
-      finishReason: initialCompletion.choices?.[0]?.finish_reason ?? null,
-    });
-
-    const assistantMessage = initialCompletion.choices[0].message;
     const visualizations = [];
+    let answerText = '';
 
-    if (assistantMessage.tool_calls?.length) {
-      messages.push(assistantMessage);
+    session.model.provider = 'google-generative-ai';
+    session.model.name = session.model.name ?? DEFAULT_GEMINI_MODEL;
 
-      for (const toolCall of assistantMessage.tool_calls) {
+    for (let iteration = 0; iteration < MAX_TOOL_ITERATIONS; iteration += 1) {
+      let generation;
+
+      try {
+        generation = await model.generateContent({ contents });
+      } catch (generationError) {
+        recordError(session, 'generation', generationError);
+        throw generationError;
+      }
+
+      const { response } = generation;
+      if (response?.model) {
+        session.model.name = response.model;
+      }
+
+      const candidate = response?.candidates?.[0];
+      const stageLabel = iteration === 0 ? 'initial' : `loop_${iteration}`;
+
+      session.model.interactions.push({
+        stage: stageLabel,
+        timestamp: new Date().toISOString(),
+        data: safeForLog({
+          finishReason: candidate?.finishReason ?? null,
+          safetyRatings: candidate?.safetyRatings ?? null,
+          usage: response?.usageMetadata ?? null,
+        }),
+      });
+
+      if (!candidate?.content?.parts?.length) {
+        answerText = 'No response generated';
+        break;
+      }
+
+      const candidateParts = candidate.content.parts;
+      const functionCalls = candidateParts
+        .map((part) => part.functionCall)
+        .filter(Boolean);
+
+      if (functionCalls.length === 0) {
+        const text = candidateParts
+          .map((part) => (typeof part.text === 'string' ? part.text : ''))
+          .join('')
+          .trim();
+        answerText = text || 'No response generated';
+        contents.push(candidate.content);
+        break;
+      }
+
+      contents.push(candidate.content);
+
+      for (let index = 0; index < functionCalls.length; index += 1) {
+        const call = functionCalls[index];
         const toolStart = Date.now();
+        const toolName = call.name ?? 'unknown';
+        const toolCallId = call.id || `${toolName || 'tool'}-${iteration}-${index}`;
+
         const toolRecord = {
-          id: toolCall.id,
-          tool: toolCall.function?.name ?? 'unknown',
-          rawArguments: toolCall.function?.arguments ?? null,
+          id: toolCallId,
+          tool: toolName,
+          rawArguments: call.args ?? null,
           startedAt: new Date().toISOString(),
         };
 
-        let parsedArgs;
+        const rawArgs = call?.args ?? call?.arguments ?? {};
+        let parsedArgs = {};
 
         try {
-          parsedArgs = JSON.parse(toolCall.function.arguments || '{}');
-          toolRecord.arguments = safeForLog(parsedArgs);
+          if (typeof rawArgs === 'string') {
+            parsedArgs = rawArgs ? JSON.parse(rawArgs) : {};
+          } else if (rawArgs && typeof rawArgs === 'object') {
+            parsedArgs = rawArgs;
+          }
         } catch (parseError) {
-          recordError(session, `tool:${toolRecord.tool}`, parseError);
-          const parseFailure = {
-            error: `Failed to parse tool arguments: ${parseError.message}`,
-          };
-          toolRecord.result = safeForLog(parseFailure);
+          recordError(session, `tool:${toolName}`, parseError);
+          const failure = { error: `Failed to parse tool arguments: ${parseError.message}` };
+          toolRecord.arguments = safeForLog(rawArgs);
+          toolRecord.result = safeForLog(failure);
           toolRecord.durationMs = Date.now() - toolStart;
           session.toolCalls.push(toolRecord);
-          messages.push({
-            role: 'tool',
-            content: JSON.stringify(parseFailure),
-            tool_call_id: toolCall.id,
+          contents.push({
+            role: 'function',
+            parts: [
+              {
+                functionResponse: {
+                  name: toolName,
+                  response: failure,
+                },
+              },
+            ],
           });
           continue;
         }
 
+        toolRecord.arguments = safeForLog(parsedArgs);
+
         try {
-          const result = await executeTool(toolRecord.tool, parsedArgs, effectiveShopId);
+          const result = await executeTool(toolName, parsedArgs, effectiveShopId);
           toolRecord.result = safeForLog(result);
 
           if (result && typeof result === 'object' && result.type) {
-            visualizations.push(result);
+            const { modelSummary, ...visualPayload } = result;
+            visualizations.push(modelSummary ? visualPayload : result);
           }
 
-          messages.push({
-            role: 'tool',
-            content: JSON.stringify(result),
-            tool_call_id: toolCall.id,
+          contents.push({
+            role: 'function',
+            parts: [
+              {
+                functionResponse: {
+                  name: toolName,
+                  response: formatToolResultForModelPayload(result),
+                },
+              },
+            ],
           });
         } catch (toolError) {
-          recordError(session, `tool:${toolRecord.tool}`, toolError);
+          recordError(session, `tool:${toolName}`, toolError);
           const failure = { error: `Failed to execute tool: ${toolError.message}` };
           toolRecord.result = safeForLog(failure);
-          messages.push({
-            role: 'tool',
-            content: JSON.stringify(failure),
-            tool_call_id: toolCall.id,
+          contents.push({
+            role: 'function',
+            parts: [
+              {
+                functionResponse: {
+                  name: toolName,
+                  response: failure,
+                },
+              },
+            ],
           });
         } finally {
           toolRecord.durationMs = Date.now() - toolStart;
           session.toolCalls.push(toolRecord);
         }
       }
-
-      const finalCompletion = await openai.chat.completions.create({
-        model: 'gpt-4',
-        messages,
-      });
-
-      session.openAi.finalCompletion = safeForLog({
-        id: finalCompletion.id,
-        model: finalCompletion.model,
-        usage: finalCompletion.usage ?? null,
-        finishReason: finalCompletion.choices?.[0]?.finish_reason ?? null,
-      });
-
-      const answer = finalCompletion.choices[0].message.content || 'No response generated';
-      responsePayload = {
-        answer,
-        visualizations,
-      };
-    } else {
-      responsePayload = {
-        answer: assistantMessage.content || 'No response generated',
-        visualizations: [],
-      };
     }
+
+    if (!answerText) {
+      answerText = 'Tool iterations exhausted without final response.';
+      recordError(
+        session,
+        'generation',
+        new Error('Reached maximum tool iterations without obtaining final response'),
+      );
+    }
+
+    responsePayload = {
+      answer: answerText,
+      visualizations,
+    };
   } catch (error) {
     console.error('Error processing question:', error);
     recordError(session, 'processing', error);
@@ -518,54 +900,33 @@ async function executeTool(name, args, shopId) {
 
   // Handle chart generation tools
   if (name === 'generate_kpi_card') {
+    const title = typeof args?.title === 'string' ? args.title : 'KPI';
+    const value = typeof args?.value === 'string' ? args.value : String(args?.value ?? '');
+    const subtitle = typeof args?.subtitle === 'string' && args.subtitle.trim() ? args.subtitle : null;
     return {
       type: 'kpi_card',
-      title: args.title,
-      value: args.value,
-      subtitle: args.subtitle
+      title,
+      value,
+      subtitle,
+      modelSummary: `Prepared KPI card titled "${title}" with value ${value}.`,
     };
   }
 
-  if (name === 'generate_bar_chart') {
-    return {
-      type: 'bar_chart',
-      title: args.title,
-      data: args.data,
-      xAxisKey: args.xAxisKey || 'name',
-      yAxisKey: args.yAxisKey || 'value'
-    };
-  }
-
-  if (name === 'generate_line_chart') {
-    return {
-      type: 'line_chart',
-      title: args.title,
-      data: args.data
-    };
-  }
-
-  if (name === 'generate_pie_chart') {
-    return {
-      type: 'pie_chart',
-      title: args.title,
-      data: args.data
-    };
+  if (CHART_TOOL_TYPE_MAP[name]) {
+    return requestVisualizationFromAntv(name, args);
   }
 
   if (!effectiveShopId) {
     return { error: 'Missing shop identifier for analytics query' };
   }
 
-  const sqlTools = new Set([
-    'query_inventory',
-    'query_sales',
-    'query_customers',
-    'query_general',
-  ]);
-
-  if (sqlTools.has(name)) {
+  if (SQL_TOOL_NAMES.has(name)) {
     if (!args || typeof args.query !== 'string' || !args.query.trim()) {
       return { error: 'SQL query is required for this tool' };
+    }
+
+    if (!shopDatabaseExists(effectiveShopId)) {
+      return { error: `Shop database not found for ${effectiveShopId}` };
     }
 
     try {
@@ -579,4 +940,10 @@ async function executeTool(name, args, shopId) {
   return { error: `Unknown tool: ${name}` };
 }
 
-export { processUserQuestion };
+export {
+  processUserQuestion,
+  buildGeminiModel,
+  GEMINI_TOOLS,
+  MAX_TOOL_ITERATIONS,
+  DEFAULT_GEMINI_MODEL,
+};

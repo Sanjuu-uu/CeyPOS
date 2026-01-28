@@ -1,27 +1,26 @@
 import React from 'react';
 import { CheckCircleIcon, AlertTriangleIcon, XCircleIcon, FileTextIcon } from 'lucide-react';
 
-// Removed unused ValidationData interface
-
-interface DataValidationProps {
-  data: {
-    total: number;
-    successful: number;
-    errors: number;
-    warnings: number;
-    backendError?: string | null;
-    validationIssues?: ValidationItem[];
-  };
-  onValidationComplete?: () => void;
-}
-
-
-interface ValidationItem {
+export interface ValidationItem {
   row: number;
   field: string;
   value: string;
   issue: string;
   type: 'error' | 'warning';
+}
+
+export interface ValidationSummary {
+  total: number;
+  successful: number;
+  errors: number;
+  warnings: number;
+  backendError?: string | null;
+  validationIssues?: ValidationItem[];
+}
+
+interface DataValidationProps {
+  data: ValidationSummary;
+  onValidationComplete?: () => void;
 }
 
 export const DataValidation: React.FC<DataValidationProps> = ({ data, onValidationComplete }) => {

@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { openDb, dbExists } from "../utils/db.js";
+import { openShopDatabase, shopDatabaseExists } from "../utils/shop-database.js";
 import { adjustStockLevels, normalizeProduct } from "../services/inventory-service.js";
 import { publishChange } from "../realtime/change-bus.js";
 import crypto from "crypto";
@@ -49,7 +49,7 @@ router.post("/complete", (req, res) => {
 
   const { shopId, customer = {}, items = [], paymentMethod = "cash", createdAt } = req.body;
 
-  if (!dbExists(shopId)) {
+  if (!shopDatabaseExists(shopId)) {
     return res.status(404).json({ ok: false, error: "shop_not_configured" });
   }
 
@@ -100,7 +100,7 @@ router.post("/complete", (req, res) => {
 
   let db;
   try {
-    db = openDb(shopId);
+    db = openShopDatabase(shopId);
     configureConnection(db);
   } catch (err) {
     console.error("complete sale failed: db error", err);

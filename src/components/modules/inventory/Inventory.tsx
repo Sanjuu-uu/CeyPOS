@@ -8,6 +8,25 @@ import { useApp } from '../../../context/AppContext';
 import { Product } from '../../../types';
 import { ImportWizard } from './import-wizard/ImportWizard';
 
+type InventoryChangeEvent = {
+  shopId?: string;
+  items?: Product[];
+};
+
+const isInventoryChangeEvent = (payload: unknown): payload is InventoryChangeEvent => {
+  if (!payload || typeof payload !== 'object') {
+    return false;
+  }
+  const candidate = payload as Record<string, unknown>;
+  const shopId = candidate.shopId;
+  const items = candidate.items;
+  const validShopId = shopId === undefined || typeof shopId === 'string';
+  const validItems =
+    items === undefined ||
+    (Array.isArray(items) && items.every((item) => typeof item === 'object' && item !== null));
+  return validShopId && validItems;
+};
+
 export const Inventory: React.FC = () => {
   const { currentShop } = useApp();
   const [searchTerm, setSearchTerm] = useState('');
@@ -41,9 +60,14 @@ export const Inventory: React.FC = () => {
     const shopProducts = db.products.getByShopId(currentShop.id);
     setProducts(shopProducts);
 
-    const handler = (payload: any) => {
-      if (!payload?.shopId || payload.shopId !== currentShop.id) return;
-      setProducts(payload.items || []);
+    const handler = (payload: unknown) => {
+      if (!isInventoryChangeEvent(payload)) {
+        return;
+      }
+      if (!payload.shopId || payload.shopId !== currentShop.id) {
+        return;
+      }
+      setProducts(payload.items ?? []);
     };
 
     const unsubscribe = db.on('inventoryUpdated', handler);

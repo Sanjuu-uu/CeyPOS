@@ -1,5 +1,5 @@
 import React, { useCallback, useState } from 'react';
-import { useDropzone } from 'react-dropzone';
+import { useDropzone, type FileRejection } from 'react-dropzone';
 import { UploadIcon, FileIcon, CheckCircleIcon, XCircleIcon } from 'lucide-react';
 
 interface FileUploadProps {
@@ -16,7 +16,7 @@ export const FileUpload: React.FC<FileUploadProps> = ({
   const [dragActive, setDragActive] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
 
-  const onDrop = useCallback((acceptedFiles: File[], rejectedFiles: any[]) => {
+  const onDrop = useCallback((acceptedFiles: File[], rejectedFiles: FileRejection[]) => {
     setUploadError(null);
     if (rejectedFiles.length > 0) {
       setUploadError('Please upload an Excel (.xlsx) file only');
