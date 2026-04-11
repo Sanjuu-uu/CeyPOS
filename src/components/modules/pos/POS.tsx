@@ -1,16 +1,22 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { ProductGrid } from "./ProductGrid";
 import { ShoppingCart } from "./ShoppingCart";
-import { Search, X, ScanBarcode, AlertCircle } from "lucide-react";
+import {
+  Search,
+  X,
+  ScanBarcode,
+  AlertCircle,
+  MonitorPlay,
+  Wifi,
+  WifiOff,
+  Printer,
+  Keyboard,
+} from "lucide-react";
 import { db } from "../../../lib/db";
 import { useApp } from "../../../context/AppContext";
 import { Product, CartItem } from "../../../types";
 
-type InventoryUpdatedPayload = {
-  shopId?: string;
-  items?: Product[];
-};
-
+type InventoryUpdatedPayload = { shopId?: string; items?: Product[] };
 const isInventoryUpdatedPayload = (
   payload: unknown,
 ): payload is InventoryUpdatedPayload => {
@@ -26,7 +32,7 @@ const isInventoryUpdatedPayload = (
   );
 };
 
-// --- 1. ENTERPRISE BARCODE HOOK ---
+// --- ENTERPRISE BARCODE HOOK (BATCHING UPGRADE) ---
 const useBarcodeScanner = (
   products: Product[],
   cart: CartItem[],
@@ -34,11 +40,21 @@ const useBarcodeScanner = (
   updateCartItemQuantity: (id: string, qty: number) => void,
   searchInputRef: React.RefObject<HTMLInputElement>,
   setSearchTerm: React.Dispatch<React.SetStateAction<string>>,
-  setScanError: React.Dispatch<React.SetStateAction<string | null>>, // <-- FIX: Accept error state setter
+  setScanError: React.Dispatch<React.SetStateAction<string | null>>,
 ) => {
-  const lastScanRef = useRef<number>(0);
+  // BATCHING QUEUE: Store rapid scans here instead of instantly triggering state updates
+  const scanQueueRef = useRef<string[]>([]);
 
-  // Native Web Audio Beeps
+  // Keep refs of latest state to avoid stale closures in the setInterval
+  const productsRef = useRef(products);
+  const cartRef = useRef(cart);
+  useEffect(() => {
+    productsRef.current = products;
+  }, [products]);
+  useEffect(() => {
+    cartRef.current = cart;
+  }, [cart]);
+
   const playBeep = (type: "success" | "error" = "success") => {
     try {
       const ctx = new (
@@ -48,7 +64,6 @@ const useBarcodeScanner = (
       const gainNode = ctx.createGain();
       osc.connect(gainNode);
       gainNode.connect(ctx.destination);
-
       if (type === "success") {
         osc.type = "sine";
         osc.frequency.setValueAtTime(800, ctx.currentTime);
@@ -68,35 +83,54 @@ const useBarcodeScanner = (
     }
   };
 
-  const handleScan = (scannedBarcode: string) => {
-    if (!scannedBarcode || scannedBarcode.length < 8) return false;
+  // Process the queue every 200ms
+  useEffect(() => {
+    const processQueue = setInterval(() => {
+      if (scanQueueRef.current.length > 0) {
+        const batch = [...scanQueueRef.current];
+        scanQueueRef.current = [];
 
-    const now = Date.now();
-    if (now - lastScanRef.current < 300) return false; // Debounce
+        let successCount = 0;
+        let lastError = null;
 
-    const matchedProduct = products.find((p) => p.barcode === scannedBarcode);
-    if (matchedProduct) {
-      lastScanRef.current = now;
-      const existingItem = cart.find((item) => item.id === matchedProduct.id);
-      if (existingItem) {
-        updateCartItemQuantity(matchedProduct.id, existingItem.quantity + 1);
-      } else {
-        addToCart({ ...matchedProduct, quantity: 1 });
+        batch.forEach((barcode) => {
+          const matchedProduct = productsRef.current.find(
+            (p) => p.barcode === barcode,
+          );
+          if (matchedProduct) {
+            const existingItem = cartRef.current.find(
+              (item) => item.id === matchedProduct.id,
+            );
+            if (existingItem) {
+              updateCartItemQuantity(
+                matchedProduct.id,
+                existingItem.quantity + 1,
+              );
+            } else {
+              addToCart({ ...matchedProduct, quantity: 1 });
+            }
+            successCount++;
+          } else {
+            lastError = barcode;
+          }
+        });
+
+        if (successCount > 0) playBeep("success");
+        if (lastError) {
+          playBeep("error");
+          setScanError(`Barcode not found: ${lastError}`);
+          setTimeout(() => setScanError(null), 3000);
+        }
       }
-      playBeep("success");
-      return true;
-    }
+    }, 200);
 
-    // UI Error Handling (Replaces Alert)
-    playBeep("error");
-    setScanError(`Barcode not found: ${scannedBarcode}`);
+    return () => clearInterval(processQueue);
+  }, [addToCart, updateCartItemQuantity, setScanError]);
 
-    // Auto-clear popup after 3 seconds
-    setTimeout(() => {
-      setScanError(null);
-    }, 3000);
-
-    return false;
+  const pushToQueue = (scannedBarcode: string) => {
+    if (!scannedBarcode || scannedBarcode.length < 8) return false;
+    scanQueueRef.current.push(scannedBarcode);
+    return true;
   };
 
   useEffect(() => {
@@ -107,44 +141,30 @@ const useBarcodeScanner = (
       if (
         document.activeElement?.tagName === "INPUT" &&
         document.activeElement !== searchInputRef.current
-      ) {
+      )
         return;
-      }
 
       const currentTime = Date.now();
-      if (currentTime - lastKeyTime > 100) {
-        barcodeBuffer = "";
-      }
+      if (currentTime - lastKeyTime > 100) barcodeBuffer = "";
 
       if (e.key === "Enter") {
         if (barcodeBuffer.length >= 8) {
-          const added = handleScan(barcodeBuffer.trim());
-          if (added) {
-            setSearchTerm("");
-          }
+          pushToQueue(barcodeBuffer.trim());
+          setSearchTerm("");
           e.preventDefault();
         }
         barcodeBuffer = "";
         return;
       }
-
       if (e.key.length === 1) barcodeBuffer += e.key;
       lastKeyTime = currentTime;
     };
 
     window.addEventListener("keydown", handleGlobalKeyDown);
     return () => window.removeEventListener("keydown", handleGlobalKeyDown);
-  }, [
-    products,
-    cart,
-    addToCart,
-    updateCartItemQuantity,
-    searchInputRef,
-    setSearchTerm,
-    setScanError,
-  ]);
+  }, [searchInputRef, setSearchTerm]);
 
-  return { handleScan };
+  return { pushToQueue };
 };
 
 // --- MAIN POS COMPONENT ---
@@ -155,11 +175,12 @@ export const POS: React.FC = () => {
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [products, setProducts] = useState<Product[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-
-  // Custom Error Popup State
   const [scanError, setScanError] = useState<string | null>(null);
 
-  const { handleScan } = useBarcodeScanner(
+  // Hardware Status State
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
+
+  const { pushToQueue } = useBarcodeScanner(
     products,
     cart,
     addToCart,
@@ -169,20 +190,29 @@ export const POS: React.FC = () => {
     setScanError,
   );
 
-  // Focus Recovery
+  // Network & Focus Listeners
   useEffect(() => {
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+
     searchInputRef.current?.focus();
     const handleFocusRecovery = () => {
       if (
         !["INPUT", "TEXTAREA", "SELECT"].includes(
           document.activeElement?.tagName || "",
         )
-      ) {
+      )
         searchInputRef.current?.focus();
-      }
     };
     window.addEventListener("click", handleFocusRecovery);
-    return () => window.removeEventListener("click", handleFocusRecovery);
+
+    return () => {
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
+      window.removeEventListener("click", handleFocusRecovery);
+    };
   }, []);
 
   // Sync with DB
@@ -214,7 +244,6 @@ export const POS: React.FC = () => {
     () => [...new Set(products.map((p) => p.category))].sort(),
     [products],
   );
-
   const filteredProducts = useMemo(() => {
     return products.filter((product) => {
       const matchesSearch =
@@ -227,103 +256,133 @@ export const POS: React.FC = () => {
     });
   }, [products, searchTerm, selectedCategory]);
 
+  // Hardware Simulation Test Function
+  const simulateScan = () => {
+    if (products.length > 0) {
+      const randomProduct =
+        products[Math.floor(Math.random() * products.length)];
+      pushToQueue(randomProduct.barcode);
+    } else {
+      pushToQueue("12345678");
+    }
+  };
+
   return (
-    <div className="flex flex-col md:flex-row h-[calc(100vh-80px)] gap-4 pb-2 relative">
-      {/* ERROR TOAST NOTIFICATION */}
-      {scanError && (
-        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded-xl shadow-lg flex items-center gap-3 animate-in slide-in-from-top-4 fade-in duration-300">
-          <div className="bg-red-100 p-2 rounded-full">
-            <AlertCircle size={20} className="text-red-600" />
-          </div>
-          <div>
-            <p className="font-bold text-sm text-red-900">Scan Failed</p>
-            <p className="text-xs font-medium text-red-700">{scanError}</p>
-          </div>
-          <button
-            onClick={() => setScanError(null)}
-            className="text-red-400 hover:text-red-700 ml-4 p-1 rounded-md hover:bg-red-100 transition-colors"
+    <div className="flex flex-col h-[calc(100vh-80px)]">
+      {/* HARDWARE STATUS & TESTING LAYER */}
+      <div className="bg-gray-900 text-xs text-gray-300 px-4 py-1.5 flex justify-between items-center rounded-t-xl mx-0 mb-2 shadow-inner">
+        <div className="flex items-center gap-6">
+          <span
+            className={`flex items-center gap-1.5 ${isOnline ? "text-green-400" : "text-red-400"}`}
           >
-            <X size={16} />
-          </button>
+            {isOnline ? <Wifi size={14} /> : <WifiOff size={14} />}
+            {isOnline ? "Online (Real-time Sync)" : "Offline Mode (Local DB)"}
+          </span>
+          <span className="flex items-center gap-1.5 text-blue-400">
+            <Keyboard size={14} /> Scanner Active
+          </span>
+          <span className="flex items-center gap-1.5 text-yellow-400">
+            <Printer size={14} /> Printer Ready
+          </span>
         </div>
-      )}
-
-      <div className="flex-1 flex flex-col min-w-0 bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-        <div className="p-4 border-b border-gray-100 space-y-4">
-          <div className="relative">
-            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400">
-              <Search size={20} />
-            </div>
-            <input
-              ref={searchInputRef}
-              type="text"
-              className="w-full h-12 pl-10 pr-10 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#ecff76] focus:border-[#ecff76] text-base transition-all"
-              placeholder="Search by name or scan barcode..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && searchTerm) {
-                  if (handleScan(searchTerm.trim())) setSearchTerm("");
-                }
-              }}
-              autoFocus
-            />
-            {searchTerm && (
-              <button
-                onClick={() => {
-                  setSearchTerm("");
-                  searchInputRef.current?.focus();
-                }}
-                className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600"
-              >
-                <X size={18} />
-              </button>
-            )}
-            <div className="absolute inset-y-0 right-10 flex items-center pointer-events-none text-gray-300">
-              <ScanBarcode size={20} />
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1">
-            <button
-              onClick={() => setSelectedCategory(null)}
-              className={`flex-shrink-0 px-4 py-2 rounded-full text-sm font-medium transition-all ${
-                selectedCategory === null
-                  ? "bg-[#ecff76] text-gray-900 shadow-sm border border-[#dcefa8]"
-                  : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-              }`}
-            >
-              All Items
-            </button>
-            {categories.map((category) => (
-              <button
-                key={category}
-                onClick={() => setSelectedCategory(category)}
-                className={`flex-shrink-0 px-4 py-2 rounded-full text-sm font-medium transition-all ${
-                  selectedCategory === category
-                    ? "bg-[#ecff76] text-gray-900 shadow-sm border border-[#dcefa8]"
-                    : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-                }`}
-              >
-                {category}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="flex-1 overflow-y-auto p-4 bg-gray-50/50">
-          {isLoading ? (
-            <div className="flex h-full items-center justify-center">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#ecff76]"></div>
-            </div>
-          ) : (
-            <ProductGrid products={filteredProducts} />
-          )}
-        </div>
+        <button
+          onClick={simulateScan}
+          className="flex items-center gap-1 bg-gray-800 hover:bg-gray-700 text-gray-100 px-2 py-0.5 rounded border border-gray-700 transition-colors"
+        >
+          <MonitorPlay size={12} /> Simulate Scan
+        </button>
       </div>
 
-      <div className="w-full md:w-[400px] flex-shrink-0 bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden flex flex-col">
-        <ShoppingCart />
+      <div className="flex flex-col md:flex-row flex-1 gap-4 pb-2 relative">
+        {/* ERROR TOAST NOTIFICATION */}
+        {scanError && (
+          <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded-xl shadow-lg flex items-center gap-3 animate-in slide-in-from-top-4 fade-in duration-300">
+            <div className="bg-red-100 p-2 rounded-full">
+              <AlertCircle size={20} className="text-red-600" />
+            </div>
+            <div>
+              <p className="font-bold text-sm text-red-900">Scan Failed</p>
+              <p className="text-xs font-medium text-red-700">{scanError}</p>
+            </div>
+            <button
+              onClick={() => setScanError(null)}
+              className="text-red-400 hover:text-red-700 ml-4 p-1 rounded-md hover:bg-red-100 transition-colors"
+            >
+              <X size={16} />
+            </button>
+          </div>
+        )}
+
+        <div className="flex-1 flex flex-col min-w-0 bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+          <div className="p-4 border-b border-gray-100 space-y-4">
+            <div className="relative">
+              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400">
+                <Search size={20} />
+              </div>
+              <input
+                ref={searchInputRef}
+                type="text"
+                className="w-full h-12 pl-10 pr-10 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#ecff76] focus:border-[#ecff76] text-base transition-all"
+                placeholder="Search by name or scan barcode..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && searchTerm) {
+                    pushToQueue(searchTerm.trim());
+                    setSearchTerm("");
+                  }
+                }}
+                autoFocus
+              />
+              {searchTerm && (
+                <button
+                  onClick={() => {
+                    setSearchTerm("");
+                    searchInputRef.current?.focus();
+                  }}
+                  className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600"
+                >
+                  <X size={18} />
+                </button>
+              )}
+              <div className="absolute inset-y-0 right-10 flex items-center pointer-events-none text-gray-300">
+                <ScanBarcode size={20} />
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1">
+              <button
+                onClick={() => setSelectedCategory(null)}
+                className={`flex-shrink-0 px-4 py-2 rounded-full text-sm font-medium transition-all ${selectedCategory === null ? "bg-[#ecff76] text-gray-900 shadow-sm border border-[#dcefa8]" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}
+              >
+                All Items
+              </button>
+              {categories.map((category) => (
+                <button
+                  key={category}
+                  onClick={() => setSelectedCategory(category)}
+                  className={`flex-shrink-0 px-4 py-2 rounded-full text-sm font-medium transition-all ${selectedCategory === category ? "bg-[#ecff76] text-gray-900 shadow-sm border border-[#dcefa8]" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}
+                >
+                  {category}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex-1 overflow-y-auto p-4 bg-gray-50/50">
+            {isLoading ? (
+              <div className="flex h-full items-center justify-center">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#ecff76]"></div>
+              </div>
+            ) : (
+              <ProductGrid products={filteredProducts} />
+            )}
+          </div>
+        </div>
+
+        <div className="w-full md:w-[400px] flex-shrink-0 bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden flex flex-col">
+          <ShoppingCart />
+        </div>
       </div>
     </div>
   );
