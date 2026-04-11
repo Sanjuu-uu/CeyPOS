@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { ProductGrid } from "./ProductGrid";
 import { ShoppingCart } from "./ShoppingCart";
-import { Search, X, ScanBarcode } from "lucide-react";
+import { Search, X, ScanBarcode, AlertCircle } from "lucide-react";
 import { db } from "../../../lib/db";
 import { useApp } from "../../../context/AppContext";
 import { Product, CartItem } from "../../../types";
@@ -33,10 +33,12 @@ const useBarcodeScanner = (
   addToCart: (p: CartItem) => void,
   updateCartItemQuantity: (id: string, qty: number) => void,
   searchInputRef: React.RefObject<HTMLInputElement>,
+  setSearchTerm: React.Dispatch<React.SetStateAction<string>>,
+  setScanError: React.Dispatch<React.SetStateAction<string | null>>, // <-- FIX: Accept error state setter
 ) => {
   const lastScanRef = useRef<number>(0);
 
-  // Native Web Audio Beeps (No external files needed)
+  // Native Web Audio Beeps
   const playBeep = (type: "success" | "error" = "success") => {
     try {
       const ctx = new (
@@ -85,8 +87,15 @@ const useBarcodeScanner = (
       return true;
     }
 
+    // UI Error Handling (Replaces Alert)
     playBeep("error");
-    alert(`Product not found for barcode: ${scannedBarcode}`);
+    setScanError(`Barcode not found: ${scannedBarcode}`);
+
+    // Auto-clear popup after 3 seconds
+    setTimeout(() => {
+      setScanError(null);
+    }, 3000);
+
     return false;
   };
 
@@ -95,7 +104,6 @@ const useBarcodeScanner = (
     let lastKeyTime = Date.now();
 
     const handleGlobalKeyDown = (e: KeyboardEvent) => {
-      // PREVENT CONFLICTS: Ignore if user is typing in another input field
       if (
         document.activeElement?.tagName === "INPUT" &&
         document.activeElement !== searchInputRef.current
@@ -105,15 +113,15 @@ const useBarcodeScanner = (
 
       const currentTime = Date.now();
       if (currentTime - lastKeyTime > 100) {
-        // 100ms tolerance for slower scanners
         barcodeBuffer = "";
       }
 
       if (e.key === "Enter") {
         if (barcodeBuffer.length >= 8) {
           const added = handleScan(barcodeBuffer.trim());
-          if (added && searchInputRef.current)
-            searchInputRef.current.value = "";
+          if (added) {
+            setSearchTerm("");
+          }
           e.preventDefault();
         }
         barcodeBuffer = "";
@@ -126,7 +134,15 @@ const useBarcodeScanner = (
 
     window.addEventListener("keydown", handleGlobalKeyDown);
     return () => window.removeEventListener("keydown", handleGlobalKeyDown);
-  }, [products, cart, addToCart, updateCartItemQuantity, searchInputRef]);
+  }, [
+    products,
+    cart,
+    addToCart,
+    updateCartItemQuantity,
+    searchInputRef,
+    setSearchTerm,
+    setScanError,
+  ]);
 
   return { handleScan };
 };
@@ -140,16 +156,20 @@ export const POS: React.FC = () => {
   const [products, setProducts] = useState<Product[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Initialize Enterprise Barcode Scanner
+  // Custom Error Popup State
+  const [scanError, setScanError] = useState<string | null>(null);
+
   const { handleScan } = useBarcodeScanner(
     products,
     cart,
     addToCart,
     updateCartItemQuantity,
     searchInputRef,
+    setSearchTerm,
+    setScanError,
   );
 
-  // Focus Recovery (Keeps scanner active)
+  // Focus Recovery
   useEffect(() => {
     searchInputRef.current?.focus();
     const handleFocusRecovery = () => {
@@ -208,7 +228,26 @@ export const POS: React.FC = () => {
   }, [products, searchTerm, selectedCategory]);
 
   return (
-    <div className="flex flex-col md:flex-row h-[calc(100vh-80px)] gap-4 pb-2">
+    <div className="flex flex-col md:flex-row h-[calc(100vh-80px)] gap-4 pb-2 relative">
+      {/* ERROR TOAST NOTIFICATION */}
+      {scanError && (
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded-xl shadow-lg flex items-center gap-3 animate-in slide-in-from-top-4 fade-in duration-300">
+          <div className="bg-red-100 p-2 rounded-full">
+            <AlertCircle size={20} className="text-red-600" />
+          </div>
+          <div>
+            <p className="font-bold text-sm text-red-900">Scan Failed</p>
+            <p className="text-xs font-medium text-red-700">{scanError}</p>
+          </div>
+          <button
+            onClick={() => setScanError(null)}
+            className="text-red-400 hover:text-red-700 ml-4 p-1 rounded-md hover:bg-red-100 transition-colors"
+          >
+            <X size={16} />
+          </button>
+        </div>
+      )}
+
       <div className="flex-1 flex flex-col min-w-0 bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
         <div className="p-4 border-b border-gray-100 space-y-4">
           <div className="relative">
