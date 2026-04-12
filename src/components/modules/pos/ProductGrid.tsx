@@ -159,7 +159,6 @@ export const ProductGrid: React.FC<{ products: Product[] }> = ({
   const { addToCart, cart, updateCartItemQuantity } = useApp();
   const [viewMode, setViewMode] = useState<"grid" | "row">("grid");
 
-  // FASTEST O(1) LOOKUP: using Object.fromEntries instead of manual loops
   const cartMap = useMemo(
     () => Object.fromEntries(cart.map((item) => [item.id, item.quantity])),
     [cart],

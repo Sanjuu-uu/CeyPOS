@@ -32,7 +32,7 @@ const isInventoryUpdatedPayload = (
   );
 };
 
-// --- ENTERPRISE BARCODE HOOK (BATCHING UPGRADE) ---
+// --- ENTERPRISE BARCODE HOOK (EVENT-DRIVEN BATCHING & LEAK PREVENTION) ---
 const useBarcodeScanner = (
   products: Product[],
   cart: CartItem[],
@@ -42,10 +42,12 @@ const useBarcodeScanner = (
   setSearchTerm: React.Dispatch<React.SetStateAction<string>>,
   setScanError: React.Dispatch<React.SetStateAction<string | null>>,
 ) => {
-  // BATCHING QUEUE: Store rapid scans here instead of instantly triggering state updates
   const scanQueueRef = useRef<string[]>([]);
 
-  // Keep refs of latest state to avoid stale closures in the setInterval
+  // FIXED: Memory Leak Protections (Browser-safe timeout types)
+  const errorTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const batchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const productsRef = useRef(products);
   const cartRef = useRef(cart);
   useEffect(() => {
@@ -54,6 +56,14 @@ const useBarcodeScanner = (
   useEffect(() => {
     cartRef.current = cart;
   }, [cart]);
+
+  // Clean up timeouts if component unmounts
+  useEffect(() => {
+    return () => {
+      if (errorTimeoutRef.current) clearTimeout(errorTimeoutRef.current);
+      if (batchTimeoutRef.current) clearTimeout(batchTimeoutRef.current);
+    };
+  }, []);
 
   const playBeep = (type: "success" | "error" = "success") => {
     try {
@@ -83,53 +93,57 @@ const useBarcodeScanner = (
     }
   };
 
-  // Process the queue every 200ms
-  useEffect(() => {
-    const processQueue = setInterval(() => {
-      if (scanQueueRef.current.length > 0) {
-        const batch = [...scanQueueRef.current];
-        scanQueueRef.current = [];
+  // Process queue explicitly (No infinite intervals)
+  const processBatch = () => {
+    if (scanQueueRef.current.length === 0) return;
 
-        let successCount = 0;
-        let lastError = null;
+    const batch = [...scanQueueRef.current];
+    scanQueueRef.current = [];
 
-        batch.forEach((barcode) => {
-          const matchedProduct = productsRef.current.find(
-            (p) => p.barcode === barcode,
-          );
-          if (matchedProduct) {
-            const existingItem = cartRef.current.find(
-              (item) => item.id === matchedProduct.id,
-            );
-            if (existingItem) {
-              updateCartItemQuantity(
-                matchedProduct.id,
-                existingItem.quantity + 1,
-              );
-            } else {
-              addToCart({ ...matchedProduct, quantity: 1 });
-            }
-            successCount++;
-          } else {
-            lastError = barcode;
-          }
-        });
+    let successCount = 0;
+    let lastError = null;
 
-        if (successCount > 0) playBeep("success");
-        if (lastError) {
-          playBeep("error");
-          setScanError(`Barcode not found: ${lastError}`);
-          setTimeout(() => setScanError(null), 3000);
+    batch.forEach((barcode) => {
+      const matchedProduct = productsRef.current.find(
+        (p) => p.barcode === barcode,
+      );
+      if (matchedProduct) {
+        const existingItem = cartRef.current.find(
+          (item) => item.id === matchedProduct.id,
+        );
+        if (existingItem) {
+          updateCartItemQuantity(matchedProduct.id, existingItem.quantity + 1);
+        } else {
+          addToCart({ ...matchedProduct, quantity: 1 });
         }
+        successCount++;
+      } else {
+        lastError = barcode;
       }
-    }, 200);
+    });
 
-    return () => clearInterval(processQueue);
-  }, [addToCart, updateCartItemQuantity, setScanError]);
+    if (successCount > 0) playBeep("success");
+    if (lastError) {
+      playBeep("error");
+      setScanError(`Barcode not found: ${lastError}`);
+
+      if (errorTimeoutRef.current) clearTimeout(errorTimeoutRef.current);
+      errorTimeoutRef.current = setTimeout(() => {
+        setScanError(null);
+      }, 3000);
+    }
+  };
 
   const pushToQueue = (scannedBarcode: string) => {
     if (!scannedBarcode || scannedBarcode.length < 8) return false;
     scanQueueRef.current.push(scannedBarcode);
+
+    if (!batchTimeoutRef.current) {
+      batchTimeoutRef.current = setTimeout(() => {
+        processBatch();
+        batchTimeoutRef.current = null; // Reset so next scan triggers new batch
+      }, 200);
+    }
     return true;
   };
 
@@ -176,8 +190,6 @@ export const POS: React.FC = () => {
   const [products, setProducts] = useState<Product[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [scanError, setScanError] = useState<string | null>(null);
-
-  // Hardware Status State
   const [isOnline, setIsOnline] = useState(navigator.onLine);
 
   const { pushToQueue } = useBarcodeScanner(
@@ -190,7 +202,6 @@ export const POS: React.FC = () => {
     setScanError,
   );
 
-  // Network & Focus Listeners
   useEffect(() => {
     const handleOnline = () => setIsOnline(true);
     const handleOffline = () => setIsOnline(false);
@@ -215,7 +226,6 @@ export const POS: React.FC = () => {
     };
   }, []);
 
-  // Sync with DB
   useEffect(() => {
     if (!currentShop) return setProducts([]);
     const loadProducts = () => {
@@ -256,15 +266,12 @@ export const POS: React.FC = () => {
     });
   }, [products, searchTerm, selectedCategory]);
 
-  // Hardware Simulation Test Function
   const simulateScan = () => {
-    if (products.length > 0) {
-      const randomProduct =
-        products[Math.floor(Math.random() * products.length)];
-      pushToQueue(randomProduct.barcode);
-    } else {
-      pushToQueue("12345678");
-    }
+    if (products.length > 0)
+      pushToQueue(
+        products[Math.floor(Math.random() * products.length)].barcode,
+      );
+    else pushToQueue("12345678");
   };
 
   return (
@@ -294,7 +301,6 @@ export const POS: React.FC = () => {
       </div>
 
       <div className="flex flex-col md:flex-row flex-1 gap-4 pb-2 relative">
-        {/* ERROR TOAST NOTIFICATION */}
         {scanError && (
           <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded-xl shadow-lg flex items-center gap-3 animate-in slide-in-from-top-4 fade-in duration-300">
             <div className="bg-red-100 p-2 rounded-full">
