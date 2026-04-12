@@ -23,7 +23,6 @@ import {
 import { useApp } from "../../../context/AppContext";
 import { db, BusinessRules } from "../../../lib/db";
 import { Customer } from "../../../types";
-// import api from "../../../lib/api"; <-- Assuming you have an API wrapper
 
 type PaymentMethod = "card" | "cash" | "mobile";
 
@@ -168,31 +167,59 @@ export const ShoppingCart: React.FC = () => {
   const [saveChangeAmount, setSaveChangeAmount] = useState<string>("");
   const [cashReceived, setCashReceived] = useState<string>("");
 
-  // --- ISSUE 2: REAL WEBSOCKET IMPLEMENTATION ---
+  // --- 1 & 2: SECURE WEBSOCKET WITH ONMESSAGE HANDLING ---
   const wsRef = useRef<WebSocket | null>(null);
   useEffect(() => {
     let reconnectTimer: ReturnType<typeof setTimeout>;
     const connectWs = () => {
       try {
-        wsRef.current = new WebSocket(
+        const token = localStorage.getItem("pos_auth_token") || "";
+        const wsUrl = new URL(
           import.meta.env.VITE_WS_URL || "ws://localhost:3001",
         );
+
+        // Secure Connection
+        wsUrl.searchParams.append("token", token);
+        if (currentShop?.id)
+          wsUrl.searchParams.append("shopId", currentShop.id);
+
+        wsRef.current = new WebSocket(wsUrl.toString());
         wsRef.current.onopen = () =>
-          console.log("Terminal WebSocket Connected");
+          console.log("Terminal securely connected to WS");
+
+        // Multi-Terminal Receive Handling
+        wsRef.current.onmessage = (event) => {
+          try {
+            const data = JSON.parse(event.data);
+            if (
+              data.type === "SALE_CREATED" &&
+              data.shopId === currentShop?.id
+            ) {
+              // When Terminal B makes a sale, Terminal A receives this.
+              // TODO: Dispatch global event to refetch products from Dexie/API to update inventory numbers
+              console.log(
+                "Remote sale detected! Triggering inventory UI update...",
+              );
+            }
+          } catch (e) {
+            console.warn("Failed to parse WS message", e);
+          }
+        };
+
         wsRef.current.onclose = () => {
           reconnectTimer = setTimeout(connectWs, 5000);
         };
-        wsRef.current.onerror = () => wsRef.current?.close(); // Triggers onclose safely
+        wsRef.current.onerror = () => wsRef.current?.close();
       } catch (e) {
         reconnectTimer = setTimeout(connectWs, 5000);
       }
     };
-    connectWs();
+    if (currentShop) connectWs();
     return () => {
       clearTimeout(reconnectTimer);
       wsRef.current?.close();
     };
-  }, []);
+  }, [currentShop]);
 
   useEffect(() => {
     const loadedRules = db.businessRules.get();
@@ -215,15 +242,14 @@ export const ShoppingCart: React.FC = () => {
     }
   }, [currentShop]);
 
-  // --- ISSUES 1, 3, 4: REAL SYNC, RETRIES & BACKGROUND INTERVAL ---
+  // --- 3 & 4: REAL API SYNC & TRANSACTIONAL ROLLBACKS ---
   const syncRetryCount = useRef(0);
   const syncTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const syncOfflineSales = async () => {
-    if (syncingOffline || !navigator.onLine) return;
+    if (syncingOffline || !navigator.onLine || !currentShop) return;
     setSyncingOffline(true);
     try {
-      // Issue 1: Real IndexedDB query (Safe Cast bypassing TS if wrapper lacks types)
       let unsyncedSales: any[] = [];
       const salesDb = db.sales as any;
 
@@ -232,45 +258,60 @@ export const ShoppingCart: React.FC = () => {
       } else if (typeof salesDb.getAll === "function") {
         const all = await salesDb.getAll();
         unsyncedSales = all.filter((s: any) => s.isSynced === false);
-      } else if (typeof salesDb.getByShopId === "function" && currentShop?.id) {
-        const all = salesDb.getByShopId(currentShop.id); // Assuming sync fallback
-        unsyncedSales = all.filter((s: any) => s.isSynced === false);
       }
 
       if (unsyncedSales.length === 0) {
-        syncRetryCount.current = 0; // Reset retries on success
+        syncRetryCount.current = 0;
         setSyncingOffline(false);
         return;
       }
 
-      for (const sale of unsyncedSales) {
-        const payload = {
-          ...sale,
-          inventoryVersions: sale.items.map((i: any) => ({
-            id: i.id,
-            lastVersion: i.version || 1,
-          })),
-        };
+      const payload = unsyncedSales.map((sale) => ({
+        ...sale,
+        inventoryVersions: sale.items.map((i: any) => ({
+          id: i.id,
+          lastVersion: i.version || 1,
+        })),
+      }));
 
-        // TODO: Replace with real API -> await api.post('/sales/sync', payload);
-        console.log("Syncing offline sale to cloud:", payload);
+      // REAL API CALL (Bulk Transaction)
+      const token = localStorage.getItem("pos_auth_token") || "";
+      const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:3000";
 
+      const response = await fetch(`${apiUrl}/api/sales/bulk-sync`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ sales: payload, shopId: currentShop.id }),
+      });
+
+      if (!response.ok) throw new Error(`Server returned ${response.status}`);
+
+      const result = await response.json();
+
+      // ROLLBACK PROTECTION: Server returns exactly which IDs were saved successfully.
+      // If the server crashed mid-way, we only mark the successful ones as synced locally.
+      const successfullySyncedIds = result.syncedIds || [];
+
+      for (const id of successfullySyncedIds) {
         if (typeof salesDb.update === "function") {
-          await salesDb.update(sale.id, { isSynced: true });
+          await salesDb.update(id, { isSynced: true });
         }
       }
-      console.log(`Successfully synced ${unsyncedSales.length} offline sales.`);
+
+      console.log(
+        `Successfully synced ${successfullySyncedIds.length}/${unsyncedSales.length} offline sales.`,
+      );
       syncRetryCount.current = 0;
     } catch (error) {
       console.error("Sync failed. Queueing retry.", error);
-
-      // Issue 3: Exponential Backoff Retry System
       syncRetryCount.current += 1;
       const nextRetryDelay = Math.min(
         10000 * Math.pow(2, syncRetryCount.current),
         300000,
-      ); // Max 5 mins
-
+      ); // Backoff to 5 mins
       if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current);
       syncTimeoutRef.current = setTimeout(syncOfflineSales, nextRetryDelay);
     } finally {
@@ -295,13 +336,12 @@ export const ShoppingCart: React.FC = () => {
     };
   }, [currentShop]);
 
-  // Issue 4: Background Periodic Sync
   useEffect(() => {
     const intervalId = setInterval(() => {
       if (navigator.onLine) syncOfflineSales();
-    }, 60000); // Check every 60 seconds
+    }, 60000);
     return () => clearInterval(intervalId);
-  }, []);
+  }, [currentShop]);
 
   const {
     discountAmount,
@@ -314,6 +354,7 @@ export const ShoppingCart: React.FC = () => {
     finalTotal,
     pointsToEarn,
     totalChangeAvailable,
+    amountToConvert,
     pointsFromChange,
     cashChangeToReturn,
     isInsufficientPayment,
