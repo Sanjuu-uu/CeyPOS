@@ -9,7 +9,6 @@ import {
   MonitorPlay,
   Wifi,
   WifiOff,
-  Printer,
   Keyboard,
 } from "lucide-react";
 import { db } from "../../../lib/db";
@@ -32,7 +31,7 @@ const isInventoryUpdatedPayload = (
   );
 };
 
-// --- ENTERPRISE BARCODE HOOK (EVENT-DRIVEN BATCHING & LEAK PREVENTION) ---
+// --- ENTERPRISE BARCODE HOOK (SILENT AUTO-DETECT) ---
 const useBarcodeScanner = (
   products: Product[],
   cart: CartItem[],
@@ -41,10 +40,10 @@ const useBarcodeScanner = (
   searchInputRef: React.RefObject<HTMLInputElement>,
   setSearchTerm: React.Dispatch<React.SetStateAction<string>>,
   setScanError: React.Dispatch<React.SetStateAction<string | null>>,
+  setIsScannerConnected: React.Dispatch<React.SetStateAction<boolean>>,
 ) => {
   const scanQueueRef = useRef<string[]>([]);
 
-  // FIXED: Memory Leak Protections (Browser-safe timeout types)
   const errorTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const batchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -57,7 +56,6 @@ const useBarcodeScanner = (
     cartRef.current = cart;
   }, [cart]);
 
-  // Clean up timeouts if component unmounts
   useEffect(() => {
     return () => {
       if (errorTimeoutRef.current) clearTimeout(errorTimeoutRef.current);
@@ -93,7 +91,6 @@ const useBarcodeScanner = (
     }
   };
 
-  // Process queue explicitly (No infinite intervals)
   const processBatch = () => {
     if (scanQueueRef.current.length === 0) return;
 
@@ -141,7 +138,7 @@ const useBarcodeScanner = (
     if (!batchTimeoutRef.current) {
       batchTimeoutRef.current = setTimeout(() => {
         processBatch();
-        batchTimeoutRef.current = null; // Reset so next scan triggers new batch
+        batchTimeoutRef.current = null;
       }, 200);
     }
     return true;
@@ -165,6 +162,7 @@ const useBarcodeScanner = (
         if (barcodeBuffer.length >= 8) {
           pushToQueue(barcodeBuffer.trim());
           setSearchTerm("");
+          setIsScannerConnected(true); // Silently auto-detect scanner
           e.preventDefault();
         }
         barcodeBuffer = "";
@@ -176,7 +174,7 @@ const useBarcodeScanner = (
 
     window.addEventListener("keydown", handleGlobalKeyDown);
     return () => window.removeEventListener("keydown", handleGlobalKeyDown);
-  }, [searchInputRef, setSearchTerm]);
+  }, [searchInputRef, setSearchTerm, setIsScannerConnected]);
 
   return { pushToQueue };
 };
@@ -190,7 +188,10 @@ export const POS: React.FC = () => {
   const [products, setProducts] = useState<Product[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [scanError, setScanError] = useState<string | null>(null);
+
+  // Cleaned up Hardware States
   const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const [isScannerConnected, setIsScannerConnected] = useState(false);
 
   const { pushToQueue } = useBarcodeScanner(
     products,
@@ -200,13 +201,21 @@ export const POS: React.FC = () => {
     searchInputRef,
     setSearchTerm,
     setScanError,
+    setIsScannerConnected,
   );
 
+  // Network and Focus listeners
   useEffect(() => {
     const handleOnline = () => setIsOnline(true);
     const handleOffline = () => setIsOnline(false);
+
+    const handleRemoteRefresh = () => {
+      if (currentShop) setProducts(db.products.getByShopId(currentShop.id));
+    };
+
     window.addEventListener("online", handleOnline);
     window.addEventListener("offline", handleOffline);
+    window.addEventListener("inventory-force-refresh", handleRemoteRefresh);
 
     searchInputRef.current?.focus();
     const handleFocusRecovery = () => {
@@ -222,9 +231,13 @@ export const POS: React.FC = () => {
     return () => {
       window.removeEventListener("online", handleOnline);
       window.removeEventListener("offline", handleOffline);
+      window.removeEventListener(
+        "inventory-force-refresh",
+        handleRemoteRefresh,
+      );
       window.removeEventListener("click", handleFocusRecovery);
     };
-  }, []);
+  }, [currentShop]);
 
   useEffect(() => {
     if (!currentShop) return setProducts([]);
@@ -276,20 +289,22 @@ export const POS: React.FC = () => {
 
   return (
     <div className="flex flex-col h-[calc(100vh-80px)]">
-      {/* HARDWARE STATUS & TESTING LAYER */}
+      {/* HARDWARE STATUS & TESTING LAYER (CLEANED UP) */}
       <div className="bg-gray-900 text-xs text-gray-300 px-4 py-1.5 flex justify-between items-center rounded-t-xl mx-0 mb-2 shadow-inner">
-        <div className="flex items-center gap-6">
+        <div className="flex items-center gap-4">
           <span
-            className={`flex items-center gap-1.5 ${isOnline ? "text-green-400" : "text-red-400"}`}
+            className={`flex items-center gap-1.5 px-2 ${isOnline ? "text-green-400" : "text-red-400"}`}
           >
             {isOnline ? <Wifi size={14} /> : <WifiOff size={14} />}
             {isOnline ? "Online (Real-time Sync)" : "Offline Mode (Local DB)"}
           </span>
-          <span className="flex items-center gap-1.5 text-blue-400">
-            <Keyboard size={14} /> Scanner Active
-          </span>
-          <span className="flex items-center gap-1.5 text-yellow-400">
-            <Printer size={14} /> Printer Ready
+
+          {/* Passive, unclickable scanner indicator */}
+          <span
+            className={`flex items-center gap-1.5 px-2 ${isScannerConnected ? "text-blue-400" : "text-gray-600"}`}
+          >
+            <Keyboard size={14} />{" "}
+            {isScannerConnected ? "Scanner Active" : "Waiting for scan..."}
           </span>
         </div>
         <button
@@ -336,6 +351,7 @@ export const POS: React.FC = () => {
                   if (e.key === "Enter" && searchTerm) {
                     pushToQueue(searchTerm.trim());
                     setSearchTerm("");
+                    setIsScannerConnected(true);
                   }
                 }}
                 autoFocus

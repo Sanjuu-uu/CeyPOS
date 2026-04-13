@@ -19,6 +19,7 @@ import {
   Coins,
   Save,
   Wifi,
+  RefreshCw,
 } from "lucide-react";
 import { useApp } from "../../../context/AppContext";
 import { db, BusinessRules } from "../../../lib/db";
@@ -26,7 +27,6 @@ import { Customer } from "../../../types";
 
 type PaymentMethod = "card" | "cash" | "mobile";
 
-// --- CART CALCULATION ENGINE ---
 const useCartCalculations = (
   cartTotal: number,
   rules: BusinessRules | null,
@@ -132,7 +132,6 @@ const useCartCalculations = (
   };
 };
 
-// --- MAIN COMPONENT ---
 export const ShoppingCart: React.FC = () => {
   const { cart, clearCart, updateCartItemQuantity, cartTotal, currentShop } =
     useApp();
@@ -145,7 +144,10 @@ export const ShoppingCart: React.FC = () => {
     useState<PaymentMethod>("cash");
   const [saving, setSaving] = useState(false);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
+
+  // Sync States
   const [syncingOffline, setSyncingOffline] = useState(false);
+  const [syncErrorMsg, setSyncErrorMsg] = useState<string | null>(null);
 
   const [rules, setRules] = useState<BusinessRules | null>(null);
   const [selectedDiscountId, setSelectedDiscountId] = useState<number | null>(
@@ -167,7 +169,7 @@ export const ShoppingCart: React.FC = () => {
   const [saveChangeAmount, setSaveChangeAmount] = useState<string>("");
   const [cashReceived, setCashReceived] = useState<string>("");
 
-  // --- 1 & 2: SECURE WEBSOCKET WITH ONMESSAGE HANDLING ---
+  // SECURE WEBSOCKET & EXTERNAL EVENT LISTENER
   const wsRef = useRef<WebSocket | null>(null);
   useEffect(() => {
     let reconnectTimer: ReturnType<typeof setTimeout>;
@@ -178,7 +180,6 @@ export const ShoppingCart: React.FC = () => {
           import.meta.env.VITE_WS_URL || "ws://localhost:3001",
         );
 
-        // Secure Connection
         wsUrl.searchParams.append("token", token);
         if (currentShop?.id)
           wsUrl.searchParams.append("shopId", currentShop.id);
@@ -187,7 +188,6 @@ export const ShoppingCart: React.FC = () => {
         wsRef.current.onopen = () =>
           console.log("Terminal securely connected to WS");
 
-        // Multi-Terminal Receive Handling
         wsRef.current.onmessage = (event) => {
           try {
             const data = JSON.parse(event.data);
@@ -195,11 +195,11 @@ export const ShoppingCart: React.FC = () => {
               data.type === "SALE_CREATED" &&
               data.shopId === currentShop?.id
             ) {
-              // When Terminal B makes a sale, Terminal A receives this.
-              // TODO: Dispatch global event to refetch products from Dexie/API to update inventory numbers
               console.log(
                 "Remote sale detected! Triggering inventory UI update...",
               );
+              // Triggers UI refresh in POS.tsx
+              window.dispatchEvent(new CustomEvent("inventory-force-refresh"));
             }
           } catch (e) {
             console.warn("Failed to parse WS message", e);
@@ -242,13 +242,19 @@ export const ShoppingCart: React.FC = () => {
     }
   }, [currentShop]);
 
-  // --- 3 & 4: REAL API SYNC & TRANSACTIONAL ROLLBACKS ---
+  // REAL API SYNC & ABORT CONTROLLER TIMEOUT
   const syncRetryCount = useRef(0);
   const syncTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const syncOfflineSales = async () => {
     if (syncingOffline || !navigator.onLine || !currentShop) return;
     setSyncingOffline(true);
+    setSyncErrorMsg(null);
+
+    // AbortController for Fetch Timeout
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s max timeout
+
     try {
       let unsyncedSales: any[] = [];
       const salesDb = db.sales as any;
@@ -263,6 +269,7 @@ export const ShoppingCart: React.FC = () => {
       if (unsyncedSales.length === 0) {
         syncRetryCount.current = 0;
         setSyncingOffline(false);
+        clearTimeout(timeoutId);
         return;
       }
 
@@ -274,7 +281,6 @@ export const ShoppingCart: React.FC = () => {
         })),
       }));
 
-      // REAL API CALL (Bulk Transaction)
       const token = localStorage.getItem("pos_auth_token") || "";
       const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:3000";
 
@@ -285,16 +291,16 @@ export const ShoppingCart: React.FC = () => {
           Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({ sales: payload, shopId: currentShop.id }),
+        signal: controller.signal,
       });
+
+      clearTimeout(timeoutId);
 
       if (!response.ok) throw new Error(`Server returned ${response.status}`);
 
       const result = await response.json();
 
-      // ROLLBACK PROTECTION: Server returns exactly which IDs were saved successfully.
-      // If the server crashed mid-way, we only mark the successful ones as synced locally.
       const successfullySyncedIds = result.syncedIds || [];
-
       for (const id of successfullySyncedIds) {
         if (typeof salesDb.update === "function") {
           await salesDb.update(id, { isSynced: true });
@@ -305,13 +311,19 @@ export const ShoppingCart: React.FC = () => {
         `Successfully synced ${successfullySyncedIds.length}/${unsyncedSales.length} offline sales.`,
       );
       syncRetryCount.current = 0;
+      setSyncErrorMsg(null);
     } catch (error) {
+      clearTimeout(timeoutId);
       console.error("Sync failed. Queueing retry.", error);
+
+      // Show Sync Error State in UI
+      setSyncErrorMsg("Sync failed. Retrying...");
+
       syncRetryCount.current += 1;
       const nextRetryDelay = Math.min(
         10000 * Math.pow(2, syncRetryCount.current),
         300000,
-      ); // Backoff to 5 mins
+      );
       if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current);
       syncTimeoutRef.current = setTimeout(syncOfflineSales, nextRetryDelay);
     } finally {
@@ -425,7 +437,6 @@ export const ShoppingCart: React.FC = () => {
         isSynced: isOnline,
       } as any);
 
-      // WebSocket Real-time Broadcast
       if (isOnline && wsRef.current?.readyState === WebSocket.OPEN) {
         try {
           wsRef.current.send(
@@ -577,7 +588,12 @@ export const ShoppingCart: React.FC = () => {
           </span>
           {syncingOffline && (
             <span className="ml-2 flex items-center text-[10px] text-blue-500 animate-pulse">
-              <Wifi size={10} className="mr-1" /> Syncing...
+              <RefreshCw size={10} className="mr-1 animate-spin" /> Syncing...
+            </span>
+          )}
+          {syncErrorMsg && (
+            <span className="ml-2 flex items-center text-[10px] text-red-500 bg-red-50 px-2 py-0.5 rounded border border-red-100">
+              <AlertCircle size={10} className="mr-1" /> {syncErrorMsg}
             </span>
           )}
         </div>
