@@ -1,4 +1,10 @@
-import React, { useState, useMemo, useEffect, useRef } from "react";
+import React, {
+  useState,
+  useMemo,
+  useEffect,
+  useRef,
+  useCallback,
+} from "react";
 import { Button } from "../../ui/Button";
 import {
   Trash2,
@@ -19,6 +25,7 @@ import {
   Coins,
   Save,
   Wifi,
+  WifiOff,
   RefreshCw,
 } from "lucide-react";
 import { useApp } from "../../../context/AppContext";
@@ -169,8 +176,8 @@ export const ShoppingCart: React.FC = () => {
   const [saveChangeAmount, setSaveChangeAmount] = useState<string>("");
   const [cashReceived, setCashReceived] = useState<string>("");
 
-  // SECURE WEBSOCKET & EXTERNAL EVENT LISTENER
   const wsRef = useRef<WebSocket | null>(null);
+
   useEffect(() => {
     let reconnectTimer: ReturnType<typeof setTimeout>;
     const connectWs = () => {
@@ -195,10 +202,6 @@ export const ShoppingCart: React.FC = () => {
               data.type === "SALE_CREATED" &&
               data.shopId === currentShop?.id
             ) {
-              console.log(
-                "Remote sale detected! Triggering inventory UI update...",
-              );
-              // Triggers UI refresh in POS.tsx
               window.dispatchEvent(new CustomEvent("inventory-force-refresh"));
             }
           } catch (e) {
@@ -242,18 +245,17 @@ export const ShoppingCart: React.FC = () => {
     }
   }, [currentShop]);
 
-  // REAL API SYNC & ABORT CONTROLLER TIMEOUT
   const syncRetryCount = useRef(0);
   const syncTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const syncOfflineSales = async () => {
+  // Wrapped in useCallback so we can call it manually via button click safely
+  const syncOfflineSales = useCallback(async () => {
     if (syncingOffline || !navigator.onLine || !currentShop) return;
     setSyncingOffline(true);
     setSyncErrorMsg(null);
 
-    // AbortController for Fetch Timeout
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s max timeout
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
 
     try {
       let unsyncedSales: any[] = [];
@@ -299,25 +301,19 @@ export const ShoppingCart: React.FC = () => {
       if (!response.ok) throw new Error(`Server returned ${response.status}`);
 
       const result = await response.json();
-
       const successfullySyncedIds = result.syncedIds || [];
       for (const id of successfullySyncedIds) {
-        if (typeof salesDb.update === "function") {
+        if (typeof salesDb.update === "function")
           await salesDb.update(id, { isSynced: true });
-        }
       }
 
-      console.log(
-        `Successfully synced ${successfullySyncedIds.length}/${unsyncedSales.length} offline sales.`,
-      );
       syncRetryCount.current = 0;
       setSyncErrorMsg(null);
     } catch (error) {
       clearTimeout(timeoutId);
       console.error("Sync failed. Queueing retry.", error);
 
-      // Show Sync Error State in UI
-      setSyncErrorMsg("Sync failed. Retrying...");
+      setSyncErrorMsg("Sync Failed");
 
       syncRetryCount.current += 1;
       const nextRetryDelay = Math.min(
@@ -329,7 +325,7 @@ export const ShoppingCart: React.FC = () => {
     } finally {
       setSyncingOffline(false);
     }
-  };
+  }, [currentShop, syncingOffline]);
 
   useEffect(() => {
     const handleOnline = () => {
@@ -346,14 +342,14 @@ export const ShoppingCart: React.FC = () => {
       window.removeEventListener("online", handleOnline);
       window.removeEventListener("offline", handleOffline);
     };
-  }, [currentShop]);
+  }, [syncOfflineSales]);
 
   useEffect(() => {
     const intervalId = setInterval(() => {
       if (navigator.onLine) syncOfflineSales();
     }, 60000);
     return () => clearInterval(intervalId);
-  }, [currentShop]);
+  }, [syncOfflineSales]);
 
   const {
     discountAmount,
@@ -580,20 +576,37 @@ export const ShoppingCart: React.FC = () => {
         </div>
       )}
 
+      {/* DYNAMIC SYNC HEADER UI */}
       <div className="p-4 border-b border-gray-100 flex justify-between items-center bg-white z-10">
         <div className="flex items-center gap-2">
           <h2 className="font-bold text-lg text-gray-900">Current Order</h2>
           <span className="bg-[#ecff76] text-gray-900 text-xs px-2 py-0.5 rounded-full font-bold">
             {cart.length}
           </span>
-          {syncingOffline && (
-            <span className="ml-2 flex items-center text-[10px] text-blue-500 animate-pulse">
+
+          {/* Visual Offline -> Sync -> Online Pipeline */}
+          {!isOnline && (
+            <span className="ml-2 flex items-center text-[10px] text-gray-500 bg-gray-100 px-2 py-0.5 rounded border border-gray-200">
+              <WifiOff size={10} className="mr-1" /> Offline (Saved Locally)
+            </span>
+          )}
+          {isOnline && syncingOffline && (
+            <span className="ml-2 flex items-center text-[10px] text-blue-500 bg-blue-50 px-2 py-0.5 rounded border border-blue-100 animate-pulse">
               <RefreshCw size={10} className="mr-1 animate-spin" /> Syncing...
             </span>
           )}
-          {syncErrorMsg && (
-            <span className="ml-2 flex items-center text-[10px] text-red-500 bg-red-50 px-2 py-0.5 rounded border border-red-100">
-              <AlertCircle size={10} className="mr-1" /> {syncErrorMsg}
+          {isOnline && syncErrorMsg && !syncingOffline && (
+            <button
+              onClick={() => syncOfflineSales()}
+              className="ml-2 flex items-center text-[10px] text-red-500 bg-red-50 px-2 py-0.5 rounded border border-red-100 hover:bg-red-100 transition-colors"
+            >
+              <AlertCircle size={10} className="mr-1" /> {syncErrorMsg} (Click
+              to Retry)
+            </button>
+          )}
+          {isOnline && !syncingOffline && !syncErrorMsg && (
+            <span className="ml-2 flex items-center text-[10px] text-green-600 bg-green-50 px-2 py-0.5 rounded border border-green-100">
+              <Wifi size={10} className="mr-1" /> Online
             </span>
           )}
         </div>

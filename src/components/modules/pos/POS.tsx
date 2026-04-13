@@ -31,7 +31,7 @@ const isInventoryUpdatedPayload = (
   );
 };
 
-// --- ENTERPRISE BARCODE HOOK (SILENT AUTO-DETECT) ---
+// --- ENTERPRISE BARCODE HOOK (WITH 30s IDLE TIMEOUT) ---
 const useBarcodeScanner = (
   products: Product[],
   cart: CartItem[],
@@ -46,6 +46,7 @@ const useBarcodeScanner = (
 
   const errorTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const batchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const idleTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null); // NEW: Idle Timer
 
   const productsRef = useRef(products);
   const cartRef = useRef(cart);
@@ -60,6 +61,7 @@ const useBarcodeScanner = (
     return () => {
       if (errorTimeoutRef.current) clearTimeout(errorTimeoutRef.current);
       if (batchTimeoutRef.current) clearTimeout(batchTimeoutRef.current);
+      if (idleTimeoutRef.current) clearTimeout(idleTimeoutRef.current);
     };
   }, []);
 
@@ -144,6 +146,16 @@ const useBarcodeScanner = (
     return true;
   };
 
+  const activateScanner = () => {
+    setIsScannerConnected(true);
+    if (idleTimeoutRef.current) clearTimeout(idleTimeoutRef.current);
+
+    // Set scanner back to idle if no scans happen for 30 seconds
+    idleTimeoutRef.current = setTimeout(() => {
+      setIsScannerConnected(false);
+    }, 30000);
+  };
+
   useEffect(() => {
     let barcodeBuffer = "";
     let lastKeyTime = Date.now();
@@ -162,7 +174,7 @@ const useBarcodeScanner = (
         if (barcodeBuffer.length >= 8) {
           pushToQueue(barcodeBuffer.trim());
           setSearchTerm("");
-          setIsScannerConnected(true); // Silently auto-detect scanner
+          activateScanner(); // Wake up scanner & reset idle timer
           e.preventDefault();
         }
         barcodeBuffer = "";
@@ -176,7 +188,7 @@ const useBarcodeScanner = (
     return () => window.removeEventListener("keydown", handleGlobalKeyDown);
   }, [searchInputRef, setSearchTerm, setIsScannerConnected]);
 
-  return { pushToQueue };
+  return { pushToQueue, activateScanner };
 };
 
 // --- MAIN POS COMPONENT ---
@@ -189,11 +201,10 @@ export const POS: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [scanError, setScanError] = useState<string | null>(null);
 
-  // Cleaned up Hardware States
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [isScannerConnected, setIsScannerConnected] = useState(false);
 
-  const { pushToQueue } = useBarcodeScanner(
+  const { pushToQueue, activateScanner } = useBarcodeScanner(
     products,
     cart,
     addToCart,
@@ -204,7 +215,8 @@ export const POS: React.FC = () => {
     setIsScannerConnected,
   );
 
-  // Network and Focus listeners
+  // Note on Event System: Currently using window.dispatchEvent for simplicity across sibling modules.
+  // In future large-scale refactors, we can migrate this global sync trigger to Zustand/Redux.
   useEffect(() => {
     const handleOnline = () => setIsOnline(true);
     const handleOffline = () => setIsOnline(false);
@@ -280,6 +292,7 @@ export const POS: React.FC = () => {
   }, [products, searchTerm, selectedCategory]);
 
   const simulateScan = () => {
+    activateScanner(); // Keep scanner awake during simulation
     if (products.length > 0)
       pushToQueue(
         products[Math.floor(Math.random() * products.length)].barcode,
@@ -289,7 +302,6 @@ export const POS: React.FC = () => {
 
   return (
     <div className="flex flex-col h-[calc(100vh-80px)]">
-      {/* HARDWARE STATUS & TESTING LAYER (CLEANED UP) */}
       <div className="bg-gray-900 text-xs text-gray-300 px-4 py-1.5 flex justify-between items-center rounded-t-xl mx-0 mb-2 shadow-inner">
         <div className="flex items-center gap-4">
           <span
@@ -299,12 +311,11 @@ export const POS: React.FC = () => {
             {isOnline ? "Online (Real-time Sync)" : "Offline Mode (Local DB)"}
           </span>
 
-          {/* Passive, unclickable scanner indicator */}
           <span
-            className={`flex items-center gap-1.5 px-2 ${isScannerConnected ? "text-blue-400" : "text-gray-600"}`}
+            className={`flex items-center gap-1.5 px-2 transition-colors duration-500 ${isScannerConnected ? "text-blue-400" : "text-gray-600"}`}
           >
             <Keyboard size={14} />{" "}
-            {isScannerConnected ? "Scanner Active" : "Waiting for scan..."}
+            {isScannerConnected ? "Scanner Active" : "Scanner Idle"}
           </span>
         </div>
         <button
@@ -351,7 +362,7 @@ export const POS: React.FC = () => {
                   if (e.key === "Enter" && searchTerm) {
                     pushToQueue(searchTerm.trim());
                     setSearchTerm("");
-                    setIsScannerConnected(true);
+                    activateScanner();
                   }
                 }}
                 autoFocus
