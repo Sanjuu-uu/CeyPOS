@@ -31,7 +31,7 @@ const isInventoryUpdatedPayload = (
   );
 };
 
-// --- ENTERPRISE BARCODE HOOK (WITH 30s IDLE TIMEOUT) ---
+// --- ENTERPRISE BARCODE HOOK (IDLE TIMER RESETS ON ANY KEY) ---
 const useBarcodeScanner = (
   products: Product[],
   cart: CartItem[],
@@ -46,7 +46,7 @@ const useBarcodeScanner = (
 
   const errorTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const batchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const idleTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null); // NEW: Idle Timer
+  const idleTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const productsRef = useRef(products);
   const cartRef = useRef(cart);
@@ -146,11 +146,11 @@ const useBarcodeScanner = (
     return true;
   };
 
-  const activateScanner = () => {
+  // ISSUE 1 FIXED: Centralized timer reset function
+  const keepScannerAwake = () => {
     setIsScannerConnected(true);
     if (idleTimeoutRef.current) clearTimeout(idleTimeoutRef.current);
 
-    // Set scanner back to idle if no scans happen for 30 seconds
     idleTimeoutRef.current = setTimeout(() => {
       setIsScannerConnected(false);
     }, 30000);
@@ -170,11 +170,13 @@ const useBarcodeScanner = (
       const currentTime = Date.now();
       if (currentTime - lastKeyTime > 100) barcodeBuffer = "";
 
+      // ISSUE 1 FIXED: Reset idle timer on ANY valid keystroke activity
+      keepScannerAwake();
+
       if (e.key === "Enter") {
         if (barcodeBuffer.length >= 8) {
           pushToQueue(barcodeBuffer.trim());
           setSearchTerm("");
-          activateScanner(); // Wake up scanner & reset idle timer
           e.preventDefault();
         }
         barcodeBuffer = "";
@@ -188,7 +190,7 @@ const useBarcodeScanner = (
     return () => window.removeEventListener("keydown", handleGlobalKeyDown);
   }, [searchInputRef, setSearchTerm, setIsScannerConnected]);
 
-  return { pushToQueue, activateScanner };
+  return { pushToQueue, keepScannerAwake };
 };
 
 // --- MAIN POS COMPONENT ---
@@ -204,7 +206,7 @@ export const POS: React.FC = () => {
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [isScannerConnected, setIsScannerConnected] = useState(false);
 
-  const { pushToQueue, activateScanner } = useBarcodeScanner(
+  const { pushToQueue, keepScannerAwake } = useBarcodeScanner(
     products,
     cart,
     addToCart,
@@ -215,8 +217,9 @@ export const POS: React.FC = () => {
     setIsScannerConnected,
   );
 
-  // Note on Event System: Currently using window.dispatchEvent for simplicity across sibling modules.
-  // In future large-scale refactors, we can migrate this global sync trigger to Zustand/Redux.
+  // FUTURE ARCHITECTURE NOTE: (Issue 2)
+  // Currently using window.dispatchEvent for global refresh triggers.
+  // TODO: Migrate to Zustand/Redux global state when scaling application.
   useEffect(() => {
     const handleOnline = () => setIsOnline(true);
     const handleOffline = () => setIsOnline(false);
@@ -292,7 +295,7 @@ export const POS: React.FC = () => {
   }, [products, searchTerm, selectedCategory]);
 
   const simulateScan = () => {
-    activateScanner(); // Keep scanner awake during simulation
+    keepScannerAwake();
     if (products.length > 0)
       pushToQueue(
         products[Math.floor(Math.random() * products.length)].barcode,
@@ -301,32 +304,35 @@ export const POS: React.FC = () => {
   };
 
   return (
-    <div className="flex flex-col h-[calc(100vh-80px)]">
-      <div className="bg-gray-900 text-xs text-gray-300 px-4 py-1.5 flex justify-between items-center rounded-t-xl mx-0 mb-2 shadow-inner">
-        <div className="flex items-center gap-4">
+    // STRICT APP LAYOUT: h-full with overflow-hidden stops the full page from scrolling.
+    <div className="flex flex-col h-[calc(100vh-80px)] overflow-hidden">
+      {/* HARDWARE STATUS BAR: White pill shape as requested */}
+      <div className="bg-white px-5 py-3 flex justify-between items-center rounded-full mx-0 mb-4 shadow-sm border border-gray-100 flex-shrink-0">
+        <div className="flex items-center gap-6">
           <span
-            className={`flex items-center gap-1.5 px-2 ${isOnline ? "text-green-400" : "text-red-400"}`}
+            className={`flex items-center gap-1.5 text-xs font-bold ${isOnline ? "text-green-600" : "text-gray-500"}`}
           >
-            {isOnline ? <Wifi size={14} /> : <WifiOff size={14} />}
-            {isOnline ? "Online (Real-time Sync)" : "Offline Mode (Local DB)"}
+            {isOnline ? <Wifi size={16} /> : <WifiOff size={16} />}
+            {isOnline ? "Online Sync Active" : "Offline Database Active"}
           </span>
 
           <span
-            className={`flex items-center gap-1.5 px-2 transition-colors duration-500 ${isScannerConnected ? "text-blue-400" : "text-gray-600"}`}
+            className={`flex items-center gap-1.5 text-xs font-bold transition-colors duration-500 ${isScannerConnected ? "text-blue-600" : "text-gray-400"}`}
           >
-            <Keyboard size={14} />{" "}
+            <Keyboard size={16} />{" "}
             {isScannerConnected ? "Scanner Active" : "Scanner Idle"}
           </span>
         </div>
         <button
           onClick={simulateScan}
-          className="flex items-center gap-1 bg-gray-800 hover:bg-gray-700 text-gray-100 px-2 py-0.5 rounded border border-gray-700 transition-colors"
+          className="flex items-center gap-1.5 bg-gray-50 hover:bg-gray-100 text-gray-700 px-3 py-1.5 rounded-full border border-gray-200 transition-colors text-xs font-bold"
         >
-          <MonitorPlay size={12} /> Simulate Scan
+          <MonitorPlay size={14} /> Simulate Scan
         </button>
       </div>
 
-      <div className="flex flex-col md:flex-row flex-1 gap-4 pb-2 relative">
+      {/* STRICT APP LAYOUT: min-h-0 allows the flex children to shrink and create scrollbars */}
+      <div className="flex flex-col md:flex-row flex-1 gap-4 min-h-0 relative">
         {scanError && (
           <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded-xl shadow-lg flex items-center gap-3 animate-in slide-in-from-top-4 fade-in duration-300">
             <div className="bg-red-100 p-2 rounded-full">
@@ -346,7 +352,8 @@ export const POS: React.FC = () => {
         )}
 
         <div className="flex-1 flex flex-col min-w-0 bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-          <div className="p-4 border-b border-gray-100 space-y-4">
+          {/* Header shrinks to 0 so the grid takes the rest of the height */}
+          <div className="p-4 border-b border-gray-100 space-y-4 flex-shrink-0">
             <div className="relative">
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400">
                 <Search size={20} />
@@ -359,10 +366,10 @@ export const POS: React.FC = () => {
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 onKeyDown={(e) => {
+                  keepScannerAwake();
                   if (e.key === "Enter" && searchTerm) {
                     pushToQueue(searchTerm.trim());
                     setSearchTerm("");
-                    activateScanner();
                   }
                 }}
                 autoFocus
@@ -402,6 +409,7 @@ export const POS: React.FC = () => {
             </div>
           </div>
 
+          {/* STRICT APP LAYOUT: flex-1 and overflow-y-auto traps scrolling to ONLY the grid */}
           <div className="flex-1 overflow-y-auto p-4 bg-gray-50/50">
             {isLoading ? (
               <div className="flex h-full items-center justify-center">
@@ -413,6 +421,7 @@ export const POS: React.FC = () => {
           </div>
         </div>
 
+        {/* Shopping Cart Sidebar */}
         <div className="w-full md:w-[400px] flex-shrink-0 bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden flex flex-col">
           <ShoppingCart />
         </div>

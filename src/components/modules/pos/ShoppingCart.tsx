@@ -155,6 +155,7 @@ export const ShoppingCart: React.FC = () => {
   // Sync States
   const [syncingOffline, setSyncingOffline] = useState(false);
   const [syncErrorMsg, setSyncErrorMsg] = useState<string | null>(null);
+  const [syncSuccessMsg, setSyncSuccessMsg] = useState<string | null>(null); // ISSUE 3 FIXED: Success feedback state
 
   const [rules, setRules] = useState<BusinessRules | null>(null);
   const [selectedDiscountId, setSelectedDiscountId] = useState<number | null>(
@@ -248,7 +249,6 @@ export const ShoppingCart: React.FC = () => {
   const syncRetryCount = useRef(0);
   const syncTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Wrapped in useCallback so we can call it manually via button click safely
   const syncOfflineSales = useCallback(async () => {
     if (syncingOffline || !navigator.onLine || !currentShop) return;
     setSyncingOffline(true);
@@ -309,6 +309,10 @@ export const ShoppingCart: React.FC = () => {
 
       syncRetryCount.current = 0;
       setSyncErrorMsg(null);
+
+      // ISSUE 3 FIXED: Visual success feedback
+      setSyncSuccessMsg(`Synced ${successfullySyncedIds.length} sales`);
+      setTimeout(() => setSyncSuccessMsg(null), 3000);
     } catch (error) {
       clearTimeout(timeoutId);
       console.error("Sync failed. Queueing retry.", error);
@@ -513,6 +517,7 @@ export const ShoppingCart: React.FC = () => {
     );
   }
 
+  // STRICT APP LAYOUT: Parent has h-full. The lists inside will handle their own overflow.
   return (
     <div className="flex flex-col h-full bg-white relative">
       {showRegisterModal && (
@@ -576,8 +581,8 @@ export const ShoppingCart: React.FC = () => {
         </div>
       )}
 
-      {/* DYNAMIC SYNC HEADER UI */}
-      <div className="p-4 border-b border-gray-100 flex justify-between items-center bg-white z-10">
+      {/* HEADER: Flex-shrink-0 to prevent compression */}
+      <div className="p-4 border-b border-gray-100 flex justify-between items-center bg-white z-10 flex-shrink-0">
         <div className="flex items-center gap-2">
           <h2 className="font-bold text-lg text-gray-900">Current Order</h2>
           <span className="bg-[#ecff76] text-gray-900 text-xs px-2 py-0.5 rounded-full font-bold">
@@ -595,7 +600,13 @@ export const ShoppingCart: React.FC = () => {
               <RefreshCw size={10} className="mr-1 animate-spin" /> Syncing...
             </span>
           )}
-          {isOnline && syncErrorMsg && !syncingOffline && (
+          {/* ISSUE 3 FIXED: Success message indicator */}
+          {isOnline && syncSuccessMsg && (
+            <span className="ml-2 flex items-center text-[10px] font-bold text-green-700 bg-green-50 px-2 py-0.5 rounded border border-green-200 animate-in fade-in zoom-in duration-300">
+              <CheckCircle2 size={10} className="mr-1" /> {syncSuccessMsg}
+            </span>
+          )}
+          {isOnline && syncErrorMsg && !syncingOffline && !syncSuccessMsg && (
             <button
               onClick={() => syncOfflineSales()}
               className="ml-2 flex items-center text-[10px] text-red-500 bg-red-50 px-2 py-0.5 rounded border border-red-100 hover:bg-red-100 transition-colors"
@@ -604,7 +615,7 @@ export const ShoppingCart: React.FC = () => {
               to Retry)
             </button>
           )}
-          {isOnline && !syncingOffline && !syncErrorMsg && (
+          {isOnline && !syncingOffline && !syncErrorMsg && !syncSuccessMsg && (
             <span className="ml-2 flex items-center text-[10px] text-green-600 bg-green-50 px-2 py-0.5 rounded border border-green-100">
               <Wifi size={10} className="mr-1" /> Online
             </span>
@@ -620,6 +631,7 @@ export const ShoppingCart: React.FC = () => {
         )}
       </div>
 
+      {/* ITEMS LIST: flex-1 and overflow-y-auto. Traps scroll inside this container ONLY. */}
       <div className="flex-1 overflow-y-auto p-4 space-y-3">
         {cart.length > 0 ? (
           cart.map((item) => (
@@ -680,7 +692,8 @@ export const ShoppingCart: React.FC = () => {
         )}
       </div>
 
-      <div className="border-t border-gray-100 bg-gray-50 p-4 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
+      {/* CHECKOUT FOOTER: Flex-shrink-0 to pin to bottom */}
+      <div className="border-t border-gray-100 bg-gray-50 p-4 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] flex-shrink-0">
         <div className="mb-4 bg-white p-3 rounded-xl border border-gray-200 shadow-sm">
           {customer ? (
             <div className="flex justify-between items-center">
