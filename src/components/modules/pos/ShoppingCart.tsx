@@ -152,10 +152,9 @@ export const ShoppingCart: React.FC = () => {
   const [saving, setSaving] = useState(false);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
 
-  // Sync States
   const [syncingOffline, setSyncingOffline] = useState(false);
   const [syncErrorMsg, setSyncErrorMsg] = useState<string | null>(null);
-  const [syncSuccessMsg, setSyncSuccessMsg] = useState<string | null>(null); // ISSUE 3 FIXED: Success feedback state
+  const [syncSuccessMsg, setSyncSuccessMsg] = useState<string | null>(null);
 
   const [rules, setRules] = useState<BusinessRules | null>(null);
   const [selectedDiscountId, setSelectedDiscountId] = useState<number | null>(
@@ -178,6 +177,43 @@ export const ShoppingCart: React.FC = () => {
   const [cashReceived, setCashReceived] = useState<string>("");
 
   const wsRef = useRef<WebSocket | null>(null);
+  const viewStateRef = useRef(viewState);
+  const cartRef = useRef(cart);
+
+  useEffect(() => {
+    viewStateRef.current = viewState;
+  }, [viewState]);
+  useEffect(() => {
+    cartRef.current = cart;
+  }, [cart]);
+
+  // KEYBOARD SHORTCUT EVENT LISTENERS
+  useEffect(() => {
+    const handleCheckoutNav = () => setViewState("checkout");
+    const handleTogglePayment = () => {
+      setSelectedPaymentMethod((prev) =>
+        prev === "cash" ? "card" : prev === "card" ? "mobile" : "cash",
+      );
+    };
+
+    // Auto-Flow via Enter Key (Double Action)
+    const handleEnterAction = () => {
+      if (viewStateRef.current === "cart" && cartRef.current.length > 0)
+        setViewState("checkout");
+      else if (viewStateRef.current === "checkout")
+        document.getElementById("checkout-confirm-btn")?.click();
+    };
+
+    window.addEventListener("pos:checkout", handleCheckoutNav);
+    window.addEventListener("pos:toggle-payment", handleTogglePayment);
+    window.addEventListener("pos:action-enter", handleEnterAction);
+
+    return () => {
+      window.removeEventListener("pos:checkout", handleCheckoutNav);
+      window.removeEventListener("pos:toggle-payment", handleTogglePayment);
+      window.removeEventListener("pos:action-enter", handleEnterAction);
+    };
+  }, []);
 
   useEffect(() => {
     let reconnectTimer: ReturnType<typeof setTimeout>;
@@ -187,15 +223,11 @@ export const ShoppingCart: React.FC = () => {
         const wsUrl = new URL(
           import.meta.env.VITE_WS_URL || "ws://localhost:3001",
         );
-
         wsUrl.searchParams.append("token", token);
         if (currentShop?.id)
           wsUrl.searchParams.append("shopId", currentShop.id);
 
         wsRef.current = new WebSocket(wsUrl.toString());
-        wsRef.current.onopen = () =>
-          console.log("Terminal securely connected to WS");
-
         wsRef.current.onmessage = (event) => {
           try {
             const data = JSON.parse(event.data);
@@ -209,11 +241,10 @@ export const ShoppingCart: React.FC = () => {
             console.warn("Failed to parse WS message", e);
           }
         };
-
+        wsRef.current.onerror = () => wsRef.current?.close();
         wsRef.current.onclose = () => {
           reconnectTimer = setTimeout(connectWs, 5000);
         };
-        wsRef.current.onerror = () => wsRef.current?.close();
       } catch (e) {
         reconnectTimer = setTimeout(connectWs, 5000);
       }
@@ -261,9 +292,9 @@ export const ShoppingCart: React.FC = () => {
       let unsyncedSales: any[] = [];
       const salesDb = db.sales as any;
 
-      if (typeof salesDb.where === "function") {
+      if (typeof salesDb.where === "function")
         unsyncedSales = await salesDb.where("isSynced").equals(false).toArray();
-      } else if (typeof salesDb.getAll === "function") {
+      else if (typeof salesDb.getAll === "function") {
         const all = await salesDb.getAll();
         unsyncedSales = all.filter((s: any) => s.isSynced === false);
       }
@@ -297,7 +328,6 @@ export const ShoppingCart: React.FC = () => {
       });
 
       clearTimeout(timeoutId);
-
       if (!response.ok) throw new Error(`Server returned ${response.status}`);
 
       const result = await response.json();
@@ -309,16 +339,11 @@ export const ShoppingCart: React.FC = () => {
 
       syncRetryCount.current = 0;
       setSyncErrorMsg(null);
-
-      // ISSUE 3 FIXED: Visual success feedback
       setSyncSuccessMsg(`Synced ${successfullySyncedIds.length} sales`);
       setTimeout(() => setSyncSuccessMsg(null), 3000);
     } catch (error) {
       clearTimeout(timeoutId);
-      console.error("Sync failed. Queueing retry.", error);
-
       setSyncErrorMsg("Sync Failed");
-
       syncRetryCount.current += 1;
       const nextRetryDelay = Math.min(
         10000 * Math.pow(2, syncRetryCount.current),
@@ -337,11 +362,9 @@ export const ShoppingCart: React.FC = () => {
       syncOfflineSales();
     };
     const handleOffline = () => setIsOnline(false);
-
     window.addEventListener("online", handleOnline);
     window.addEventListener("offline", handleOffline);
     if (navigator.onLine) syncOfflineSales();
-
     return () => {
       window.removeEventListener("online", handleOnline);
       window.removeEventListener("offline", handleOffline);
@@ -517,7 +540,6 @@ export const ShoppingCart: React.FC = () => {
     );
   }
 
-  // STRICT APP LAYOUT: Parent has h-full. The lists inside will handle their own overflow.
   return (
     <div className="flex flex-col h-full bg-white relative">
       {showRegisterModal && (
@@ -581,7 +603,7 @@ export const ShoppingCart: React.FC = () => {
         </div>
       )}
 
-      {/* HEADER: Flex-shrink-0 to prevent compression */}
+      {/* HEADER: Flex-shrink-0 */}
       <div className="p-4 border-b border-gray-100 flex justify-between items-center bg-white z-10 flex-shrink-0">
         <div className="flex items-center gap-2">
           <h2 className="font-bold text-lg text-gray-900">Current Order</h2>
@@ -589,7 +611,6 @@ export const ShoppingCart: React.FC = () => {
             {cart.length}
           </span>
 
-          {/* Visual Offline -> Sync -> Online Pipeline */}
           {!isOnline && (
             <span className="ml-2 flex items-center text-[10px] text-gray-500 bg-gray-100 px-2 py-0.5 rounded border border-gray-200">
               <WifiOff size={10} className="mr-1" /> Offline (Saved Locally)
@@ -600,7 +621,6 @@ export const ShoppingCart: React.FC = () => {
               <RefreshCw size={10} className="mr-1 animate-spin" /> Syncing...
             </span>
           )}
-          {/* ISSUE 3 FIXED: Success message indicator */}
           {isOnline && syncSuccessMsg && (
             <span className="ml-2 flex items-center text-[10px] font-bold text-green-700 bg-green-50 px-2 py-0.5 rounded border border-green-200 animate-in fade-in zoom-in duration-300">
               <CheckCircle2 size={10} className="mr-1" /> {syncSuccessMsg}
@@ -631,7 +651,7 @@ export const ShoppingCart: React.FC = () => {
         )}
       </div>
 
-      {/* ITEMS LIST: flex-1 and overflow-y-auto. Traps scroll inside this container ONLY. */}
+      {/* INDEPENDENT SCROLL FOR ITEMS */}
       <div className="flex-1 overflow-y-auto p-4 space-y-3">
         {cart.length > 0 ? (
           cart.map((item) => (
@@ -692,7 +712,7 @@ export const ShoppingCart: React.FC = () => {
         )}
       </div>
 
-      {/* CHECKOUT FOOTER: Flex-shrink-0 to pin to bottom */}
+      {/* FIXED CHECKOUT FOOTER */}
       <div className="border-t border-gray-100 bg-gray-50 p-4 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] flex-shrink-0">
         <div className="mb-4 bg-white p-3 rounded-xl border border-gray-200 shadow-sm">
           {customer ? (
@@ -851,7 +871,7 @@ export const ShoppingCart: React.FC = () => {
               className="h-12 text-base font-bold bg-[#ecff76] text-gray-900 hover:bg-[#d9ec60] border-none"
               disabled={cart.length === 0}
             >
-              Pay Now
+              Pay Now [F2]
             </Button>
           </div>
         ) : (
@@ -923,6 +943,13 @@ export const ShoppingCart: React.FC = () => {
                   <span className="text-xs">{m.label}</span>
                 </button>
               ))}
+              <div className="col-span-3 text-center text-[10px] text-gray-400 mt-1">
+                Press{" "}
+                <kbd className="bg-gray-100 px-1 py-0.5 rounded border border-gray-200">
+                  F4
+                </kbd>{" "}
+                to toggle payment method
+              </div>
             </div>
             <div className="bg-white p-3 rounded-lg border border-gray-200">
               {surchargeAmount > 0 && (
@@ -1068,11 +1095,12 @@ export const ShoppingCart: React.FC = () => {
                 Cancel
               </button>
               <button
+                id="checkout-confirm-btn"
                 onClick={handleCheckout}
                 disabled={saving || isInsufficientPayment}
                 className="flex-[2] py-3 text-sm font-bold text-gray-900 bg-[#ecff76] rounded-lg hover:bg-[#d9ec60] disabled:bg-gray-200 disabled:text-gray-400 disabled:cursor-not-allowed flex items-center justify-center gap-2"
               >
-                {saving ? "Processing..." : "Complete Sale"}
+                {saving ? "Processing..." : "Complete Sale [Enter]"}
                 {!saving && <ArrowRight size={16} />}
               </button>
             </div>

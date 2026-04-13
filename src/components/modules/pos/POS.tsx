@@ -31,28 +31,39 @@ const isInventoryUpdatedPayload = (
   );
 };
 
-// --- ENTERPRISE BARCODE HOOK (IDLE TIMER RESETS ON ANY KEY) ---
-const useBarcodeScanner = (
-  products: Product[],
-  cart: CartItem[],
-  addToCart: (p: CartItem) => void,
-  updateCartItemQuantity: (id: string, qty: number) => void,
-  searchInputRef: React.RefObject<HTMLInputElement>,
-  setSearchTerm: React.Dispatch<React.SetStateAction<string>>,
-  setScanError: React.Dispatch<React.SetStateAction<string | null>>,
-  setIsScannerConnected: React.Dispatch<React.SetStateAction<boolean>>,
-) => {
+// --- ENTERPRISE ZERO-MOUSE KEYBOARD ENGINE ---
+const usePOSKeyboardFlow = ({
+  products,
+  filteredProducts,
+  cart,
+  addToCart,
+  updateCartItemQuantity,
+  clearCart,
+  searchInputRef,
+  setSearchTerm,
+  setScanError,
+  setIsScannerConnected,
+}: any) => {
   const scanQueueRef = useRef<string[]>([]);
+  const barcodeBufferRef = useRef("");
+  const lastKeyTimeRef = useRef(Date.now());
 
+  const scannerTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const errorTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const batchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const idleTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const productsRef = useRef(products);
-  const cartRef = useRef(cart);
+  const productsRef = useRef<Product[]>(products);
+  const filteredProductsRef = useRef<Product[]>(filteredProducts);
+  const cartRef = useRef<CartItem[]>(cart);
+
+  // Keep refs fresh for event listeners
   useEffect(() => {
     productsRef.current = products;
   }, [products]);
+  useEffect(() => {
+    filteredProductsRef.current = filteredProducts;
+  }, [filteredProducts]);
   useEffect(() => {
     cartRef.current = cart;
   }, [cart]);
@@ -62,6 +73,7 @@ const useBarcodeScanner = (
       if (errorTimeoutRef.current) clearTimeout(errorTimeoutRef.current);
       if (batchTimeoutRef.current) clearTimeout(batchTimeoutRef.current);
       if (idleTimeoutRef.current) clearTimeout(idleTimeoutRef.current);
+      if (scannerTimeoutRef.current) clearTimeout(scannerTimeoutRef.current);
     };
   }, []);
 
@@ -95,7 +107,6 @@ const useBarcodeScanner = (
 
   const processBatch = () => {
     if (scanQueueRef.current.length === 0) return;
-
     const batch = [...scanQueueRef.current];
     scanQueueRef.current = [];
 
@@ -110,11 +121,9 @@ const useBarcodeScanner = (
         const existingItem = cartRef.current.find(
           (item) => item.id === matchedProduct.id,
         );
-        if (existingItem) {
+        if (existingItem)
           updateCartItemQuantity(matchedProduct.id, existingItem.quantity + 1);
-        } else {
-          addToCart({ ...matchedProduct, quantity: 1 });
-        }
+        else addToCart({ ...matchedProduct, quantity: 1 });
         successCount++;
       } else {
         lastError = barcode;
@@ -125,18 +134,14 @@ const useBarcodeScanner = (
     if (lastError) {
       playBeep("error");
       setScanError(`Barcode not found: ${lastError}`);
-
       if (errorTimeoutRef.current) clearTimeout(errorTimeoutRef.current);
-      errorTimeoutRef.current = setTimeout(() => {
-        setScanError(null);
-      }, 3000);
+      errorTimeoutRef.current = setTimeout(() => setScanError(null), 3000);
     }
   };
 
   const pushToQueue = (scannedBarcode: string) => {
     if (!scannedBarcode || scannedBarcode.length < 8) return false;
     scanQueueRef.current.push(scannedBarcode);
-
     if (!batchTimeoutRef.current) {
       batchTimeoutRef.current = setTimeout(() => {
         processBatch();
@@ -146,56 +151,139 @@ const useBarcodeScanner = (
     return true;
   };
 
-  // ISSUE 1 FIXED: Centralized timer reset function
   const keepScannerAwake = () => {
     setIsScannerConnected(true);
     if (idleTimeoutRef.current) clearTimeout(idleTimeoutRef.current);
-
-    idleTimeoutRef.current = setTimeout(() => {
-      setIsScannerConnected(false);
-    }, 30000);
+    idleTimeoutRef.current = setTimeout(
+      () => setIsScannerConnected(false),
+      30000,
+    );
   };
 
   useEffect(() => {
-    let barcodeBuffer = "";
-    let lastKeyTime = Date.now();
-
     const handleGlobalKeyDown = (e: KeyboardEvent) => {
-      if (
-        document.activeElement?.tagName === "INPUT" &&
-        document.activeElement !== searchInputRef.current
-      )
-        return;
-
       const currentTime = Date.now();
-      if (currentTime - lastKeyTime > 100) barcodeBuffer = "";
+      const timeDiff = currentTime - lastKeyTimeRef.current;
+      lastKeyTimeRef.current = currentTime;
 
-      // ISSUE 1 FIXED: Reset idle timer on ANY valid keystroke activity
-      keepScannerAwake();
+      keepScannerAwake(); // Issue 1 Fixed: Resets on ANY key activity
 
-      if (e.key === "Enter") {
-        if (barcodeBuffer.length >= 8) {
-          pushToQueue(barcodeBuffer.trim());
-          setSearchTerm("");
-          e.preventDefault();
-        }
-        barcodeBuffer = "";
+      // 1. HARDWARE SCANNER DETECTION (< 30ms between keystrokes)
+      if (timeDiff < 30 && e.key.length === 1) {
+        barcodeBufferRef.current += e.key;
+        if (scannerTimeoutRef.current) clearTimeout(scannerTimeoutRef.current);
+        scannerTimeoutRef.current = setTimeout(() => {
+          if (barcodeBufferRef.current.length >= 8) {
+            pushToQueue(barcodeBufferRef.current);
+            setSearchTerm("");
+          }
+          barcodeBufferRef.current = "";
+        }, 50);
         return;
       }
-      if (e.key.length === 1) barcodeBuffer += e.key;
-      lastKeyTime = currentTime;
+
+      // Scanner emitting physical "Enter"
+      if (e.key === "Enter" && barcodeBufferRef.current.length >= 8) {
+        if (scannerTimeoutRef.current) clearTimeout(scannerTimeoutRef.current);
+        pushToQueue(barcodeBufferRef.current);
+        setSearchTerm("");
+        barcodeBufferRef.current = "";
+        e.preventDefault();
+        return;
+      }
+
+      if (timeDiff > 50) barcodeBufferRef.current = "";
+
+      // 2. GLOBAL SHORTCUTS & MACROS
+      const activeTag = document.activeElement?.tagName;
+      const isSearchFocused = document.activeElement === searchInputRef.current;
+      const isOtherInput = activeTag === "INPUT" || activeTag === "TEXTAREA";
+
+      // F-Keys (Work everywhere)
+      if (e.key === "F1") {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+        return;
+      }
+      if (e.key === "F2") {
+        e.preventDefault();
+        window.dispatchEvent(new CustomEvent("pos:checkout"));
+        return;
+      }
+      if (e.key === "F3") {
+        e.preventDefault();
+        clearCart();
+        return;
+      }
+      if (e.key === "F4") {
+        e.preventDefault();
+        window.dispatchEvent(new CustomEvent("pos:toggle-payment"));
+        return;
+      }
+
+      // Enter Flow: Auto proceed to checkout or confirm sale
+      if (e.key === "Enter") {
+        if (!isSearchFocused || searchInputRef.current?.value === "") {
+          e.preventDefault();
+          window.dispatchEvent(new CustomEvent("pos:action-enter"));
+          return;
+        }
+      }
+
+      // Quick Select (1-9) & Quantity Adjust (+ / -)
+      // Only active if we aren't typing text into an input field (or if search box is empty)
+      if (
+        !isOtherInput ||
+        (isSearchFocused && searchInputRef.current?.value === "")
+      ) {
+        if (e.key >= "1" && e.key <= "9") {
+          e.preventDefault();
+          const idx = Number(e.key) - 1;
+          const prod = filteredProductsRef.current[idx];
+          if (prod) {
+            const existing = cartRef.current.find(
+              (item) => item.id === prod.id,
+            );
+            if (existing)
+              updateCartItemQuantity(prod.id, existing.quantity + 1);
+            else addToCart({ ...prod, quantity: 1 });
+            playBeep("success");
+          }
+          return;
+        }
+
+        if (e.key === "+" || e.key === "=" || e.key === "-") {
+          e.preventDefault();
+          if (cartRef.current.length > 0) {
+            const lastItem = cartRef.current[cartRef.current.length - 1];
+            const newQty =
+              e.key === "-" ? lastItem.quantity - 1 : lastItem.quantity + 1;
+            if (newQty <= 0) updateCartItemQuantity(lastItem.id, 0);
+            else updateCartItemQuantity(lastItem.id, newQty);
+          }
+          return;
+        }
+      }
     };
 
     window.addEventListener("keydown", handleGlobalKeyDown);
     return () => window.removeEventListener("keydown", handleGlobalKeyDown);
-  }, [searchInputRef, setSearchTerm, setIsScannerConnected]);
+  }, [
+    addToCart,
+    clearCart,
+    updateCartItemQuantity,
+    searchInputRef,
+    setSearchTerm,
+    setIsScannerConnected,
+  ]);
 
   return { pushToQueue, keepScannerAwake };
 };
 
 // --- MAIN POS COMPONENT ---
 export const POS: React.FC = () => {
-  const { currentShop, cart, addToCart, updateCartItemQuantity } = useApp();
+  const { currentShop, cart, addToCart, updateCartItemQuantity, clearCart } =
+    useApp();
   const searchInputRef = useRef<HTMLInputElement>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
@@ -206,33 +294,44 @@ export const POS: React.FC = () => {
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [isScannerConnected, setIsScannerConnected] = useState(false);
 
-  const { pushToQueue, keepScannerAwake } = useBarcodeScanner(
+  const categories = useMemo(
+    () => [...new Set(products.map((p) => p.category))].sort(),
+    [products],
+  );
+  const filteredProducts = useMemo(() => {
+    return products.filter((product) => {
+      const matchesSearch =
+        searchTerm === "" ||
+        product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (product.barcode || "").includes(searchTerm);
+      const matchesCategory =
+        selectedCategory === null || product.category === selectedCategory;
+      return matchesSearch && matchesCategory;
+    });
+  }, [products, searchTerm, selectedCategory]);
+
+  const { pushToQueue, keepScannerAwake } = usePOSKeyboardFlow({
     products,
+    filteredProducts,
     cart,
     addToCart,
     updateCartItemQuantity,
+    clearCart,
     searchInputRef,
     setSearchTerm,
     setScanError,
     setIsScannerConnected,
-  );
+  });
 
-  // FUTURE ARCHITECTURE NOTE: (Issue 2)
-  // Currently using window.dispatchEvent for global refresh triggers.
-  // TODO: Migrate to Zustand/Redux global state when scaling application.
+  // Issue 2: Global events used for now, marked for future Redux/Zustand migration
   useEffect(() => {
     const handleOnline = () => setIsOnline(true);
     const handleOffline = () => setIsOnline(false);
-
     const handleRemoteRefresh = () => {
       if (currentShop) setProducts(db.products.getByShopId(currentShop.id));
     };
 
-    window.addEventListener("online", handleOnline);
-    window.addEventListener("offline", handleOffline);
-    window.addEventListener("inventory-force-refresh", handleRemoteRefresh);
-
-    searchInputRef.current?.focus();
+    // Auto focus lock
     const handleFocusRecovery = () => {
       if (
         !["INPUT", "TEXTAREA", "SELECT"].includes(
@@ -241,7 +340,14 @@ export const POS: React.FC = () => {
       )
         searchInputRef.current?.focus();
     };
+
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+    window.addEventListener("inventory-force-refresh", handleRemoteRefresh);
     window.addEventListener("click", handleFocusRecovery);
+
+    // Initial auto-focus
+    searchInputRef.current?.focus();
 
     return () => {
       window.removeEventListener("online", handleOnline);
@@ -278,22 +384,6 @@ export const POS: React.FC = () => {
     return () => unsubscribe();
   }, [currentShop]);
 
-  const categories = useMemo(
-    () => [...new Set(products.map((p) => p.category))].sort(),
-    [products],
-  );
-  const filteredProducts = useMemo(() => {
-    return products.filter((product) => {
-      const matchesSearch =
-        searchTerm === "" ||
-        product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (product.barcode || "").includes(searchTerm);
-      const matchesCategory =
-        selectedCategory === null || product.category === selectedCategory;
-      return matchesSearch && matchesCategory;
-    });
-  }, [products, searchTerm, selectedCategory]);
-
   const simulateScan = () => {
     keepScannerAwake();
     if (products.length > 0)
@@ -304,9 +394,9 @@ export const POS: React.FC = () => {
   };
 
   return (
-    // STRICT APP LAYOUT: h-full with overflow-hidden stops the full page from scrolling.
+    // APP LAYOUT: h-[calc] and overflow-hidden prevent full-page body scrolling
     <div className="flex flex-col h-[calc(100vh-80px)] overflow-hidden">
-      {/* HARDWARE STATUS BAR: White pill shape as requested */}
+      {/* HARDWARE STATUS BAR: White pill shape */}
       <div className="bg-white px-5 py-3 flex justify-between items-center rounded-full mx-0 mb-4 shadow-sm border border-gray-100 flex-shrink-0">
         <div className="flex items-center gap-6">
           <span
@@ -331,7 +421,7 @@ export const POS: React.FC = () => {
         </button>
       </div>
 
-      {/* STRICT APP LAYOUT: min-h-0 allows the flex children to shrink and create scrollbars */}
+      {/* MIN-H-0 ensures child scroll containers can shrink properly */}
       <div className="flex flex-col md:flex-row flex-1 gap-4 min-h-0 relative">
         {scanError && (
           <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded-xl shadow-lg flex items-center gap-3 animate-in slide-in-from-top-4 fade-in duration-300">
@@ -352,7 +442,6 @@ export const POS: React.FC = () => {
         )}
 
         <div className="flex-1 flex flex-col min-w-0 bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-          {/* Header shrinks to 0 so the grid takes the rest of the height */}
           <div className="p-4 border-b border-gray-100 space-y-4 flex-shrink-0">
             <div className="relative">
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400">
@@ -362,7 +451,7 @@ export const POS: React.FC = () => {
                 ref={searchInputRef}
                 type="text"
                 className="w-full h-12 pl-10 pr-10 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#ecff76] focus:border-[#ecff76] text-base transition-all"
-                placeholder="Search by name or scan barcode..."
+                placeholder="Search or [F1] / Checkout [F2] / Clear [F3]"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 onKeyDown={(e) => {
@@ -372,7 +461,6 @@ export const POS: React.FC = () => {
                     setSearchTerm("");
                   }
                 }}
-                autoFocus
               />
               {searchTerm && (
                 <button
@@ -409,7 +497,7 @@ export const POS: React.FC = () => {
             </div>
           </div>
 
-          {/* STRICT APP LAYOUT: flex-1 and overflow-y-auto traps scrolling to ONLY the grid */}
+          {/* OVERFLOW-Y-AUTO: Traps vertical scrolling entirely to this grid */}
           <div className="flex-1 overflow-y-auto p-4 bg-gray-50/50">
             {isLoading ? (
               <div className="flex h-full items-center justify-center">
@@ -421,7 +509,7 @@ export const POS: React.FC = () => {
           </div>
         </div>
 
-        {/* Shopping Cart Sidebar */}
+        {/* Shopping Cart Sidebar acts as rigid pane */}
         <div className="w-full md:w-[400px] flex-shrink-0 bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden flex flex-col">
           <ShoppingCart />
         </div>
