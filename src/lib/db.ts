@@ -7,7 +7,11 @@ const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:4000";
 type SocketEmitCallback = (response: unknown) => void;
 
 type SocketType = ReturnType<typeof clientIo> & {
-  emit: (event: string, payload?: unknown, callback?: SocketEmitCallback) => void;
+  emit: (
+    event: string,
+    payload?: unknown,
+    callback?: SocketEmitCallback,
+  ) => void;
 };
 
 let socket: SocketType | null = null;
@@ -21,9 +25,19 @@ export interface BusinessRules {
     redeemRate: number;
     minPointsToRedeem: number;
   };
-  discounts: Array<{ id?: number; name: string; type: 'percent' | 'fixed'; value: number }>;
+  discounts: Array<{
+    id?: number;
+    name: string;
+    type: "percent" | "fixed";
+    value: number;
+  }>;
   taxes: Array<{ id?: number; name: string; rate: number; isDefault: boolean }>;
-  surcharges: Array<{ id?: number; minAmount: number; type: 'percent' | 'fixed'; value: number }>;
+  surcharges: Array<{
+    id?: number;
+    minAmount: number;
+    type: "percent" | "fixed";
+    value: number;
+  }>;
 }
 
 export interface DailySale {
@@ -101,7 +115,7 @@ type TransactionItemRow = {
 type RawDiscountRule = {
   id?: number;
   name?: string | null;
-  type?: 'percent' | 'fixed' | null;
+  type?: "percent" | "fixed" | null;
   value?: number | null;
 };
 
@@ -115,7 +129,7 @@ type RawTaxRule = {
 type RawSurchargeRule = {
   id?: number;
   min_amount?: number | null;
-  type?: 'percent' | 'fixed' | null;
+  type?: "percent" | "fixed" | null;
   value?: number | null;
 };
 
@@ -199,8 +213,10 @@ interface ShopCache {
 }
 
 const shopCaches: Record<string, ShopCache> = Object.create(null);
-const lastAppliedChanges: Record<string, Record<string, { timestamp: number; changeId: string }>> =
-  Object.create(null);
+const lastAppliedChanges: Record<
+  string,
+  Record<string, { timestamp: number; changeId: string }>
+> = Object.create(null);
 
 function ensureShopCache(shopKey: string): ShopCache {
   if (!shopCaches[shopKey]) {
@@ -216,10 +232,15 @@ function ensureShopCache(shopKey: string): ShopCache {
       sales: [],
       paymentMethods: [],
       businessRules: {
-        loyalty: { enabled: false, earnRate: 1, redeemRate: 0.01, minPointsToRedeem: 0 },
+        loyalty: {
+          enabled: false,
+          earnRate: 1,
+          redeemRate: 0.01,
+          minPointsToRedeem: 0,
+        },
         discounts: [],
         taxes: [],
-        surcharges: []
+        surcharges: [],
       },
     };
   }
@@ -236,9 +257,11 @@ function shouldSkipChange(
   shopKey: string,
   entity: string,
   changeId: string | undefined,
-  timestamp: string | undefined
+  timestamp: string | undefined,
 ) {
-  const store = lastAppliedChanges[shopKey] || (lastAppliedChanges[shopKey] = Object.create(null));
+  const store =
+    lastAppliedChanges[shopKey] ||
+    (lastAppliedChanges[shopKey] = Object.create(null));
   const existing = store[entity];
   const parsedTimestamp = timestamp ? Date.parse(timestamp) : Number.NaN;
 
@@ -246,12 +269,18 @@ function shouldSkipChange(
     if (parsedTimestamp < existing.timestamp) {
       return true;
     }
-    if (parsedTimestamp === existing.timestamp && changeId && existing.changeId === changeId) {
+    if (
+      parsedTimestamp === existing.timestamp &&
+      changeId &&
+      existing.changeId === changeId
+    ) {
       return true;
     }
   }
 
-  const effectiveTimestamp = Number.isNaN(parsedTimestamp) ? Date.now() : parsedTimestamp;
+  const effectiveTimestamp = Number.isNaN(parsedTimestamp)
+    ? Date.now()
+    : parsedTimestamp;
   store[entity] = {
     timestamp: effectiveTimestamp,
     changeId: changeId || `change-${effectiveTimestamp}`,
@@ -291,7 +320,10 @@ const shopsCache: Record<string, Shop> = {};
 const usersCache: User[] = [];
 
 function sanitizeShopIdentifier(value: string): string {
-  return value.trim().toLowerCase().replace(/[^a-z0-9@._+-]/g, "_");
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9@._+-]/g, "_");
 }
 
 function normalizeShopId(shopId: string) {
@@ -412,9 +444,10 @@ function toDailySale(shopKey: string, row: DailySalesRow): DailySale {
 function buildSale(
   shopKey: string,
   cache: ShopCache,
-  transaction: TransactionRow
+  transaction: TransactionRow,
 ): Sale {
-  const items = cache.transactionItemsByTx.get(transaction.transaction_id) || [];
+  const items =
+    cache.transactionItemsByTx.get(transaction.transaction_id) || [];
   const cartItems: CartItem[] = items.map((item): CartItem => {
     const inventory = item.inventory_code
       ? cache.inventoryByCode.get(String(item.inventory_code))
@@ -438,7 +471,8 @@ function buildSale(
     shopId: shopKey,
     items: cartItems,
     total: Number(transaction.total ?? 0),
-    paymentMethod: (transaction.payment_method || "cash") as Sale["paymentMethod"],
+    paymentMethod: (transaction.payment_method ||
+      "cash") as Sale["paymentMethod"],
     timestamp: transaction.created_at || new Date().toISOString(),
   } as Sale;
 }
@@ -496,18 +530,24 @@ function upsertCustomer(shopKey: string, row: CustomerRow) {
   const cache = ensureShopCache(shopKey);
   cache.customersById.set(row.customer_id, row);
   cache.customers = Array.from(cache.customersById.values()).map((r) =>
-    toCustomer(shopKey, r)
+    toCustomer(shopKey, r),
   );
-  emit("customersUpdated", { shopId: shopKey, customers: cache.customers.slice() });
+  emit("customersUpdated", {
+    shopId: shopKey,
+    customers: cache.customers.slice(),
+  });
 }
 
 function upsertDailySale(shopKey: string, row: DailySalesRow) {
   const cache = ensureShopCache(shopKey);
   cache.dailySalesByDate.set(row.date, toDailySale(shopKey, row));
   cache.dailySales = Array.from(cache.dailySalesByDate.values()).sort((a, b) =>
-    b.date.localeCompare(a.date)
+    b.date.localeCompare(a.date),
   );
-  emit("dailySalesUpdated", { shopId: shopKey, rows: cache.dailySales.slice() });
+  emit("dailySalesUpdated", {
+    shopId: shopKey,
+    rows: cache.dailySales.slice(),
+  });
 }
 
 function rebuildSales(shopKey: string) {
@@ -518,20 +558,28 @@ function rebuildSales(shopKey: string) {
   emit("salesUpdated", { shopId: shopKey, items: cache.sales.slice() });
 }
 
-function upsertTransaction(shopKey: string, row: TransactionRow, items: TransactionItemRow[]) {
+function upsertTransaction(
+  shopKey: string,
+  row: TransactionRow,
+  items: TransactionItemRow[],
+) {
   const cache = ensureShopCache(shopKey);
   cache.transactionsById.set(row.transaction_id, row);
   if (items.length) {
     cache.transactionItemsByTx.set(row.transaction_id, items);
   }
   rebuildSales(shopKey);
-  const createdSale = cache.sales.find((sale) => sale.id === String(row.transaction_id));
+  const createdSale = cache.sales.find(
+    (sale) => sale.id === String(row.transaction_id),
+  );
   if (createdSale) {
     emit("saleCreated", { shopId: shopKey, sale: createdSale });
   }
 }
 
-function toBusinessRules(raw: RawBusinessRulesSnapshot | null | undefined): BusinessRules | null {
+function toBusinessRules(
+  raw: RawBusinessRulesSnapshot | null | undefined,
+): BusinessRules | null {
   if (!raw) {
     return null;
   }
@@ -585,15 +633,26 @@ function toBusinessRules(raw: RawBusinessRulesSnapshot | null | undefined): Busi
 }
 
 // Updated applySnapshot to load Business Rules
-function applySnapshot(shopKey: string, snapshot: ShopSnapshotPayload | null | undefined) {
+function applySnapshot(
+  shopKey: string,
+  snapshot: ShopSnapshotPayload | null | undefined,
+) {
   resetChangeTracker(shopKey);
   const payload = snapshot ?? {};
   const invRows = Array.isArray(payload.inventory) ? payload.inventory : [];
-  const customerRows = Array.isArray(payload.customers) ? payload.customers : [];
-  const transactions = Array.isArray(payload.transactions) ? payload.transactions : [];
-  const txItems = Array.isArray(payload.transactionItems) ? payload.transactionItems : [];
+  const customerRows = Array.isArray(payload.customers)
+    ? payload.customers
+    : [];
+  const transactions = Array.isArray(payload.transactions)
+    ? payload.transactions
+    : [];
+  const txItems = Array.isArray(payload.transactionItems)
+    ? payload.transactionItems
+    : [];
   const dailyRows = Array.isArray(payload.dailySales) ? payload.dailySales : [];
-  const methods = Array.isArray(payload.paymentMethods) ? payload.paymentMethods : [];
+  const methods = Array.isArray(payload.paymentMethods)
+    ? payload.paymentMethods
+    : [];
 
   const cache = ensureShopCache(shopKey);
   cache.inventoryByCode.clear();
@@ -609,19 +668,21 @@ function applySnapshot(shopKey: string, snapshot: ShopSnapshotPayload | null | u
   cache.customersById.clear();
   customerRows.forEach((row) => cache.customersById.set(row.customer_id, row));
   cache.customers = Array.from(cache.customersById.values()).map((row) =>
-    toCustomer(shopKey, row)
+    toCustomer(shopKey, row),
   );
 
   cache.dailySalesByDate.clear();
   dailyRows.forEach((row) =>
-    cache.dailySalesByDate.set(row.date, toDailySale(shopKey, row))
+    cache.dailySalesByDate.set(row.date, toDailySale(shopKey, row)),
   );
   cache.dailySales = Array.from(cache.dailySalesByDate.values()).sort((a, b) =>
-    b.date.localeCompare(a.date)
+    b.date.localeCompare(a.date),
   );
 
   cache.transactionsById.clear();
-  transactions.forEach((row) => cache.transactionsById.set(row.transaction_id, row));
+  transactions.forEach((row) =>
+    cache.transactionsById.set(row.transaction_id, row),
+  );
   cache.transactionItemsByTx.clear();
   for (const item of txItems) {
     const list = cache.transactionItemsByTx.get(item.transaction_id) || [];
@@ -640,10 +701,19 @@ function applySnapshot(shopKey: string, snapshot: ShopSnapshotPayload | null | u
   rebuildSales(shopKey);
 
   emit("inventoryUpdated", { shopId: shopKey, items: cache.products.slice() });
-  emit("customersUpdated", { shopId: shopKey, customers: cache.customers.slice() });
-  emit("dailySalesUpdated", { shopId: shopKey, rows: cache.dailySales.slice() });
+  emit("customersUpdated", {
+    shopId: shopKey,
+    customers: cache.customers.slice(),
+  });
+  emit("dailySalesUpdated", {
+    shopId: shopKey,
+    rows: cache.dailySales.slice(),
+  });
   emit("salesUpdated", { shopId: shopKey, items: cache.sales.slice() });
-  emit("paymentMethodsUpdated", { shopId: shopKey, methods: cache.paymentMethods.slice() });
+  emit("paymentMethodsUpdated", {
+    shopId: shopKey,
+    methods: cache.paymentMethods.slice(),
+  });
   emit("businessRulesUpdated", { shopId: shopKey, rules: cache.businessRules });
 }
 
@@ -665,8 +735,10 @@ function handleChange(event: ChangeEventPayload | null | undefined) {
 
   const shopKey = toShopKey(event.shopId);
   const entity = String(event.entity ?? "unknown");
-  const changeId = typeof event.changeId === "string" ? event.changeId : undefined;
-  const timestamp = typeof event.timestamp === "string" ? event.timestamp : undefined;
+  const changeId =
+    typeof event.changeId === "string" ? event.changeId : undefined;
+  const timestamp =
+    typeof event.timestamp === "string" ? event.timestamp : undefined;
 
   if (shouldSkipChange(shopKey, entity, changeId, timestamp)) {
     return;
@@ -677,7 +749,9 @@ function handleChange(event: ChangeEventPayload | null | undefined) {
   switch (entity) {
     case "inventory": {
       const action = String(event.action ?? "upsert");
-      const source = isObject(payload) ? (payload as Partial<InventoryChangePayload>) : {};
+      const source = isObject(payload)
+        ? (payload as Partial<InventoryChangePayload>)
+        : {};
       if (action === "delete") {
         const codes = toStringArray((source as { codes?: unknown }).codes);
         removeInventoryRows(shopKey, codes);
@@ -730,7 +804,10 @@ function handleChange(event: ChangeEventPayload | null | undefined) {
       const methods = toStringArray(methodsSource);
       const cache = ensureShopCache(shopKey);
       cache.paymentMethods = methods;
-      emit("paymentMethodsUpdated", { shopId: shopKey, methods: cache.paymentMethods.slice() });
+      emit("paymentMethodsUpdated", {
+        shopId: shopKey,
+        methods: cache.paymentMethods.slice(),
+      });
       break;
     }
     case "business_rules": {
@@ -823,7 +900,10 @@ function getDailySalesByShop(shopId: string): DailySale[] {
   return cache.dailySales.slice();
 }
 
-function getTransactionItemsBySale(shopId: string, saleId: string): TransactionItem[] {
+function getTransactionItemsBySale(
+  shopId: string,
+  saleId: string,
+): TransactionItem[] {
   const cache = ensureShopCache(toShopKey(shopId));
   const rawItems = cache.transactionItemsByTx.get(Number(saleId)) || [];
   return rawItems.map((item) => {
@@ -852,7 +932,7 @@ function getPaymentMethodsByShop(shopId: string): string[] {
 }
 
 async function createInventoryRecord(
-  product: Omit<Product, "id"> & { id?: string }
+  product: Omit<Product, "id"> & { id?: string },
 ): Promise<Product> {
   const shopKey = product.shopId || currentShopKey || "";
   if (!shopKey) throw new Error("No active shop selected");
@@ -870,8 +950,8 @@ async function createInventoryRecord(
       if (!result.ok) {
         reject(
           new Error(
-            result.error || "Failed to save product. Please try again."
-          )
+            result.error || "Failed to save product. Please try again.",
+          ),
         );
         return;
       }
@@ -893,7 +973,7 @@ async function createInventoryRecord(
                 ...product,
                 id: identifier,
                 shopId: shopKey,
-              }
+              },
         );
       }
     });
@@ -904,7 +984,7 @@ async function createInventoryRecord(
 async function saveBusinessRules(rules: BusinessRules): Promise<void> {
   if (!currentShopKey) throw new Error("No active shop");
   const cleanShopId = normalizeShopId(currentShopKey);
-  
+
   const res = await fetch(`${API_BASE}/api/business-rules/${cleanShopId}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
@@ -915,7 +995,7 @@ async function saveBusinessRules(rules: BusinessRules): Promise<void> {
     const err = await res.json();
     throw new Error(err.error || "Failed to save business rules");
   }
-  
+
   // Optimistic update
   const cache = ensureShopCache(currentShopKey);
   cache.businessRules = rules;
@@ -927,7 +1007,7 @@ async function createSaleRecord(sale: Omit<Sale, "id">): Promise<Sale> {
   const shopKey = sale.shopId || currentShopKey;
   if (!shopKey) throw new Error("No active shop selected");
   const cleanShopId = normalizeShopId(shopKey);
-  
+
   const payload = {
     shopId: cleanShopId,
     customer: sale.customerInfo || {},
@@ -938,7 +1018,9 @@ async function createSaleRecord(sale: Omit<Sale, "id">): Promise<Sale> {
       unit_price: item.price,
       quantity: item.quantity,
     })),
-    subtotal: sale.subtotal || sale.items.reduce((sum, item) => sum + item.price * item.quantity, 0),
+    subtotal:
+      sale.subtotal ||
+      sale.items.reduce((sum, item) => sum + item.price * item.quantity, 0),
     discount: sale.discount || 0,
     tax: sale.tax || 0,
     total: sale.total,
@@ -994,7 +1076,8 @@ export const db = {
   },
   users: {
     getAll: (): User[] => usersCache,
-    getById: (id: string): User | undefined => usersCache.find((u) => u.id === id),
+    getById: (id: string): User | undefined =>
+      usersCache.find((u) => u.id === id),
     getByShopId: (shopId: string): User[] =>
       usersCache.filter((u) => u.shopId === shopId),
     async create(user: Omit<User, "id">): Promise<User> {
@@ -1024,7 +1107,7 @@ export const db = {
         `${API_BASE}/api/inventory/${encodeURIComponent(cleanShopId)}/${encodeURIComponent(id)}`,
         {
           method: "DELETE",
-        }
+        },
       );
       let body: unknown = null;
       try {
@@ -1032,11 +1115,15 @@ export const db = {
       } catch {
         body = null;
       }
-      const payload = isObject(body) ? (body as InventoryDeleteResponse) : undefined;
+      const payload = isObject(body)
+        ? (body as InventoryDeleteResponse)
+        : undefined;
       if (!response.ok || payload?.ok === false) {
         throw new Error(payload?.error || "Failed to delete product");
       }
-      const codes = payload?.codes ? toStringArray(payload.codes) : [String(id)];
+      const codes = payload?.codes
+        ? toStringArray(payload.codes)
+        : [String(id)];
       removeInventoryRows(shopKey, codes);
       return codes;
     },
@@ -1069,27 +1156,41 @@ export const db = {
     async refresh(shopId: string): Promise<string[]> {
       const shopKey = toShopKey(shopId);
       const cleanShopId = normalizeShopId(shopId || shopKey);
-      const response = await fetch(`${API_BASE}/api/payment-methods/${cleanShopId}`);
+      const response = await fetch(
+        `${API_BASE}/api/payment-methods/${cleanShopId}`,
+      );
       const rawBody: unknown = await response.json();
-      const payload = isObject(rawBody) ? (rawBody as PaymentMethodsResponse) : undefined;
+      const payload = isObject(rawBody)
+        ? (rawBody as PaymentMethodsResponse)
+        : undefined;
       if (!response.ok || payload?.ok === false) {
         throw new Error(payload?.error || "Failed to load payment methods");
       }
       const cache = ensureShopCache(shopKey);
-      cache.paymentMethods = payload?.methods ? toStringArray(payload.methods) : [];
-      emit("paymentMethodsUpdated", { shopId: shopKey, methods: cache.paymentMethods.slice() });
+      cache.paymentMethods = payload?.methods
+        ? toStringArray(payload.methods)
+        : [];
+      emit("paymentMethodsUpdated", {
+        shopId: shopKey,
+        methods: cache.paymentMethods.slice(),
+      });
       return cache.paymentMethods.slice();
     },
     async setEnabled(shopId: string, methods: string[]): Promise<string[]> {
       const shopKey = toShopKey(shopId);
       const cleanShopId = normalizeShopId(shopId || shopKey);
-      const response = await fetch(`${API_BASE}/api/payment-methods/${cleanShopId}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ methods }),
-      });
+      const response = await fetch(
+        `${API_BASE}/api/payment-methods/${cleanShopId}`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ methods }),
+        },
+      );
       const rawBody: unknown = await response.json();
-      const payload = isObject(rawBody) ? (rawBody as PaymentMethodsResponse) : undefined;
+      const payload = isObject(rawBody)
+        ? (rawBody as PaymentMethodsResponse)
+        : undefined;
       if (!response.ok || payload?.ok === false) {
         throw new Error(payload?.error || "Failed to update payment methods");
       }
@@ -1097,17 +1198,59 @@ export const db = {
       cache.paymentMethods = payload?.methods
         ? toStringArray(payload.methods)
         : methods.map((method) => String(method));
-      emit("paymentMethodsUpdated", { shopId: shopKey, methods: cache.paymentMethods.slice() });
+      emit("paymentMethodsUpdated", {
+        shopId: shopKey,
+        methods: cache.paymentMethods.slice(),
+      });
       return cache.paymentMethods.slice();
     },
   },
   businessRules: {
     get: (): BusinessRules => {
-        const cache = ensureShopCache(currentShopKey || "");
-        return JSON.parse(JSON.stringify(cache.businessRules));
+      const cache = ensureShopCache(currentShopKey || "");
+      return JSON.parse(JSON.stringify(cache.businessRules));
     },
-    save: saveBusinessRules
-  }
+    save: saveBusinessRules,
+  },
+  shortcuts: {
+    get: (): {
+      focusSearch: string;
+      checkout: string;
+      clearCart: string;
+      togglePayment: string;
+      addCustomer: string;
+      confirmPayment: string;
+      increaseQuantity: string;
+      decreaseQuantity: string;
+    } => {
+      const data = localStorage.getItem("pos_device_shortcuts");
+      if (data) return JSON.parse(data);
+      // Default Enterprise Keybindings
+      return {
+        focusSearch: "F1",
+        checkout: "F2",
+        clearCart: "F3",
+        togglePayment: "F4",
+        addCustomer: "F5",
+        confirmPayment: "Enter",
+        increaseQuantity: "+",
+        decreaseQuantity: "-",
+      };
+    },
+    save: (shortcuts: {
+      focusSearch: string;
+      checkout: string;
+      clearCart: string;
+      togglePayment: string;
+      addCustomer: string;
+      confirmPayment: string;
+      increaseQuantity: string;
+      decreaseQuantity: string;
+    }) => {
+      localStorage.setItem("pos_device_shortcuts", JSON.stringify(shortcuts));
+      window.dispatchEvent(new CustomEvent("shortcuts-updated")); // Triggers instant UI updates across the app
+    },
+  },
 };
 
 export default db;

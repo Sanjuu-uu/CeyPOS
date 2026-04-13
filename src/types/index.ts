@@ -75,6 +75,17 @@ export interface DashboardStats {
   }>;
 }
 
+export interface KeyboardShortcuts {
+  focusSearch: string;
+  checkout: string;
+  clearCart: string;
+  togglePayment: string;
+  addCustomer: string;
+  confirmPayment: string;
+  increaseQuantity: string;
+  decreaseQuantity: string;
+}
+
 export type ModuleName =
   | "dashboard"
   | "pos"

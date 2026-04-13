@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 import { db } from "../../../lib/db";
 import { useApp } from "../../../context/AppContext";
-import { Product, CartItem } from "../../../types";
+import { Product, CartItem, KeyboardShortcuts } from "../../../types";
 
 type InventoryUpdatedPayload = { shopId?: string; items?: Product[] };
 const isInventoryUpdatedPayload = (
@@ -43,6 +43,7 @@ const usePOSKeyboardFlow = ({
   setSearchTerm,
   setScanError,
   setIsScannerConnected,
+  shortcuts,
 }: any) => {
   const scanQueueRef = useRef<string[]>([]);
   const barcodeBufferRef = useRef("");
@@ -57,7 +58,6 @@ const usePOSKeyboardFlow = ({
   const filteredProductsRef = useRef<Product[]>(filteredProducts);
   const cartRef = useRef<CartItem[]>(cart);
 
-  // Keep refs fresh for event listeners
   useEffect(() => {
     productsRef.current = products;
   }, [products]);
@@ -77,6 +77,7 @@ const usePOSKeyboardFlow = ({
     };
   }, []);
 
+  // --- RESTORED: Native Web Audio Beeps ---
   const playBeep = (type: "success" | "error" = "success") => {
     try {
       const ctx = new (
@@ -86,6 +87,7 @@ const usePOSKeyboardFlow = ({
       const gainNode = ctx.createGain();
       osc.connect(gainNode);
       gainNode.connect(ctx.destination);
+
       if (type === "success") {
         osc.type = "sine";
         osc.frequency.setValueAtTime(800, ctx.currentTime);
@@ -130,6 +132,7 @@ const usePOSKeyboardFlow = ({
       }
     });
 
+    // --- RESTORED: Play beep on scan results ---
     if (successCount > 0) playBeep("success");
     if (lastError) {
       playBeep("error");
@@ -166,9 +169,8 @@ const usePOSKeyboardFlow = ({
       const timeDiff = currentTime - lastKeyTimeRef.current;
       lastKeyTimeRef.current = currentTime;
 
-      keepScannerAwake(); // Issue 1 Fixed: Resets on ANY key activity
+      keepScannerAwake();
 
-      // 1. HARDWARE SCANNER DETECTION (< 30ms between keystrokes)
       if (timeDiff < 30 && e.key.length === 1) {
         barcodeBufferRef.current += e.key;
         if (scannerTimeoutRef.current) clearTimeout(scannerTimeoutRef.current);
@@ -182,7 +184,6 @@ const usePOSKeyboardFlow = ({
         return;
       }
 
-      // Scanner emitting physical "Enter"
       if (e.key === "Enter" && barcodeBufferRef.current.length >= 8) {
         if (scannerTimeoutRef.current) clearTimeout(scannerTimeoutRef.current);
         pushToQueue(barcodeBufferRef.current);
@@ -194,35 +195,40 @@ const usePOSKeyboardFlow = ({
 
       if (timeDiff > 50) barcodeBufferRef.current = "";
 
-      // 2. GLOBAL SHORTCUTS & MACROS
       const activeTag = document.activeElement?.tagName;
       const isSearchFocused = document.activeElement === searchInputRef.current;
       const isOtherInput = activeTag === "INPUT" || activeTag === "TEXTAREA";
 
-      // F-Keys (Work everywhere)
-      if (e.key === "F1") {
+      if (e.key.toLowerCase() === shortcuts.focusSearch?.toLowerCase()) {
         e.preventDefault();
         searchInputRef.current?.focus();
         return;
       }
-      if (e.key === "F2") {
+      if (e.key.toLowerCase() === shortcuts.checkout?.toLowerCase()) {
         e.preventDefault();
         window.dispatchEvent(new CustomEvent("pos:checkout"));
         return;
       }
-      if (e.key === "F3") {
+      if (e.key.toLowerCase() === shortcuts.clearCart?.toLowerCase()) {
         e.preventDefault();
         clearCart();
         return;
       }
-      if (e.key === "F4") {
+      if (e.key.toLowerCase() === shortcuts.togglePayment?.toLowerCase()) {
         e.preventDefault();
         window.dispatchEvent(new CustomEvent("pos:toggle-payment"));
         return;
       }
+      if (e.key.toLowerCase() === shortcuts.addCustomer?.toLowerCase()) {
+        e.preventDefault();
+        window.dispatchEvent(new CustomEvent("pos:add-customer"));
+        return;
+      }
 
-      // Enter Flow: Auto proceed to checkout or confirm sale
-      if (e.key === "Enter") {
+      if (
+        e.key.toLowerCase() === shortcuts.confirmPayment?.toLowerCase() ||
+        e.key === "Enter"
+      ) {
         if (!isSearchFocused || searchInputRef.current?.value === "") {
           e.preventDefault();
           window.dispatchEvent(new CustomEvent("pos:action-enter"));
@@ -230,8 +236,6 @@ const usePOSKeyboardFlow = ({
         }
       }
 
-      // Quick Select (1-9) & Quantity Adjust (+ / -)
-      // Only active if we aren't typing text into an input field (or if search box is empty)
       if (
         !isOtherInput ||
         (isSearchFocused && searchInputRef.current?.value === "")
@@ -247,17 +251,27 @@ const usePOSKeyboardFlow = ({
             if (existing)
               updateCartItemQuantity(prod.id, existing.quantity + 1);
             else addToCart({ ...prod, quantity: 1 });
+
+            // --- RESTORED: Play beep when adding via 1-9 shortcut ---
             playBeep("success");
           }
           return;
         }
 
-        if (e.key === "+" || e.key === "=" || e.key === "-") {
+        if (
+          e.key === shortcuts.increaseQuantity ||
+          e.key === shortcuts.decreaseQuantity ||
+          e.key === "+" ||
+          e.key === "=" ||
+          e.key === "-"
+        ) {
           e.preventDefault();
           if (cartRef.current.length > 0) {
             const lastItem = cartRef.current[cartRef.current.length - 1];
             const newQty =
-              e.key === "-" ? lastItem.quantity - 1 : lastItem.quantity + 1;
+              e.key === shortcuts.decreaseQuantity || e.key === "-"
+                ? lastItem.quantity - 1
+                : lastItem.quantity + 1;
             if (newQty <= 0) updateCartItemQuantity(lastItem.id, 0);
             else updateCartItemQuantity(lastItem.id, newQty);
           }
@@ -275,6 +289,7 @@ const usePOSKeyboardFlow = ({
     searchInputRef,
     setSearchTerm,
     setIsScannerConnected,
+    shortcuts,
   ]);
 
   return { pushToQueue, keepScannerAwake };
@@ -293,6 +308,17 @@ export const POS: React.FC = () => {
 
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [isScannerConnected, setIsScannerConnected] = useState(false);
+
+  const [shortcuts, setShortcuts] = useState<KeyboardShortcuts>(
+    db.shortcuts.get(),
+  );
+
+  useEffect(() => {
+    const handleShortcutUpdate = () => setShortcuts(db.shortcuts.get());
+    window.addEventListener("shortcuts-updated", handleShortcutUpdate);
+    return () =>
+      window.removeEventListener("shortcuts-updated", handleShortcutUpdate);
+  }, []);
 
   const categories = useMemo(
     () => [...new Set(products.map((p) => p.category))].sort(),
@@ -321,17 +347,15 @@ export const POS: React.FC = () => {
     setSearchTerm,
     setScanError,
     setIsScannerConnected,
+    shortcuts,
   });
 
-  // Issue 2: Global events used for now, marked for future Redux/Zustand migration
   useEffect(() => {
     const handleOnline = () => setIsOnline(true);
     const handleOffline = () => setIsOnline(false);
     const handleRemoteRefresh = () => {
       if (currentShop) setProducts(db.products.getByShopId(currentShop.id));
     };
-
-    // Auto focus lock
     const handleFocusRecovery = () => {
       if (
         !["INPUT", "TEXTAREA", "SELECT"].includes(
@@ -346,7 +370,6 @@ export const POS: React.FC = () => {
     window.addEventListener("inventory-force-refresh", handleRemoteRefresh);
     window.addEventListener("click", handleFocusRecovery);
 
-    // Initial auto-focus
     searchInputRef.current?.focus();
 
     return () => {
@@ -390,13 +413,10 @@ export const POS: React.FC = () => {
       pushToQueue(
         products[Math.floor(Math.random() * products.length)].barcode,
       );
-    else pushToQueue("12345678");
   };
 
   return (
-    // APP LAYOUT: h-[calc] and overflow-hidden prevent full-page body scrolling
     <div className="flex flex-col h-[calc(100vh-80px)] overflow-hidden">
-      {/* HARDWARE STATUS BAR: White pill shape */}
       <div className="bg-white px-5 py-3 flex justify-between items-center rounded-full mx-0 mb-4 shadow-sm border border-gray-100 flex-shrink-0">
         <div className="flex items-center gap-6">
           <span
@@ -405,7 +425,6 @@ export const POS: React.FC = () => {
             {isOnline ? <Wifi size={16} /> : <WifiOff size={16} />}
             {isOnline ? "Online Sync Active" : "Offline Database Active"}
           </span>
-
           <span
             className={`flex items-center gap-1.5 text-xs font-bold transition-colors duration-500 ${isScannerConnected ? "text-blue-600" : "text-gray-400"}`}
           >
@@ -421,7 +440,6 @@ export const POS: React.FC = () => {
         </button>
       </div>
 
-      {/* MIN-H-0 ensures child scroll containers can shrink properly */}
       <div className="flex flex-col md:flex-row flex-1 gap-4 min-h-0 relative">
         {scanError && (
           <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded-xl shadow-lg flex items-center gap-3 animate-in slide-in-from-top-4 fade-in duration-300">
@@ -447,11 +465,12 @@ export const POS: React.FC = () => {
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400">
                 <Search size={20} />
               </div>
+
               <input
                 ref={searchInputRef}
                 type="text"
                 className="w-full h-12 pl-10 pr-10 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#ecff76] focus:border-[#ecff76] text-base transition-all"
-                placeholder="Search or [F1] / Checkout [F2] / Clear [F3]"
+                placeholder={`Search [${shortcuts.focusSearch}] / Checkout [${shortcuts.checkout}] / Clear [${shortcuts.clearCart}]`}
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 onKeyDown={(e) => {
@@ -461,7 +480,9 @@ export const POS: React.FC = () => {
                     setSearchTerm("");
                   }
                 }}
+                autoFocus
               />
+
               {searchTerm && (
                 <button
                   onClick={() => {
@@ -497,7 +518,6 @@ export const POS: React.FC = () => {
             </div>
           </div>
 
-          {/* OVERFLOW-Y-AUTO: Traps vertical scrolling entirely to this grid */}
           <div className="flex-1 overflow-y-auto p-4 bg-gray-50/50">
             {isLoading ? (
               <div className="flex h-full items-center justify-center">
@@ -509,7 +529,6 @@ export const POS: React.FC = () => {
           </div>
         </div>
 
-        {/* Shopping Cart Sidebar acts as rigid pane */}
         <div className="w-full md:w-[400px] flex-shrink-0 bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden flex flex-col">
           <ShoppingCart />
         </div>

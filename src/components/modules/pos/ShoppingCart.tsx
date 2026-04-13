@@ -30,7 +30,7 @@ import {
 } from "lucide-react";
 import { useApp } from "../../../context/AppContext";
 import { db, BusinessRules } from "../../../lib/db";
-import { Customer } from "../../../types";
+import { Customer, KeyboardShortcuts } from "../../../types";
 
 type PaymentMethod = "card" | "cash" | "mobile";
 
@@ -176,6 +176,17 @@ export const ShoppingCart: React.FC = () => {
   const [saveChangeAmount, setSaveChangeAmount] = useState<string>("");
   const [cashReceived, setCashReceived] = useState<string>("");
 
+  // --- FETCH DYNAMIC SHORTCUTS ---
+  const [shortcuts, setShortcuts] = useState<KeyboardShortcuts>(
+    db.shortcuts.get(),
+  );
+  useEffect(() => {
+    const handleShortcutUpdate = () => setShortcuts(db.shortcuts.get());
+    window.addEventListener("shortcuts-updated", handleShortcutUpdate);
+    return () =>
+      window.removeEventListener("shortcuts-updated", handleShortcutUpdate);
+  }, []);
+
   const wsRef = useRef<WebSocket | null>(null);
   const viewStateRef = useRef(viewState);
   const cartRef = useRef(cart);
@@ -187,7 +198,6 @@ export const ShoppingCart: React.FC = () => {
     cartRef.current = cart;
   }, [cart]);
 
-  // KEYBOARD SHORTCUT EVENT LISTENERS
   useEffect(() => {
     const handleCheckoutNav = () => setViewState("checkout");
     const handleTogglePayment = () => {
@@ -195,8 +205,6 @@ export const ShoppingCart: React.FC = () => {
         prev === "cash" ? "card" : prev === "card" ? "mobile" : "cash",
       );
     };
-
-    // Auto-Flow via Enter Key (Double Action)
     const handleEnterAction = () => {
       if (viewStateRef.current === "cart" && cartRef.current.length > 0)
         setViewState("checkout");
@@ -204,14 +212,22 @@ export const ShoppingCart: React.FC = () => {
         document.getElementById("checkout-confirm-btn")?.click();
     };
 
+    // --- NEW: Handle focusing the customer lookup ---
+    const handleAddCustomer = () => {
+      const customerInput = document.getElementById("customer-search-input");
+      if (customerInput) customerInput.focus();
+    };
+
     window.addEventListener("pos:checkout", handleCheckoutNav);
     window.addEventListener("pos:toggle-payment", handleTogglePayment);
     window.addEventListener("pos:action-enter", handleEnterAction);
+    window.addEventListener("pos:add-customer", handleAddCustomer);
 
     return () => {
       window.removeEventListener("pos:checkout", handleCheckoutNav);
       window.removeEventListener("pos:toggle-payment", handleTogglePayment);
       window.removeEventListener("pos:action-enter", handleEnterAction);
+      window.removeEventListener("pos:add-customer", handleAddCustomer);
     };
   }, []);
 
@@ -603,7 +619,6 @@ export const ShoppingCart: React.FC = () => {
         </div>
       )}
 
-      {/* HEADER: Flex-shrink-0 */}
       <div className="p-4 border-b border-gray-100 flex justify-between items-center bg-white z-10 flex-shrink-0">
         <div className="flex items-center gap-2">
           <h2 className="font-bold text-lg text-gray-900">Current Order</h2>
@@ -646,12 +661,11 @@ export const ShoppingCart: React.FC = () => {
             onClick={clearCart}
             className="text-xs text-red-500 hover:text-red-700 hover:underline flex items-center gap-1"
           >
-            <Trash2 size={12} /> Clear
+            <Trash2 size={12} /> Clear [{shortcuts.clearCart}]
           </button>
         )}
       </div>
 
-      {/* INDEPENDENT SCROLL FOR ITEMS */}
       <div className="flex-1 overflow-y-auto p-4 space-y-3">
         {cart.length > 0 ? (
           cart.map((item) => (
@@ -712,7 +726,6 @@ export const ShoppingCart: React.FC = () => {
         )}
       </div>
 
-      {/* FIXED CHECKOUT FOOTER */}
       <div className="border-t border-gray-100 bg-gray-50 p-4 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] flex-shrink-0">
         <div className="mb-4 bg-white p-3 rounded-xl border border-gray-200 shadow-sm">
           {customer ? (
@@ -759,8 +772,9 @@ export const ShoppingCart: React.FC = () => {
                   className="absolute left-3 top-2.5 text-gray-400"
                 />
                 <input
+                  id="customer-search-input"
                   type="tel"
-                  placeholder="Customer Mobile"
+                  placeholder={`Customer Mobile [${shortcuts.addCustomer}]`}
                   value={searchPhone}
                   onChange={(e) => setSearchPhone(e.target.value)}
                   className="w-full bg-gray-50 border border-gray-200 rounded-lg pl-9 pr-3 py-2 text-sm outline-none focus:border-[#ecff76] focus:ring-1 focus:ring-[#ecff76] transition-all"
@@ -871,7 +885,7 @@ export const ShoppingCart: React.FC = () => {
               className="h-12 text-base font-bold bg-[#ecff76] text-gray-900 hover:bg-[#d9ec60] border-none"
               disabled={cart.length === 0}
             >
-              Pay Now [F2]
+              Pay Now [{shortcuts.checkout}]
             </Button>
           </div>
         ) : (
@@ -945,8 +959,8 @@ export const ShoppingCart: React.FC = () => {
               ))}
               <div className="col-span-3 text-center text-[10px] text-gray-400 mt-1">
                 Press{" "}
-                <kbd className="bg-gray-100 px-1 py-0.5 rounded border border-gray-200">
-                  F4
+                <kbd className="bg-gray-100 px-1 py-0.5 rounded border border-gray-200 text-gray-800 font-bold">
+                  {shortcuts.togglePayment}
                 </kbd>{" "}
                 to toggle payment method
               </div>
@@ -1100,7 +1114,9 @@ export const ShoppingCart: React.FC = () => {
                 disabled={saving || isInsufficientPayment}
                 className="flex-[2] py-3 text-sm font-bold text-gray-900 bg-[#ecff76] rounded-lg hover:bg-[#d9ec60] disabled:bg-gray-200 disabled:text-gray-400 disabled:cursor-not-allowed flex items-center justify-center gap-2"
               >
-                {saving ? "Processing..." : "Complete Sale [Enter]"}
+                {saving
+                  ? "Processing..."
+                  : `Complete Sale [${shortcuts.confirmPayment}]`}
                 {!saving && <ArrowRight size={16} />}
               </button>
             </div>
