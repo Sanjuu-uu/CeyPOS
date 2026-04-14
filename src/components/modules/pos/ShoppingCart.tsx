@@ -140,8 +140,14 @@ const useCartCalculations = (
 };
 
 export const ShoppingCart: React.FC = () => {
-  const { cart, clearCart, updateCartItemQuantity, cartTotal, currentShop } =
-    useApp();
+  const {
+    cart,
+    clearCart,
+    updateCartItemQuantity,
+    cartTotal,
+    currentShop,
+    currentUser,
+  } = useApp();
   const currencySymbol = currentShop?.currency ?? "$";
 
   const [viewState, setViewState] = useState<"cart" | "checkout" | "success">(
@@ -176,16 +182,19 @@ export const ShoppingCart: React.FC = () => {
   const [saveChangeAmount, setSaveChangeAmount] = useState<string>("");
   const [cashReceived, setCashReceived] = useState<string>("");
 
+  const userId = currentUser?.id || "default";
+
   // --- FETCH DYNAMIC SHORTCUTS ---
   const [shortcuts, setShortcuts] = useState<KeyboardShortcuts>(
-    db.shortcuts.get(),
+    db.shortcuts.get(userId),
   );
+
   useEffect(() => {
-    const handleShortcutUpdate = () => setShortcuts(db.shortcuts.get());
+    const handleShortcutUpdate = () => setShortcuts(db.shortcuts.get(userId));
     window.addEventListener("shortcuts-updated", handleShortcutUpdate);
     return () =>
       window.removeEventListener("shortcuts-updated", handleShortcutUpdate);
-  }, []);
+  }, [userId]);
 
   const wsRef = useRef<WebSocket | null>(null);
   const viewStateRef = useRef(viewState);
@@ -212,7 +221,6 @@ export const ShoppingCart: React.FC = () => {
         document.getElementById("checkout-confirm-btn")?.click();
     };
 
-    // --- NEW: Handle focusing the customer lookup ---
     const handleAddCustomer = () => {
       const customerInput = document.getElementById("customer-search-input");
       if (customerInput) customerInput.focus();

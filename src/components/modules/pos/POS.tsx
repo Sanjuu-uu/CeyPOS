@@ -31,6 +31,20 @@ const isInventoryUpdatedPayload = (
   );
 };
 
+interface POSKeyboardFlowProps {
+  products: Product[];
+  filteredProducts: Product[];
+  cart: CartItem[];
+  addToCart: (p: CartItem) => void;
+  updateCartItemQuantity: (id: string, qty: number) => void;
+  clearCart: () => void;
+  searchInputRef: React.RefObject<HTMLInputElement>;
+  setSearchTerm: React.Dispatch<React.SetStateAction<string>>;
+  setScanError: React.Dispatch<React.SetStateAction<string | null>>;
+  setIsScannerConnected: React.Dispatch<React.SetStateAction<boolean>>;
+  shortcuts: KeyboardShortcuts;
+}
+
 // --- ENTERPRISE ZERO-MOUSE KEYBOARD ENGINE ---
 const usePOSKeyboardFlow = ({
   products,
@@ -44,7 +58,7 @@ const usePOSKeyboardFlow = ({
   setScanError,
   setIsScannerConnected,
   shortcuts,
-}: any) => {
+}: POSKeyboardFlowProps) => {
   const scanQueueRef = useRef<string[]>([]);
   const barcodeBufferRef = useRef("");
   const lastKeyTimeRef = useRef(Date.now());
@@ -77,7 +91,6 @@ const usePOSKeyboardFlow = ({
     };
   }, []);
 
-  // --- RESTORED: Native Web Audio Beeps ---
   const playBeep = (type: "success" | "error" = "success") => {
     try {
       const ctx = new (
@@ -132,7 +145,6 @@ const usePOSKeyboardFlow = ({
       }
     });
 
-    // --- RESTORED: Play beep on scan results ---
     if (successCount > 0) playBeep("success");
     if (lastError) {
       playBeep("error");
@@ -252,7 +264,6 @@ const usePOSKeyboardFlow = ({
               updateCartItemQuantity(prod.id, existing.quantity + 1);
             else addToCart({ ...prod, quantity: 1 });
 
-            // --- RESTORED: Play beep when adding via 1-9 shortcut ---
             playBeep("success");
           }
           return;
@@ -297,8 +308,14 @@ const usePOSKeyboardFlow = ({
 
 // --- MAIN POS COMPONENT ---
 export const POS: React.FC = () => {
-  const { currentShop, cart, addToCart, updateCartItemQuantity, clearCart } =
-    useApp();
+  const {
+    currentShop,
+    currentUser,
+    cart,
+    addToCart,
+    updateCartItemQuantity,
+    clearCart,
+  } = useApp();
   const searchInputRef = useRef<HTMLInputElement>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
@@ -309,16 +326,19 @@ export const POS: React.FC = () => {
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [isScannerConnected, setIsScannerConnected] = useState(false);
 
+  const userId = currentUser?.id || "default";
+
+  // --- FETCH DYNAMIC SHORTCUTS ---
   const [shortcuts, setShortcuts] = useState<KeyboardShortcuts>(
-    db.shortcuts.get(),
+    db.shortcuts.get(userId),
   );
 
   useEffect(() => {
-    const handleShortcutUpdate = () => setShortcuts(db.shortcuts.get());
+    const handleShortcutUpdate = () => setShortcuts(db.shortcuts.get(userId));
     window.addEventListener("shortcuts-updated", handleShortcutUpdate);
     return () =>
       window.removeEventListener("shortcuts-updated", handleShortcutUpdate);
-  }, []);
+  }, [userId]);
 
   const categories = useMemo(
     () => [...new Set(products.map((p) => p.category))].sort(),

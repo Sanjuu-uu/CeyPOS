@@ -1,5 +1,5 @@
 // Realtime client for two-way sync with backend SQLite database
-import { Shop, Product, Sale, User, Customer, CartItem } from "../types";
+import { Shop, Product, Sale, User, Customer, CartItem, KeyboardShortcuts } from "../types";
 import clientIo from "socket.io-client";
 
 const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:4000";
@@ -1213,20 +1213,9 @@ export const db = {
     save: saveBusinessRules,
   },
   shortcuts: {
-    get: (): {
-      focusSearch: string;
-      checkout: string;
-      clearCart: string;
-      togglePayment: string;
-      addCustomer: string;
-      confirmPayment: string;
-      increaseQuantity: string;
-      decreaseQuantity: string;
-    } => {
-      const data = localStorage.getItem("pos_device_shortcuts");
-      if (data) return JSON.parse(data);
-      // Default Enterprise Keybindings
-      return {
+    get: (userId: string = "default"): KeyboardShortcuts => {
+      // 1. Safe Enterprise Defaults
+      const defaultShortcuts: KeyboardShortcuts = {
         focusSearch: "F1",
         checkout: "F2",
         clearCart: "F3",
@@ -1236,19 +1225,26 @@ export const db = {
         increaseQuantity: "+",
         decreaseQuantity: "-",
       };
+
+      // 2. Per-User Loading
+      const data = localStorage.getItem(`pos_device_shortcuts_${userId}`);
+      if (data) {
+        try {
+          const parsed = JSON.parse(data);
+          // 3. Safe Merge (Prevents missing keys if app updates in the future)
+          return { ...defaultShortcuts, ...parsed };
+        } catch (e) {
+          console.warn("Failed to parse shortcuts, returning defaults");
+        }
+      }
+      return defaultShortcuts;
     },
-    save: (shortcuts: {
-      focusSearch: string;
-      checkout: string;
-      clearCart: string;
-      togglePayment: string;
-      addCustomer: string;
-      confirmPayment: string;
-      increaseQuantity: string;
-      decreaseQuantity: string;
-    }) => {
-      localStorage.setItem("pos_device_shortcuts", JSON.stringify(shortcuts));
-      window.dispatchEvent(new CustomEvent("shortcuts-updated")); // Triggers instant UI updates across the app
+    save: (userId: string = "default", shortcuts: KeyboardShortcuts) => {
+      localStorage.setItem(
+        `pos_device_shortcuts_${userId}`,
+        JSON.stringify(shortcuts),
+      );
+      window.dispatchEvent(new CustomEvent("shortcuts-updated")); // Triggers instant UI refresh
     },
   },
 };

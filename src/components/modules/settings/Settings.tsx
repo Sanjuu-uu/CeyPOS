@@ -17,14 +17,19 @@ import {
   EyeOff,
   Keyboard,
   CheckCircle2,
+  AlertCircle,
+  RotateCcw,
+  Copy,
 } from "lucide-react";
 import { useApp } from "../../../context/AppContext";
 import { db } from "../../../lib/db";
 import { KeyboardShortcuts } from "../../../types";
 
-// --- NEW: KEYBOARD SETTINGS SUB-COMPONENT ---
+// --- ADVANCED KEYBOARD SETTINGS SUB-COMPONENT ---
 const KeyboardSettings: React.FC = () => {
-  // Default fallbacks in case db.ts hasn't been updated with the new keys yet
+  const { currentUser } = useApp();
+  const userId = currentUser?.id || "default";
+
   const defaultShortcuts: KeyboardShortcuts = {
     focusSearch: "F1",
     checkout: "F2",
@@ -36,11 +41,39 @@ const KeyboardSettings: React.FC = () => {
     decreaseQuantity: "-",
   };
 
-  const [shortcuts, setShortcuts] = useState<KeyboardShortcuts>({
-    ...defaultShortcuts,
-    ...(db.shortcuts.get() || {}),
-  });
+  const [shortcuts, setShortcuts] = useState<KeyboardShortcuts>(
+    db.shortcuts.get(userId),
+  );
+
   const [savedStatus, setSavedStatus] = useState(false);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [conflictError, setConflictError] = useState<string | null>(null);
+  const [activeKey, setActiveKey] = useState<string>("");
+
+  // Visual Key Press Feedback
+  useEffect(() => {
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      if (
+        ["Shift", "Control", "Alt", "Meta", "CapsLock", "Tab"].includes(e.key)
+      )
+        return;
+
+      let keyName = e.key === " " ? "Space" : e.key;
+      if (keyName.length === 1 && keyName.match(/[a-z]/i))
+        keyName = keyName.toUpperCase();
+
+      let comboStr = "";
+      if (e.ctrlKey && keyName !== "Control") comboStr += "Ctrl+";
+      if (e.shiftKey && keyName !== "Shift") comboStr += "Shift+";
+      if (e.altKey && keyName !== "Alt") comboStr += "Alt+";
+      comboStr += keyName;
+
+      setActiveKey(comboStr);
+      setTimeout(() => setActiveKey(""), 200);
+    };
+    window.addEventListener("keydown", handleGlobalKeyDown);
+    return () => window.removeEventListener("keydown", handleGlobalKeyDown);
+  }, []);
 
   const handleKeyRecord = (
     e: React.KeyboardEvent<HTMLInputElement>,
@@ -49,32 +82,102 @@ const KeyboardSettings: React.FC = () => {
     e.preventDefault();
     e.stopPropagation();
 
-    // Ignore pure modifier keys
+    // Validation for Special Keys
+    const blockedKeys = [
+      "F12",
+      "Meta",
+      "OS",
+      "ContextMenu",
+      "AudioVolumeMute",
+      "AudioVolumeUp",
+      "AudioVolumeDown",
+    ];
+    if (blockedKeys.includes(e.key)) return;
     if (["Shift", "Control", "Alt", "Meta", "CapsLock", "Tab"].includes(e.key))
       return;
 
-    let keyName = e.key;
-    if (keyName === " ") keyName = "Space";
+    let keyName = e.key === " " ? "Space" : e.key;
     if (keyName.length === 1 && keyName.match(/[a-z]/i))
       keyName = keyName.toUpperCase();
 
-    setShortcuts((prev) => ({ ...prev, [action]: keyName }));
+    // Support Key Combinations
+    let comboStr = "";
+    if (e.ctrlKey) comboStr += "Ctrl+";
+    if (e.shiftKey) comboStr += "Shift+";
+    if (e.altKey) comboStr += "Alt+";
+    comboStr += keyName;
+
+    // Conflict Detection
+    const isDuplicate = Object.entries(shortcuts).some(
+      ([key, value]) => key !== action && value === comboStr,
+    );
+    if (isDuplicate) {
+      setConflictError(`"${comboStr}" is already assigned!`);
+      setTimeout(() => setConflictError(null), 3000);
+      return;
+    }
+
+    setShortcuts((prev) => ({ ...prev, [action]: comboStr }));
+    setHasUnsavedChanges(true);
     setSavedStatus(false);
+    setConflictError(null);
   };
 
   const handleSave = () => {
-    db.shortcuts.save(shortcuts);
+    db.shortcuts.save(userId, shortcuts);
     setSavedStatus(true);
+    setHasUnsavedChanges(false);
     setTimeout(() => setSavedStatus(false), 3000);
+  };
+
+  const handleReset = () => {
+    setShortcuts(defaultShortcuts);
+    setHasUnsavedChanges(true);
+  };
+
+  const handleExport = () => {
+    navigator.clipboard.writeText(JSON.stringify(shortcuts, null, 2));
+    setSavedStatus(true);
+    setTimeout(() => setSavedStatus(false), 2000);
   };
 
   return (
     <div className="space-y-6">
-      <Card title="Customizable Shortcuts" className="border border-gray-100">
-        <p className="text-sm text-gray-500 mb-6">
-          Click on any input field and press a key to assign a new shortcut for
-          this terminal.
-        </p>
+      <Card
+        title={`Customizable Shortcuts for ${currentUser?.name || "Current User"}`}
+        className="border border-gray-100"
+      >
+        <div className="flex justify-between items-start mb-6">
+          <p className="text-sm text-gray-500">
+            Click on any input field and press a key (or combo like Ctrl+K) to
+            assign a new shortcut for this terminal.
+          </p>
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              icon={<Copy size={14} />}
+              onClick={handleExport}
+            >
+              Export
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              icon={<RotateCcw size={14} />}
+              onClick={handleReset}
+            >
+              Reset Defaults
+            </Button>
+          </div>
+        </div>
+
+        {conflictError && (
+          <div className="mb-4 p-3 bg-red-50 text-red-700 border border-red-200 rounded-lg flex items-center gap-2 text-sm font-bold animate-in fade-in zoom-in duration-200">
+            <AlertCircle size={16} /> {conflictError}
+          </div>
+        )}
+
         <div className="space-y-3">
           {[
             {
@@ -117,29 +220,51 @@ const KeyboardSettings: React.FC = () => {
               label: "Decrease Quantity",
               desc: "Remove -1 from last scanned item",
             },
-          ].map((item) => (
-            <div
-              key={item.id}
-              className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-200"
-            >
-              <div>
-                <p className="font-medium text-gray-900">{item.label}</p>
-                <p className="text-xs text-gray-500">{item.desc}</p>
+          ].map((item) => {
+            const currentShortcut =
+              shortcuts[item.id as keyof KeyboardShortcuts];
+            const isPressed = activeKey === currentShortcut;
+
+            return (
+              <div
+                key={item.id}
+                className={`flex items-center justify-between p-3 rounded-lg border transition-all duration-200 ${
+                  isPressed
+                    ? "bg-verde-50 border-verde-300 shadow-sm scale-[1.01]"
+                    : "bg-gray-50 border-gray-200"
+                }`}
+              >
+                <div>
+                  <p
+                    className={`font-medium ${isPressed ? "text-verde-900" : "text-gray-900"}`}
+                  >
+                    {item.label}
+                  </p>
+                  <p
+                    className={`text-xs ${isPressed ? "text-verde-600" : "text-gray-500"}`}
+                  >
+                    {item.desc}
+                  </p>
+                </div>
+                <div className="w-48">
+                  <input
+                    type="text"
+                    value={currentShortcut}
+                    onKeyDown={(e) =>
+                      handleKeyRecord(e, item.id as keyof KeyboardShortcuts)
+                    }
+                    readOnly
+                    placeholder="Press key..."
+                    className={`w-full text-center font-mono font-bold rounded-lg px-3 py-2 outline-none cursor-pointer shadow-sm transition-all ${
+                      isPressed
+                        ? "bg-verde-600 text-white border-verde-600"
+                        : "text-verde-primary bg-white border-gray-300 focus:ring-2 focus:ring-verde-primary focus:border-verde-primary"
+                    }`}
+                  />
+                </div>
               </div>
-              <div className="w-48">
-                <input
-                  type="text"
-                  value={shortcuts[item.id as keyof KeyboardShortcuts]}
-                  onKeyDown={(e) =>
-                    handleKeyRecord(e, item.id as keyof KeyboardShortcuts)
-                  }
-                  readOnly
-                  placeholder="Press key..."
-                  className="w-full text-center font-mono font-bold text-verde-primary bg-white border border-gray-300 rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-verde-primary focus:border-verde-primary cursor-pointer shadow-sm transition-all"
-                />
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
 
         <div className="mt-6 flex items-center gap-4 pt-4 border-t border-gray-100">
@@ -150,6 +275,11 @@ const KeyboardSettings: React.FC = () => {
           >
             Save Keybindings
           </Button>
+          {hasUnsavedChanges && !savedStatus && (
+            <span className="text-amber-600 text-sm font-bold flex items-center gap-1 animate-pulse">
+              <AlertCircle size={16} /> Unsaved Changes
+            </span>
+          )}
           {savedStatus && (
             <span className="text-green-600 text-sm font-bold flex items-center gap-1 animate-in fade-in">
               <CheckCircle2 size={16} /> Saved to this device
