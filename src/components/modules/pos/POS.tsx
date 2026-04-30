@@ -181,10 +181,15 @@ const usePOSKeyboardFlow = ({
       const timeDiff = currentTime - lastKeyTimeRef.current;
       lastKeyTimeRef.current = currentTime;
 
+      // Normalize key names universally to prevent hardware mismatch
+      let normalizedKey = e.key;
+      if (normalizedKey === "NumpadEnter") normalizedKey = "Enter";
+      if (normalizedKey === " ") normalizedKey = "Space";
+
       keepScannerAwake();
 
-      if (timeDiff < 30 && e.key.length === 1) {
-        barcodeBufferRef.current += e.key;
+      if (timeDiff < 30 && normalizedKey.length === 1) {
+        barcodeBufferRef.current += normalizedKey;
         if (scannerTimeoutRef.current) clearTimeout(scannerTimeoutRef.current);
         scannerTimeoutRef.current = setTimeout(() => {
           if (barcodeBufferRef.current.length >= 8) {
@@ -196,7 +201,7 @@ const usePOSKeyboardFlow = ({
         return;
       }
 
-      if (e.key === "Enter" && barcodeBufferRef.current.length >= 8) {
+      if (normalizedKey === "Enter" && barcodeBufferRef.current.length >= 8) {
         if (scannerTimeoutRef.current) clearTimeout(scannerTimeoutRef.current);
         pushToQueue(barcodeBufferRef.current);
         setSearchTerm("");
@@ -211,36 +216,51 @@ const usePOSKeyboardFlow = ({
       const isSearchFocused = document.activeElement === searchInputRef.current;
       const isOtherInput = activeTag === "INPUT" || activeTag === "TEXTAREA";
 
-      if (e.key.toLowerCase() === shortcuts.focusSearch?.toLowerCase()) {
+      // Rebuild combo string to match the settings UI format
+      let comboStr = "";
+      if (e.ctrlKey && normalizedKey !== "Control") comboStr += "Ctrl+";
+      if (e.shiftKey && normalizedKey !== "Shift") comboStr += "Shift+";
+      if (e.altKey && normalizedKey !== "Alt") comboStr += "Alt+";
+      comboStr += normalizedKey;
+
+      const currentCombo = comboStr.toLowerCase();
+
+      if (currentCombo === shortcuts.focusSearch?.toLowerCase()) {
         e.preventDefault();
         searchInputRef.current?.focus();
         return;
       }
-      if (e.key.toLowerCase() === shortcuts.checkout?.toLowerCase()) {
+      if (currentCombo === shortcuts.checkout?.toLowerCase()) {
         e.preventDefault();
         window.dispatchEvent(new CustomEvent("pos:checkout"));
         return;
       }
-      if (e.key.toLowerCase() === shortcuts.clearCart?.toLowerCase()) {
+      if (currentCombo === shortcuts.clearCart?.toLowerCase()) {
         e.preventDefault();
         clearCart();
         return;
       }
-      if (e.key.toLowerCase() === shortcuts.togglePayment?.toLowerCase()) {
+      if (currentCombo === shortcuts.togglePayment?.toLowerCase()) {
         e.preventDefault();
         window.dispatchEvent(new CustomEvent("pos:toggle-payment"));
         return;
       }
-      if (e.key.toLowerCase() === shortcuts.addCustomer?.toLowerCase()) {
+      if (currentCombo === shortcuts.addCustomer?.toLowerCase()) {
         e.preventDefault();
         window.dispatchEvent(new CustomEvent("pos:add-customer"));
         return;
       }
 
       if (
-        e.key.toLowerCase() === shortcuts.confirmPayment?.toLowerCase() ||
-        e.key === "Enter"
+        currentCombo === shortcuts.confirmPayment?.toLowerCase() ||
+        normalizedKey === "Enter"
       ) {
+        // FIX: If it's specifically the "Enter" key being pressed inside an input field
+        // (like customer search or modal inputs), DO NOT hijack it. Let the form submit natively!
+        if (normalizedKey === "Enter" && isOtherInput && !isSearchFocused) {
+          return;
+        }
+
         if (!isSearchFocused || searchInputRef.current?.value === "") {
           e.preventDefault();
           window.dispatchEvent(new CustomEvent("pos:action-enter"));
@@ -252,9 +272,9 @@ const usePOSKeyboardFlow = ({
         !isOtherInput ||
         (isSearchFocused && searchInputRef.current?.value === "")
       ) {
-        if (e.key >= "1" && e.key <= "9") {
+        if (normalizedKey >= "1" && normalizedKey <= "9") {
           e.preventDefault();
-          const idx = Number(e.key) - 1;
+          const idx = Number(normalizedKey) - 1;
           const prod = filteredProductsRef.current[idx];
           if (prod) {
             const existing = cartRef.current.find(
@@ -270,17 +290,18 @@ const usePOSKeyboardFlow = ({
         }
 
         if (
-          e.key === shortcuts.increaseQuantity ||
-          e.key === shortcuts.decreaseQuantity ||
-          e.key === "+" ||
-          e.key === "=" ||
-          e.key === "-"
+          currentCombo === shortcuts.increaseQuantity?.toLowerCase() ||
+          currentCombo === shortcuts.decreaseQuantity?.toLowerCase() ||
+          normalizedKey === "+" ||
+          normalizedKey === "=" ||
+          normalizedKey === "-"
         ) {
           e.preventDefault();
           if (cartRef.current.length > 0) {
             const lastItem = cartRef.current[cartRef.current.length - 1];
             const newQty =
-              e.key === shortcuts.decreaseQuantity || e.key === "-"
+              currentCombo === shortcuts.decreaseQuantity?.toLowerCase() ||
+              normalizedKey === "-"
                 ? lastItem.quantity - 1
                 : lastItem.quantity + 1;
             if (newQty <= 0) updateCartItemQuantity(lastItem.id, 0);

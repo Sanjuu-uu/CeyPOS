@@ -184,7 +184,6 @@ export const ShoppingCart: React.FC = () => {
 
   const userId = currentUser?.id || "default";
 
-  // --- FETCH DYNAMIC SHORTCUTS ---
   const [shortcuts, setShortcuts] = useState<KeyboardShortcuts>(
     db.shortcuts.get(userId),
   );
@@ -206,6 +205,16 @@ export const ShoppingCart: React.FC = () => {
   useEffect(() => {
     cartRef.current = cart;
   }, [cart]);
+
+  // Handle focusing the new customer input reliably
+  useEffect(() => {
+    if (showRegisterModal) {
+      setTimeout(
+        () => document.getElementById("new-customer-name")?.focus(),
+        100,
+      );
+    }
+  }, [showRegisterModal]);
 
   useEffect(() => {
     const handleCheckoutNav = () => setViewState("checkout");
@@ -580,6 +589,7 @@ export const ShoppingCart: React.FC = () => {
             </div>
             <form onSubmit={handleRegisterSave} className="space-y-3">
               <input
+                id="new-customer-phone"
                 value={newCustomerInfo.phone}
                 onChange={(e) =>
                   setNewCustomerInfo({
@@ -587,11 +597,17 @@ export const ShoppingCart: React.FC = () => {
                     phone: e.target.value,
                   })
                 }
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 bg-gray-50 outline-none"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    document.getElementById("new-customer-name")?.focus();
+                  }
+                }}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 bg-gray-50 outline-none focus:ring-2 focus:ring-[#ecff76]"
                 placeholder="Phone"
               />
               <input
-                autoFocus
+                id="new-customer-name"
                 required
                 value={newCustomerInfo.name}
                 onChange={(e) =>
@@ -600,10 +616,17 @@ export const ShoppingCart: React.FC = () => {
                     name: e.target.value,
                   })
                 }
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    document.getElementById("new-customer-email")?.focus();
+                  }
+                }}
                 placeholder="Full Name"
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 outline-none focus:border-[#ecff76] focus:ring-1 focus:ring-[#ecff76]"
               />
               <input
+                id="new-customer-email"
                 type="email"
                 value={newCustomerInfo.email}
                 onChange={(e) =>
@@ -616,6 +639,7 @@ export const ShoppingCart: React.FC = () => {
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 outline-none focus:border-[#ecff76] focus:ring-1 focus:ring-[#ecff76]"
               />
               <Button
+                id="new-customer-submit"
                 fullWidth
                 type="submit"
                 className="bg-[#ecff76] hover:bg-[#d9ec60] text-gray-900 font-bold border-none mt-2"
