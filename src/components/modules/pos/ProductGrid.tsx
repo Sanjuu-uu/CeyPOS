@@ -195,7 +195,6 @@ export const ProductGrid: React.FC<{ products: Product[] }> = ({
           </button>
         </div>
       </div>
-
       {products.length > 0 ? (
         <div
           className={

@@ -183,7 +183,6 @@ export const ShoppingCart: React.FC = () => {
   const [cashReceived, setCashReceived] = useState<string>("");
 
   const userId = currentUser?.id || "default";
-
   const [shortcuts, setShortcuts] = useState<KeyboardShortcuts>(
     db.shortcuts.get(userId),
   );
@@ -206,7 +205,12 @@ export const ShoppingCart: React.FC = () => {
     cartRef.current = cart;
   }, [cart]);
 
-  // Handle focusing the new customer input reliably
+  useEffect(() => {
+    if (cart.length === 0 && viewState === "checkout") {
+      setViewState("cart");
+    }
+  }, [cart.length, viewState]);
+
   useEffect(() => {
     if (showRegisterModal) {
       setTimeout(
@@ -217,17 +221,25 @@ export const ShoppingCart: React.FC = () => {
   }, [showRegisterModal]);
 
   useEffect(() => {
-    const handleCheckoutNav = () => setViewState("checkout");
+    const handleCheckoutNav = () => {
+      if (cartRef.current.length > 0) setViewState("checkout");
+    };
     const handleTogglePayment = () => {
       setSelectedPaymentMethod((prev) =>
         prev === "cash" ? "card" : prev === "card" ? "mobile" : "cash",
       );
     };
     const handleEnterAction = () => {
-      if (viewStateRef.current === "cart" && cartRef.current.length > 0)
+      if (viewStateRef.current === "cart" && cartRef.current.length > 0) {
         setViewState("checkout");
-      else if (viewStateRef.current === "checkout")
-        document.getElementById("checkout-confirm-btn")?.click();
+      } else if (viewStateRef.current === "checkout") {
+        const confirmBtn = document.getElementById(
+          "checkout-confirm-btn",
+        ) as HTMLButtonElement | null;
+        if (confirmBtn && !confirmBtn.disabled) {
+          confirmBtn.click();
+        }
+      }
     };
 
     const handleAddCustomer = () => {
@@ -639,7 +651,6 @@ export const ShoppingCart: React.FC = () => {
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 outline-none focus:border-[#ecff76] focus:ring-1 focus:ring-[#ecff76]"
               />
               <Button
-                id="new-customer-submit"
                 fullWidth
                 type="submit"
                 className="bg-[#ecff76] hover:bg-[#d9ec60] text-gray-900 font-bold border-none mt-2"

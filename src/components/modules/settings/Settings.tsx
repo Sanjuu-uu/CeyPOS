@@ -22,10 +22,10 @@ import {
   Copy,
 } from "lucide-react";
 import { useApp } from "../../../context/AppContext";
-import { db } from "../../../lib/db";
+import { db, normalizeKey } from "../../../lib/db";
 import { KeyboardShortcuts } from "../../../types";
 
-// --- ADVANCED KEYBOARD SETTINGS SUB-COMPONENT ---
+// --- ADVANCED KEYBOARD SETTINGS ---
 const KeyboardSettings: React.FC = () => {
   const { currentUser } = useApp();
   const userId = currentUser?.id || "default";
@@ -50,7 +50,6 @@ const KeyboardSettings: React.FC = () => {
   const [conflictError, setConflictError] = useState<string | null>(null);
   const [activeKey, setActiveKey] = useState<string>("");
 
-  // Visual Key Press Feedback
   useEffect(() => {
     const handleGlobalKeyDown = (e: KeyboardEvent) => {
       if (
@@ -59,6 +58,7 @@ const KeyboardSettings: React.FC = () => {
         return;
 
       let keyName = e.key === " " ? "Space" : e.key;
+      if (keyName === "NumpadEnter") keyName = "Enter";
       if (keyName.length === 1 && keyName.match(/[a-z]/i))
         keyName = keyName.toUpperCase();
 
@@ -82,7 +82,6 @@ const KeyboardSettings: React.FC = () => {
     e.preventDefault();
     e.stopPropagation();
 
-    // Validation for Special Keys
     const blockedKeys = [
       "F12",
       "Meta",
@@ -97,20 +96,23 @@ const KeyboardSettings: React.FC = () => {
       return;
 
     let keyName = e.key === " " ? "Space" : e.key;
+    if (keyName === "NumpadEnter") keyName = "Enter";
     if (keyName.length === 1 && keyName.match(/[a-z]/i))
       keyName = keyName.toUpperCase();
 
-    // Support Key Combinations
     let comboStr = "";
     if (e.ctrlKey) comboStr += "Ctrl+";
     if (e.shiftKey) comboStr += "Shift+";
     if (e.altKey) comboStr += "Alt+";
     comboStr += keyName;
 
-    // Conflict Detection
+    // Step 1: Strict Normalized Conflict Detection
+    const normalizedCombo = normalizeKey(comboStr);
     const isDuplicate = Object.entries(shortcuts).some(
-      ([key, value]) => key !== action && value === comboStr,
+      ([key, value]) =>
+        key !== action && normalizeKey(value) === normalizedCombo,
     );
+
     if (isDuplicate) {
       setConflictError(`"${comboStr}" is already assigned!`);
       setTimeout(() => setConflictError(null), 3000);
@@ -124,10 +126,15 @@ const KeyboardSettings: React.FC = () => {
   };
 
   const handleSave = () => {
-    db.shortcuts.save(userId, shortcuts);
-    setSavedStatus(true);
-    setHasUnsavedChanges(false);
-    setTimeout(() => setSavedStatus(false), 3000);
+    try {
+      db.shortcuts.save(userId, shortcuts);
+      setSavedStatus(true);
+      setHasUnsavedChanges(false);
+      setTimeout(() => setSavedStatus(false), 3000);
+    } catch (err: any) {
+      setConflictError(err.message);
+      setTimeout(() => setConflictError(null), 4000);
+    }
   };
 
   const handleReset = () => {
@@ -149,8 +156,7 @@ const KeyboardSettings: React.FC = () => {
       >
         <div className="flex justify-between items-start mb-6">
           <p className="text-sm text-gray-500">
-            Click on any input field and press a key (or combo like Ctrl+K) to
-            assign a new shortcut for this terminal.
+            Click an input and press a key to assign a custom shortcut.
           </p>
           <div className="flex gap-2">
             <Button
@@ -203,7 +209,7 @@ const KeyboardSettings: React.FC = () => {
             {
               id: "addCustomer",
               label: "Add Customer",
-              desc: "Focus customer lookup/name field",
+              desc: "Focus customer lookup field",
             },
             {
               id: "confirmPayment",
@@ -223,16 +229,13 @@ const KeyboardSettings: React.FC = () => {
           ].map((item) => {
             const currentShortcut =
               shortcuts[item.id as keyof KeyboardShortcuts];
-            const isPressed = activeKey === currentShortcut;
+            const isPressed =
+              normalizeKey(activeKey) === normalizeKey(currentShortcut);
 
             return (
               <div
                 key={item.id}
-                className={`flex items-center justify-between p-3 rounded-lg border transition-all duration-200 ${
-                  isPressed
-                    ? "bg-verde-50 border-verde-300 shadow-sm scale-[1.01]"
-                    : "bg-gray-50 border-gray-200"
-                }`}
+                className={`flex items-center justify-between p-3 rounded-lg border transition-all duration-200 ${isPressed ? "bg-verde-50 border-verde-300 shadow-sm scale-[1.01]" : "bg-gray-50 border-gray-200"}`}
               >
                 <div>
                   <p
@@ -255,11 +258,7 @@ const KeyboardSettings: React.FC = () => {
                     }
                     readOnly
                     placeholder="Press key..."
-                    className={`w-full text-center font-mono font-bold rounded-lg px-3 py-2 outline-none cursor-pointer shadow-sm transition-all ${
-                      isPressed
-                        ? "bg-verde-600 text-white border-verde-600"
-                        : "text-verde-primary bg-white border-gray-300 focus:ring-2 focus:ring-verde-primary focus:border-verde-primary"
-                    }`}
+                    className={`w-full text-center font-mono font-bold rounded-lg px-3 py-2 outline-none cursor-pointer shadow-sm transition-all ${isPressed ? "bg-verde-600 text-white border-verde-600" : "text-verde-primary bg-white border-gray-300 focus:ring-2 focus:ring-verde-primary focus:border-verde-primary"}`}
                   />
                 </div>
               </div>
@@ -282,7 +281,7 @@ const KeyboardSettings: React.FC = () => {
           )}
           {savedStatus && (
             <span className="text-green-600 text-sm font-bold flex items-center gap-1 animate-in fade-in">
-              <CheckCircle2 size={16} /> Saved to this device
+              <CheckCircle2 size={16} /> Saved Successfully
             </span>
           )}
         </div>

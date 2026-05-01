@@ -58,8 +58,8 @@ export interface Sale {
   subtotal?: number;
   tax?: number;
   discount?: number;
-  pointsEarned?: number; // Added
-  pointsRedeemed?: number; // Added
+  pointsEarned?: number;
+  pointsRedeemed?: number;
   paymentMethod: "cash" | "card" | "mobile";
   timestamp: string;
 }

@@ -1,5 +1,13 @@
 // Realtime client for two-way sync with backend SQLite database
-import { Shop, Product, Sale, User, Customer, CartItem, KeyboardShortcuts } from "../types";
+import {
+  Shop,
+  Product,
+  Sale,
+  User,
+  Customer,
+  CartItem,
+  KeyboardShortcuts,
+} from "../types";
 import clientIo from "socket.io-client";
 
 const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:4000";
@@ -1051,6 +1059,9 @@ async function createSaleRecord(sale: Omit<Sale, "id">): Promise<Sale> {
   return saleRecord;
 }
 
+export const normalizeKey = (k: string) =>
+  (k || "").toLowerCase().replace(/\s+/g, "");
+
 export const db = {
   on,
   off,
@@ -1214,7 +1225,6 @@ export const db = {
   },
   shortcuts: {
     get: (userId: string = "default"): KeyboardShortcuts => {
-      // 1. Safe Enterprise Defaults
       const defaultShortcuts: KeyboardShortcuts = {
         focusSearch: "F1",
         checkout: "F2",
@@ -1226,13 +1236,13 @@ export const db = {
         decreaseQuantity: "-",
       };
 
-      // 2. Per-User Loading
-      const data = localStorage.getItem(`pos_device_shortcuts_${userId}`);
+      // Step 8: Versioned Schema Recovery
+      let data = localStorage.getItem(`pos_device_shortcuts_${userId}_v2`);
+      if (!data) data = localStorage.getItem(`pos_device_shortcuts_${userId}`);
+
       if (data) {
         try {
-          const parsed = JSON.parse(data);
-          // 3. Safe Merge (Prevents missing keys if app updates in the future)
-          return { ...defaultShortcuts, ...parsed };
+          return { ...defaultShortcuts, ...JSON.parse(data) };
         } catch (e) {
           console.warn("Failed to parse shortcuts, returning defaults");
         }
@@ -1240,11 +1250,17 @@ export const db = {
       return defaultShortcuts;
     },
     save: (userId: string = "default", shortcuts: KeyboardShortcuts) => {
+      // Step 2: SAVE-LAYER VALIDATION (Conflict Detection at Storage Level)
+      const values = Object.values(shortcuts).map(normalizeKey);
+      if (new Set(values).size !== values.length) {
+        throw new Error("Save rejected: Duplicate shortcut keys detected.");
+      }
+
       localStorage.setItem(
-        `pos_device_shortcuts_${userId}`,
+        `pos_device_shortcuts_${userId}_v2`,
         JSON.stringify(shortcuts),
       );
-      window.dispatchEvent(new CustomEvent("shortcuts-updated")); // Triggers instant UI refresh
+      window.dispatchEvent(new CustomEvent("shortcuts-updated"));
     },
   },
 };

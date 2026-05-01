@@ -11,11 +11,12 @@ import {
   WifiOff,
   Keyboard,
 } from "lucide-react";
-import { db } from "../../../lib/db";
+import { db, normalizeKey } from "../../../lib/db";
 import { useApp } from "../../../context/AppContext";
 import { Product, CartItem, KeyboardShortcuts } from "../../../types";
 
 type InventoryUpdatedPayload = { shopId?: string; items?: Product[] };
+
 const isInventoryUpdatedPayload = (
   payload: unknown,
 ): payload is InventoryUpdatedPayload => {
@@ -75,9 +76,11 @@ const usePOSKeyboardFlow = ({
   useEffect(() => {
     productsRef.current = products;
   }, [products]);
+
   useEffect(() => {
     filteredProductsRef.current = filteredProducts;
   }, [filteredProducts]);
+
   useEffect(() => {
     cartRef.current = cart;
   }, [cart]);
@@ -136,9 +139,11 @@ const usePOSKeyboardFlow = ({
         const existingItem = cartRef.current.find(
           (item) => item.id === matchedProduct.id,
         );
-        if (existingItem)
+        if (existingItem) {
           updateCartItemQuantity(matchedProduct.id, existingItem.quantity + 1);
-        else addToCart({ ...matchedProduct, quantity: 1 });
+        } else {
+          addToCart({ ...matchedProduct, quantity: 1 });
+        }
         successCount++;
       } else {
         lastError = barcode;
@@ -181,13 +186,13 @@ const usePOSKeyboardFlow = ({
       const timeDiff = currentTime - lastKeyTimeRef.current;
       lastKeyTimeRef.current = currentTime;
 
-      // Normalize key names universally to prevent hardware mismatch
       let normalizedKey = e.key;
       if (normalizedKey === "NumpadEnter") normalizedKey = "Enter";
       if (normalizedKey === " ") normalizedKey = "Space";
 
       keepScannerAwake();
 
+      // Hardware Scanner Detection
       if (timeDiff < 30 && normalizedKey.length === 1) {
         barcodeBufferRef.current += normalizedKey;
         if (scannerTimeoutRef.current) clearTimeout(scannerTimeoutRef.current);
@@ -214,53 +219,49 @@ const usePOSKeyboardFlow = ({
 
       const activeTag = document.activeElement?.tagName;
       const isSearchFocused = document.activeElement === searchInputRef.current;
-      const isOtherInput = activeTag === "INPUT" || activeTag === "TEXTAREA";
+      const isTyping = activeTag === "INPUT" || activeTag === "TEXTAREA";
 
-      // Rebuild combo string to match the settings UI format
       let comboStr = "";
       if (e.ctrlKey && normalizedKey !== "Control") comboStr += "Ctrl+";
       if (e.shiftKey && normalizedKey !== "Shift") comboStr += "Shift+";
       if (e.altKey && normalizedKey !== "Alt") comboStr += "Alt+";
       comboStr += normalizedKey;
 
-      const currentCombo = comboStr.toLowerCase();
+      const currentComboNorm = normalizeKey(comboStr);
 
-      if (currentCombo === shortcuts.focusSearch?.toLowerCase()) {
+      if (currentComboNorm === normalizeKey(shortcuts.focusSearch)) {
         e.preventDefault();
         searchInputRef.current?.focus();
         return;
       }
-      if (currentCombo === shortcuts.checkout?.toLowerCase()) {
+      if (currentComboNorm === normalizeKey(shortcuts.checkout)) {
         e.preventDefault();
         window.dispatchEvent(new CustomEvent("pos:checkout"));
         return;
       }
-      if (currentCombo === shortcuts.clearCart?.toLowerCase()) {
+      if (currentComboNorm === normalizeKey(shortcuts.clearCart)) {
         e.preventDefault();
         clearCart();
         return;
       }
-      if (currentCombo === shortcuts.togglePayment?.toLowerCase()) {
+      if (currentComboNorm === normalizeKey(shortcuts.togglePayment)) {
         e.preventDefault();
         window.dispatchEvent(new CustomEvent("pos:toggle-payment"));
         return;
       }
-      if (currentCombo === shortcuts.addCustomer?.toLowerCase()) {
+      if (currentComboNorm === normalizeKey(shortcuts.addCustomer)) {
         e.preventDefault();
         window.dispatchEvent(new CustomEvent("pos:add-customer"));
         return;
       }
 
       if (
-        currentCombo === shortcuts.confirmPayment?.toLowerCase() ||
-        normalizedKey === "Enter"
+        currentComboNorm === normalizeKey(shortcuts.confirmPayment) ||
+        normalizeKey(normalizedKey) === "enter"
       ) {
-        // FIX: If it's specifically the "Enter" key being pressed inside an input field
-        // (like customer search or modal inputs), DO NOT hijack it. Let the form submit natively!
-        if (normalizedKey === "Enter" && isOtherInput && !isSearchFocused) {
+        if (isTyping && !isSearchFocused) {
           return;
         }
-
         if (!isSearchFocused || searchInputRef.current?.value === "") {
           e.preventDefault();
           window.dispatchEvent(new CustomEvent("pos:action-enter"));
@@ -269,7 +270,7 @@ const usePOSKeyboardFlow = ({
       }
 
       if (
-        !isOtherInput ||
+        !isTyping ||
         (isSearchFocused && searchInputRef.current?.value === "")
       ) {
         if (normalizedKey >= "1" && normalizedKey <= "9") {
@@ -280,18 +281,19 @@ const usePOSKeyboardFlow = ({
             const existing = cartRef.current.find(
               (item) => item.id === prod.id,
             );
-            if (existing)
+            if (existing) {
               updateCartItemQuantity(prod.id, existing.quantity + 1);
-            else addToCart({ ...prod, quantity: 1 });
-
+            } else {
+              addToCart({ ...prod, quantity: 1 });
+            }
             playBeep("success");
           }
           return;
         }
 
         if (
-          currentCombo === shortcuts.increaseQuantity?.toLowerCase() ||
-          currentCombo === shortcuts.decreaseQuantity?.toLowerCase() ||
+          currentComboNorm === normalizeKey(shortcuts.increaseQuantity) ||
+          currentComboNorm === normalizeKey(shortcuts.decreaseQuantity) ||
           normalizedKey === "+" ||
           normalizedKey === "=" ||
           normalizedKey === "-"
@@ -300,12 +302,16 @@ const usePOSKeyboardFlow = ({
           if (cartRef.current.length > 0) {
             const lastItem = cartRef.current[cartRef.current.length - 1];
             const newQty =
-              currentCombo === shortcuts.decreaseQuantity?.toLowerCase() ||
+              currentComboNorm === normalizeKey(shortcuts.decreaseQuantity) ||
               normalizedKey === "-"
                 ? lastItem.quantity - 1
                 : lastItem.quantity + 1;
-            if (newQty <= 0) updateCartItemQuantity(lastItem.id, 0);
-            else updateCartItemQuantity(lastItem.id, newQty);
+
+            if (newQty <= 0) {
+              updateCartItemQuantity(lastItem.id, 0);
+            } else {
+              updateCartItemQuantity(lastItem.id, newQty);
+            }
           }
           return;
         }
@@ -365,7 +371,9 @@ export const POS: React.FC = () => {
     () => [...new Set(products.map((p) => p.category))].sort(),
     [products],
   );
-  const filteredProducts = useMemo(() => {
+
+  // EXPLICIT TYPE DEFINITION ADDED HERE: Product[]
+  const filteredProducts: Product[] = useMemo(() => {
     return products.filter((product) => {
       const matchesSearch =
         searchTerm === "" ||
@@ -450,10 +458,11 @@ export const POS: React.FC = () => {
 
   const simulateScan = () => {
     keepScannerAwake();
-    if (products.length > 0)
+    if (products.length > 0) {
       pushToQueue(
         products[Math.floor(Math.random() * products.length)].barcode,
       );
+    }
   };
 
   return (
