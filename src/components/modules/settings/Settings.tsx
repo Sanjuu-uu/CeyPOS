@@ -36,6 +36,7 @@ const KeyboardSettings: React.FC = () => {
     clearCart: "F3",
     togglePayment: "F4",
     addCustomer: "F5",
+    removeCustomer: "Delete",
     confirmPayment: "Enter",
     increaseQuantity: "+",
     decreaseQuantity: "-",
@@ -212,6 +213,11 @@ const KeyboardSettings: React.FC = () => {
               desc: "Focus customer lookup field",
             },
             {
+              id: "removeCustomer",
+              label: "Remove Customer",
+              desc: "Detach customer from order",
+            },
+            {
               id: "confirmPayment",
               label: "Confirm Payment",
               desc: "Finalize sale on checkout screen",
@@ -289,6 +295,19 @@ const KeyboardSettings: React.FC = () => {
 
       <Card title="System Hotkeys (Fixed)" className="border border-gray-100">
         <div className="space-y-3">
+          <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-200">
+            <div>
+              <p className="font-medium text-gray-900">Escape / Undo</p>
+              <p className="text-xs text-gray-500">
+                Close modals or go back to cart
+              </p>
+            </div>
+            <div className="flex gap-1">
+              <span className="font-mono font-bold text-gray-600 bg-white border border-gray-300 rounded px-3 py-1">
+                Esc
+              </span>
+            </div>
+          </div>
           <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-200">
             <div>
               <p className="font-medium text-gray-900">Quick Select Product</p>

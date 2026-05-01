@@ -81,6 +81,7 @@ export interface KeyboardShortcuts {
   clearCart: string;
   togglePayment: string;
   addCustomer: string;
+  removeCustomer: string;
   confirmPayment: string;
   increaseQuantity: string;
   decreaseQuantity: string;

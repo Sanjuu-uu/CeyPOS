@@ -16,7 +16,6 @@ import { useApp } from "../../../context/AppContext";
 import { Product, CartItem, KeyboardShortcuts } from "../../../types";
 
 type InventoryUpdatedPayload = { shopId?: string; items?: Product[] };
-
 const isInventoryUpdatedPayload = (
   payload: unknown,
 ): payload is InventoryUpdatedPayload => {
@@ -44,6 +43,20 @@ interface POSKeyboardFlowProps {
   setScanError: React.Dispatch<React.SetStateAction<string | null>>;
   setIsScannerConnected: React.Dispatch<React.SetStateAction<boolean>>;
   shortcuts: KeyboardShortcuts;
+}
+
+// Custom hook for debouncing values (Performance Fix)
+function useDebounce<T>(value: T, delay: number): T {
+  const [debouncedValue, setDebouncedValue] = useState<T>(value);
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedValue(value);
+    }, delay);
+    return () => {
+      clearTimeout(handler);
+    };
+  }, [value, delay]);
+  return debouncedValue;
 }
 
 // --- ENTERPRISE ZERO-MOUSE KEYBOARD ENGINE ---
@@ -76,11 +89,9 @@ const usePOSKeyboardFlow = ({
   useEffect(() => {
     productsRef.current = products;
   }, [products]);
-
   useEffect(() => {
     filteredProductsRef.current = filteredProducts;
   }, [filteredProducts]);
-
   useEffect(() => {
     cartRef.current = cart;
   }, [cart]);
@@ -103,7 +114,6 @@ const usePOSKeyboardFlow = ({
       const gainNode = ctx.createGain();
       osc.connect(gainNode);
       gainNode.connect(ctx.destination);
-
       if (type === "success") {
         osc.type = "sine";
         osc.frequency.setValueAtTime(800, ctx.currentTime);
@@ -139,11 +149,9 @@ const usePOSKeyboardFlow = ({
         const existingItem = cartRef.current.find(
           (item) => item.id === matchedProduct.id,
         );
-        if (existingItem) {
+        if (existingItem)
           updateCartItemQuantity(matchedProduct.id, existingItem.quantity + 1);
-        } else {
-          addToCart({ ...matchedProduct, quantity: 1 });
-        }
+        else addToCart({ ...matchedProduct, quantity: 1 });
         successCount++;
       } else {
         lastError = barcode;
@@ -221,6 +229,13 @@ const usePOSKeyboardFlow = ({
       const isSearchFocused = document.activeElement === searchInputRef.current;
       const isTyping = activeTag === "INPUT" || activeTag === "TEXTAREA";
 
+      // ALWAYS capture Escape key for globally closing modals / undoing state
+      if (normalizedKey === "Escape") {
+        e.preventDefault();
+        window.dispatchEvent(new CustomEvent("pos:escape"));
+        return;
+      }
+
       let comboStr = "";
       if (e.ctrlKey && normalizedKey !== "Control") comboStr += "Ctrl+";
       if (e.shiftKey && normalizedKey !== "Shift") comboStr += "Shift+";
@@ -254,13 +269,19 @@ const usePOSKeyboardFlow = ({
         window.dispatchEvent(new CustomEvent("pos:add-customer"));
         return;
       }
+      if (currentComboNorm === normalizeKey(shortcuts.removeCustomer)) {
+        e.preventDefault();
+        window.dispatchEvent(new CustomEvent("pos:remove-customer"));
+        return;
+      }
 
+      // DO NOT hijack 'Enter' if the user is typing in a form!
       if (
         currentComboNorm === normalizeKey(shortcuts.confirmPayment) ||
         normalizeKey(normalizedKey) === "enter"
       ) {
         if (isTyping && !isSearchFocused) {
-          return;
+          return; // Let native forms handle Enter
         }
         if (!isSearchFocused || searchInputRef.current?.value === "") {
           e.preventDefault();
@@ -281,11 +302,9 @@ const usePOSKeyboardFlow = ({
             const existing = cartRef.current.find(
               (item) => item.id === prod.id,
             );
-            if (existing) {
+            if (existing)
               updateCartItemQuantity(prod.id, existing.quantity + 1);
-            } else {
-              addToCart({ ...prod, quantity: 1 });
-            }
+            else addToCart({ ...prod, quantity: 1 });
             playBeep("success");
           }
           return;
@@ -306,12 +325,8 @@ const usePOSKeyboardFlow = ({
               normalizedKey === "-"
                 ? lastItem.quantity - 1
                 : lastItem.quantity + 1;
-
-            if (newQty <= 0) {
-              updateCartItemQuantity(lastItem.id, 0);
-            } else {
-              updateCartItemQuantity(lastItem.id, newQty);
-            }
+            if (newQty <= 0) updateCartItemQuantity(lastItem.id, 0);
+            else updateCartItemQuantity(lastItem.id, newQty);
           }
           return;
         }
@@ -353,9 +368,10 @@ export const POS: React.FC = () => {
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [isScannerConnected, setIsScannerConnected] = useState(false);
 
+  const debouncedSearchTerm = useDebounce(searchTerm, 300);
+
   const userId = currentUser?.id || "default";
 
-  // --- FETCH DYNAMIC SHORTCUTS ---
   const [shortcuts, setShortcuts] = useState<KeyboardShortcuts>(
     db.shortcuts.get(userId),
   );
@@ -372,18 +388,19 @@ export const POS: React.FC = () => {
     [products],
   );
 
-  // EXPLICIT TYPE DEFINITION ADDED HERE: Product[]
   const filteredProducts: Product[] = useMemo(() => {
     return products.filter((product) => {
       const matchesSearch =
-        searchTerm === "" ||
-        product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (product.barcode || "").includes(searchTerm);
+        debouncedSearchTerm === "" ||
+        product.name
+          .toLowerCase()
+          .includes(debouncedSearchTerm.toLowerCase()) ||
+        (product.barcode || "").includes(debouncedSearchTerm);
       const matchesCategory =
         selectedCategory === null || product.category === selectedCategory;
       return matchesSearch && matchesCategory;
     });
-  }, [products, searchTerm, selectedCategory]);
+  }, [products, debouncedSearchTerm, selectedCategory]);
 
   const { pushToQueue, keepScannerAwake } = usePOSKeyboardFlow({
     products,

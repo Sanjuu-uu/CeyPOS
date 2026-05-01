@@ -1231,6 +1231,7 @@ export const db = {
         clearCart: "F3",
         togglePayment: "F4",
         addCustomer: "F5",
+        removeCustomer: "Delete",
         confirmPayment: "Enter",
         increaseQuantity: "+",
         decreaseQuantity: "-",
@@ -1242,7 +1243,8 @@ export const db = {
 
       if (data) {
         try {
-          return { ...defaultShortcuts, ...JSON.parse(data) };
+          const parsed = JSON.parse(data);
+          return { ...defaultShortcuts, ...parsed };
         } catch (e) {
           console.warn("Failed to parse shortcuts, returning defaults");
         }
