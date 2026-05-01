@@ -157,7 +157,8 @@ const KeyboardSettings: React.FC = () => {
       >
         <div className="flex justify-between items-start mb-6">
           <p className="text-sm text-gray-500">
-            Click an input and press a key to assign a custom shortcut.
+            Click an input and press a key (or combo like Ctrl+K) to assign a
+            new shortcut for this terminal.
           </p>
           <div className="flex gap-2">
             <Button
@@ -210,7 +211,7 @@ const KeyboardSettings: React.FC = () => {
             {
               id: "addCustomer",
               label: "Add Customer",
-              desc: "Focus customer lookup field",
+              desc: "Focus customer lookup/name field",
             },
             {
               id: "removeCustomer",
@@ -287,7 +288,7 @@ const KeyboardSettings: React.FC = () => {
           )}
           {savedStatus && (
             <span className="text-green-600 text-sm font-bold flex items-center gap-1 animate-in fade-in">
-              <CheckCircle2 size={16} /> Saved Successfully
+              <CheckCircle2 size={16} /> Saved to this device
             </span>
           )}
         </div>
@@ -305,23 +306,6 @@ const KeyboardSettings: React.FC = () => {
             <div className="flex gap-1">
               <span className="font-mono font-bold text-gray-600 bg-white border border-gray-300 rounded px-3 py-1">
                 Esc
-              </span>
-            </div>
-          </div>
-          <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-200">
-            <div>
-              <p className="font-medium text-gray-900">Quick Select Product</p>
-              <p className="text-xs text-gray-500">
-                Adds item from visible grid to cart
-              </p>
-            </div>
-            <div className="flex gap-1">
-              <span className="font-mono font-bold text-gray-600 bg-white border border-gray-300 rounded px-3 py-1">
-                1
-              </span>
-              <span className="text-gray-400 mt-1">-</span>
-              <span className="font-mono font-bold text-gray-600 bg-white border border-gray-300 rounded px-3 py-1">
-                9
               </span>
             </div>
           </div>

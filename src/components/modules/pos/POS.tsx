@@ -45,7 +45,6 @@ interface POSKeyboardFlowProps {
   shortcuts: KeyboardShortcuts;
 }
 
-// Custom hook for debouncing values (Performance Fix)
 function useDebounce<T>(value: T, delay: number): T {
   const [debouncedValue, setDebouncedValue] = useState<T>(value);
   useEffect(() => {
@@ -59,7 +58,6 @@ function useDebounce<T>(value: T, delay: number): T {
   return debouncedValue;
 }
 
-// --- ENTERPRISE ZERO-MOUSE KEYBOARD ENGINE ---
 const usePOSKeyboardFlow = ({
   products,
   filteredProducts,
@@ -83,15 +81,12 @@ const usePOSKeyboardFlow = ({
   const idleTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const productsRef = useRef<Product[]>(products);
-  const filteredProductsRef = useRef<Product[]>(filteredProducts);
   const cartRef = useRef<CartItem[]>(cart);
 
   useEffect(() => {
     productsRef.current = products;
   }, [products]);
-  useEffect(() => {
-    filteredProductsRef.current = filteredProducts;
-  }, [filteredProducts]);
+
   useEffect(() => {
     cartRef.current = cart;
   }, [cart]);
@@ -200,6 +195,12 @@ const usePOSKeyboardFlow = ({
 
       keepScannerAwake();
 
+      // ALWAYS allow Escape to close modals or go back, unconditionally
+      if (normalizedKey === "Escape") {
+        window.dispatchEvent(new CustomEvent("pos:escape"));
+        return;
+      }
+
       // Hardware Scanner Detection
       if (timeDiff < 30 && normalizedKey.length === 1) {
         barcodeBufferRef.current += normalizedKey;
@@ -228,13 +229,6 @@ const usePOSKeyboardFlow = ({
       const activeTag = document.activeElement?.tagName;
       const isSearchFocused = document.activeElement === searchInputRef.current;
       const isTyping = activeTag === "INPUT" || activeTag === "TEXTAREA";
-
-      // ALWAYS capture Escape key for globally closing modals / undoing state
-      if (normalizedKey === "Escape") {
-        e.preventDefault();
-        window.dispatchEvent(new CustomEvent("pos:escape"));
-        return;
-      }
 
       let comboStr = "";
       if (e.ctrlKey && normalizedKey !== "Control") comboStr += "Ctrl+";
@@ -270,18 +264,19 @@ const usePOSKeyboardFlow = ({
         return;
       }
       if (currentComboNorm === normalizeKey(shortcuts.removeCustomer)) {
+        // Prevent deleting customer if the user is just trying to backspace/delete text in a form!
+        if (isTyping && !isSearchFocused) return;
         e.preventDefault();
         window.dispatchEvent(new CustomEvent("pos:remove-customer"));
         return;
       }
 
-      // DO NOT hijack 'Enter' if the user is typing in a form!
       if (
         currentComboNorm === normalizeKey(shortcuts.confirmPayment) ||
         normalizeKey(normalizedKey) === "enter"
       ) {
         if (isTyping && !isSearchFocused) {
-          return; // Let native forms handle Enter
+          return; // Let the native input (like New Customer, Amount Received) handle Enter!
         }
         if (!isSearchFocused || searchInputRef.current?.value === "") {
           e.preventDefault();
@@ -294,22 +289,6 @@ const usePOSKeyboardFlow = ({
         !isTyping ||
         (isSearchFocused && searchInputRef.current?.value === "")
       ) {
-        if (normalizedKey >= "1" && normalizedKey <= "9") {
-          e.preventDefault();
-          const idx = Number(normalizedKey) - 1;
-          const prod = filteredProductsRef.current[idx];
-          if (prod) {
-            const existing = cartRef.current.find(
-              (item) => item.id === prod.id,
-            );
-            if (existing)
-              updateCartItemQuantity(prod.id, existing.quantity + 1);
-            else addToCart({ ...prod, quantity: 1 });
-            playBeep("success");
-          }
-          return;
-        }
-
         if (
           currentComboNorm === normalizeKey(shortcuts.increaseQuantity) ||
           currentComboNorm === normalizeKey(shortcuts.decreaseQuantity) ||
@@ -348,7 +327,6 @@ const usePOSKeyboardFlow = ({
   return { pushToQueue, keepScannerAwake };
 };
 
-// --- MAIN POS COMPONENT ---
 export const POS: React.FC = () => {
   const {
     currentShop,

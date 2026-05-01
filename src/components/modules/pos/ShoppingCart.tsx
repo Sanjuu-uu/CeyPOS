@@ -183,6 +183,8 @@ export const ShoppingCart: React.FC = () => {
   const [cashReceived, setCashReceived] = useState<string>("");
 
   const userId = currentUser?.id || "default";
+
+  // --- FETCH DYNAMIC SHORTCUTS ---
   const [shortcuts, setShortcuts] = useState<KeyboardShortcuts>(
     db.shortcuts.get(userId),
   );
@@ -195,34 +197,19 @@ export const ShoppingCart: React.FC = () => {
   }, [userId]);
 
   const wsRef = useRef<WebSocket | null>(null);
-  const viewStateRef = useRef(viewState);
-  const cartRef = useRef(cart);
 
-  useEffect(() => {
-    viewStateRef.current = viewState;
-  }, [viewState]);
-  useEffect(() => {
-    cartRef.current = cart;
-  }, [cart]);
-
+  // Production Validation: Auto-Kick on Empty Cart
   useEffect(() => {
     if (cart.length === 0 && viewState === "checkout") {
       setViewState("cart");
     }
   }, [cart.length, viewState]);
 
-  useEffect(() => {
-    if (showRegisterModal) {
-      setTimeout(
-        () => document.getElementById("new-customer-name")?.focus(),
-        100,
-      );
-    }
-  }, [showRegisterModal]);
-
+  // FIX: Dynamic Dependency Event Listeners
+  // Binding the state directly inside the dependencies ensures Escape and Delete always work!
   useEffect(() => {
     const handleCheckoutNav = () => {
-      if (cartRef.current.length > 0) setViewState("checkout");
+      if (cart.length > 0) setViewState("checkout");
     };
     const handleTogglePayment = () => {
       setSelectedPaymentMethod((prev) =>
@@ -230,35 +217,52 @@ export const ShoppingCart: React.FC = () => {
       );
     };
     const handleEnterAction = () => {
-      if (viewStateRef.current === "cart" && cartRef.current.length > 0) {
+      if (viewState === "cart" && cart.length > 0) {
         setViewState("checkout");
-      } else if (viewStateRef.current === "checkout") {
+      } else if (viewState === "checkout") {
         const confirmBtn = document.getElementById(
           "checkout-confirm-btn",
         ) as HTMLButtonElement | null;
-        if (confirmBtn && !confirmBtn.disabled) {
-          confirmBtn.click();
-        }
+        if (confirmBtn && !confirmBtn.disabled) confirmBtn.click();
       }
     };
-
     const handleAddCustomer = () => {
       const customerInput = document.getElementById("customer-search-input");
       if (customerInput) customerInput.focus();
+    };
+
+    // FIX: Detach customer reliably
+    const handleRemoveCustomer = () => {
+      setCustomer(null);
+      setRedeemPointsInput("");
+      setConvertChangeToPoints(false);
+    };
+
+    // FIX: Escape to close modal or go back
+    const handleEscape = () => {
+      if (showRegisterModal) {
+        setShowRegisterModal(false);
+      } else if (viewState === "checkout") {
+        setViewState("cart");
+      }
     };
 
     window.addEventListener("pos:checkout", handleCheckoutNav);
     window.addEventListener("pos:toggle-payment", handleTogglePayment);
     window.addEventListener("pos:action-enter", handleEnterAction);
     window.addEventListener("pos:add-customer", handleAddCustomer);
+    window.addEventListener("pos:remove-customer", handleRemoveCustomer);
+    window.addEventListener("pos:escape", handleEscape);
 
     return () => {
       window.removeEventListener("pos:checkout", handleCheckoutNav);
       window.removeEventListener("pos:toggle-payment", handleTogglePayment);
       window.removeEventListener("pos:action-enter", handleEnterAction);
       window.removeEventListener("pos:add-customer", handleAddCustomer);
+      window.removeEventListener("pos:remove-customer", handleRemoveCustomer);
+      window.removeEventListener("pos:escape", handleEscape);
     };
-  }, []);
+  }, [cart.length, viewState, showRegisterModal]); // VERY IMPORTANT: These deps fix the bug
 
   useEffect(() => {
     let reconnectTimer: ReturnType<typeof setTimeout>;
@@ -464,6 +468,11 @@ export const ShoppingCart: React.FC = () => {
     } else {
       setNewCustomerInfo({ name: "", email: "", phone: searchPhone });
       setShowRegisterModal(true);
+      // AutoFocus trick for when modal pops up dynamically
+      setTimeout(
+        () => document.getElementById("new-customer-name")?.focus(),
+        50,
+      );
     }
   };
 
@@ -595,6 +604,7 @@ export const ShoppingCart: React.FC = () => {
               <button
                 onClick={() => setShowRegisterModal(false)}
                 className="text-gray-400 hover:text-black"
+                title="Cancel [Esc]"
               >
                 <X size={20} />
               </button>
@@ -651,11 +661,12 @@ export const ShoppingCart: React.FC = () => {
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 outline-none focus:border-[#ecff76] focus:ring-1 focus:ring-[#ecff76]"
               />
               <Button
+                id="new-customer-submit"
                 fullWidth
                 type="submit"
                 className="bg-[#ecff76] hover:bg-[#d9ec60] text-gray-900 font-bold border-none mt-2"
               >
-                Create Customer
+                Create Customer [Enter]
               </Button>
             </form>
           </div>
@@ -802,9 +813,13 @@ export const ShoppingCart: React.FC = () => {
                   setRedeemPointsInput("");
                   setConvertChangeToPoints(false);
                 }}
-                className="text-xs text-red-500 hover:bg-red-50 p-2 rounded"
+                className="text-xs text-red-500 hover:bg-red-50 p-2 rounded flex items-center gap-1"
+                title={`Remove Customer [${shortcuts.removeCustomer}]`}
               >
-                <X size={16} />
+                <X size={16} />{" "}
+                <span className="hidden sm:inline">
+                  [{shortcuts.removeCustomer}]
+                </span>
               </button>
             </div>
           ) : (
@@ -953,6 +968,14 @@ export const ShoppingCart: React.FC = () => {
                       type="number"
                       value={redeemPointsInput}
                       onChange={(e) => setRedeemPointsInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          document
+                            .getElementById("checkout-confirm-btn")
+                            ?.click();
+                        }
+                      }}
                       placeholder="Points to use"
                       className="flex-1 bg-white border border-gray-200 rounded-lg px-3 py-2 text-xs outline-none focus:border-[#ecff76] focus:ring-1 focus:ring-[#ecff76]"
                     />
@@ -1039,6 +1062,14 @@ export const ShoppingCart: React.FC = () => {
                           className="w-full text-right text-lg font-bold p-2 border-b-2 border-gray-200 focus:border-[#ecff76] outline-none"
                           value={cashReceived}
                           onChange={(e) => setCashReceived(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              e.preventDefault();
+                              document
+                                .getElementById("checkout-confirm-btn")
+                                ?.click();
+                            }
+                          }}
                         />
                       </div>
                       <div className="flex justify-between items-center pt-2">
@@ -1148,6 +1179,7 @@ export const ShoppingCart: React.FC = () => {
               <button
                 onClick={() => setViewState("cart")}
                 className="flex-1 py-3 text-sm font-medium text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50"
+                title="Go back [Esc]"
               >
                 Cancel
               </button>
