@@ -272,8 +272,6 @@ const usePOSKeyboardFlow = ({
         return;
       }
 
-      // STRICT VALIDATION FIX: Removed hardcoded 'Enter' fallback.
-      // Now it ONLY triggers if it exactly matches the user's mapped confirmPayment key.
       if (currentComboNorm === normalizeKey(shortcuts.confirmPayment)) {
         if (isTyping && !isSearchFocused) {
           return;
@@ -543,6 +541,9 @@ export const POS: React.FC = () => {
                 onKeyDown={(e) => {
                   keepScannerAwake();
                   if (e.key === "Enter" && searchTerm) {
+                    // ⚠️ FIX: STOP EVENT FROM REACHING GLOBAL KEYDOWN LISTENER
+                    e.preventDefault();
+                    e.stopPropagation();
                     pushToQueue(searchTerm.trim());
                     setSearchTerm("");
                   }
