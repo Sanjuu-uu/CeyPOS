@@ -255,8 +255,6 @@ function ensureShopCache(shopKey: string): ShopCache {
   return shopCaches[shopKey];
 }
 
-// ... (resetChangeTracker, shouldSkipChange, listeners, emit, on, off... SAME AS BEFORE)
-
 function resetChangeTracker(shopKey: string) {
   lastAppliedChanges[shopKey] = Object.create(null);
 }
@@ -446,8 +444,6 @@ function toDailySale(shopKey: string, row: DailySalesRow): DailySale {
     transactions: Number(row.transactions_count ?? 0),
   };
 }
-
-// ... (buildSale, fetchShopMeta, applyInventoryRows... SAME AS BEFORE)
 
 function buildSale(
   shopKey: string,
@@ -725,8 +721,6 @@ function applySnapshot(
   emit("businessRulesUpdated", { shopId: shopKey, rules: cache.businessRules });
 }
 
-// ... (fetchSnapshot, handleChange, ensureSocket... SAME AS BEFORE)
-
 async function fetchSnapshot(shopKey: string) {
   const rawShopId = normalizeShopId(shopKey);
   const res = await fetch(`${API_BASE}/api/shop/${rawShopId}/snapshot`);
@@ -802,6 +796,28 @@ function handleChange(event: ChangeEventPayload | null | undefined) {
         : [];
       if (isTransactionRow(txSource)) {
         upsertTransaction(shopKey, txSource, items);
+
+        // ⚠️ FIX: DEDUCT INCOMING STOCK TO PREVENT MULTI-TERMINAL OVERSOLD ISSUES
+        const cache = ensureShopCache(shopKey);
+        let invChanged = false;
+        items.forEach((item) => {
+          if (item.inventory_code) {
+            const inv = cache.inventoryByCode.get(String(item.inventory_code));
+            if (inv && typeof inv.stock === "number") {
+              inv.stock = Math.max(0, inv.stock - (item.quantity || 0));
+              invChanged = true;
+            }
+          }
+        });
+        if (invChanged) {
+          cache.products = Array.from(cache.inventoryByCode.values())
+            .map((row) => toProduct(shopKey, row))
+            .sort((a, b) => a.name.localeCompare(b.name));
+          emit("inventoryUpdated", {
+            shopId: shopKey,
+            items: cache.products.slice(),
+          });
+        }
       }
       break;
     }
@@ -1056,11 +1072,30 @@ async function createSaleRecord(sale: Omit<Sale, "id">): Promise<Sale> {
     timestamp: payload.createdAt,
   };
 
+  const cache = ensureShopCache(shopKey);
+  let invChanged = false;
+  sale.items.forEach((item) => {
+    const inv = cache.inventoryByCode.get(String(item.id));
+    if (inv && typeof inv.stock === "number") {
+      inv.stock = Math.max(0, inv.stock - (item.quantity || 0));
+      invChanged = true;
+    }
+  });
+  if (invChanged) {
+    cache.products = Array.from(cache.inventoryByCode.values())
+      .map((row) => toProduct(shopKey, row))
+      .sort((a, b) => a.name.localeCompare(b.name));
+    emit("inventoryUpdated", {
+      shopId: shopKey,
+      items: cache.products.slice(),
+    });
+  }
+
   return saleRecord;
 }
 
 export const normalizeKey = (k: string) =>
-  (k || "").toLowerCase().replace(/\s+/g, "");
+  (k || "").toString().toLowerCase().replace(/\s+/g, "").trim();
 
 export const db = {
   on,
@@ -1237,7 +1272,6 @@ export const db = {
         decreaseQuantity: "-",
       };
 
-      // Step 8: Versioned Schema Recovery
       let data = localStorage.getItem(`pos_device_shortcuts_${userId}_v2`);
       if (!data) data = localStorage.getItem(`pos_device_shortcuts_${userId}`);
 
@@ -1252,8 +1286,16 @@ export const db = {
       return defaultShortcuts;
     },
     save: (userId: string = "default", shortcuts: KeyboardShortcuts) => {
-      // Step 2: SAVE-LAYER VALIDATION (Conflict Detection at Storage Level)
-      const values = Object.values(shortcuts).map(normalizeKey);
+      // ⚠️ FIX: STRICT SAVE-LAYER VALIDATION
+      const values = Object.values(shortcuts).map((val) =>
+        normalizeKey(String(val)),
+      );
+
+      if (values.some((v) => !v)) {
+        throw new Error(
+          "Save rejected: Invalid or empty shortcut keys detected.",
+        );
+      }
       if (new Set(values).size !== values.length) {
         throw new Error("Save rejected: Duplicate shortcut keys detected.");
       }

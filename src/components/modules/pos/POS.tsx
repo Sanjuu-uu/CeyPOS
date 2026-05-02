@@ -81,12 +81,15 @@ const usePOSKeyboardFlow = ({
   const idleTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const productsRef = useRef<Product[]>(products);
+  const filteredProductsRef = useRef<Product[]>(filteredProducts);
   const cartRef = useRef<CartItem[]>(cart);
 
   useEffect(() => {
     productsRef.current = products;
   }, [products]);
-
+  useEffect(() => {
+    filteredProductsRef.current = filteredProducts;
+  }, [filteredProducts]);
   useEffect(() => {
     cartRef.current = cart;
   }, [cart]);
@@ -109,6 +112,7 @@ const usePOSKeyboardFlow = ({
       const gainNode = ctx.createGain();
       osc.connect(gainNode);
       gainNode.connect(ctx.destination);
+
       if (type === "success") {
         osc.type = "sine";
         osc.frequency.setValueAtTime(800, ctx.currentTime);
@@ -195,13 +199,11 @@ const usePOSKeyboardFlow = ({
 
       keepScannerAwake();
 
-      // ALWAYS allow Escape to close modals or go back, unconditionally
       if (normalizedKey === "Escape") {
         window.dispatchEvent(new CustomEvent("pos:escape"));
         return;
       }
 
-      // Hardware Scanner Detection
       if (timeDiff < 30 && normalizedKey.length === 1) {
         barcodeBufferRef.current += normalizedKey;
         if (scannerTimeoutRef.current) clearTimeout(scannerTimeoutRef.current);
@@ -264,19 +266,17 @@ const usePOSKeyboardFlow = ({
         return;
       }
       if (currentComboNorm === normalizeKey(shortcuts.removeCustomer)) {
-        // Prevent deleting customer if the user is just trying to backspace/delete text in a form!
         if (isTyping && !isSearchFocused) return;
         e.preventDefault();
         window.dispatchEvent(new CustomEvent("pos:remove-customer"));
         return;
       }
 
-      if (
-        currentComboNorm === normalizeKey(shortcuts.confirmPayment) ||
-        normalizeKey(normalizedKey) === "enter"
-      ) {
+      // STRICT VALIDATION FIX: Removed hardcoded 'Enter' fallback.
+      // Now it ONLY triggers if it exactly matches the user's mapped confirmPayment key.
+      if (currentComboNorm === normalizeKey(shortcuts.confirmPayment)) {
         if (isTyping && !isSearchFocused) {
-          return; // Let the native input (like New Customer, Amount Received) handle Enter!
+          return;
         }
         if (!isSearchFocused || searchInputRef.current?.value === "") {
           e.preventDefault();
@@ -289,6 +289,24 @@ const usePOSKeyboardFlow = ({
         !isTyping ||
         (isSearchFocused && searchInputRef.current?.value === "")
       ) {
+        if (normalizedKey >= "1" && normalizedKey <= "9") {
+          e.preventDefault();
+          const idx = Number(normalizedKey) - 1;
+          const prod = filteredProductsRef.current[idx];
+          if (prod) {
+            const existing = cartRef.current.find(
+              (item) => item.id === prod.id,
+            );
+            if (existing) {
+              updateCartItemQuantity(prod.id, existing.quantity + 1);
+            } else {
+              addToCart({ ...prod, quantity: 1 });
+            }
+            playBeep("success");
+          }
+          return;
+        }
+
         if (
           currentComboNorm === normalizeKey(shortcuts.increaseQuantity) ||
           currentComboNorm === normalizeKey(shortcuts.decreaseQuantity) ||
@@ -304,8 +322,12 @@ const usePOSKeyboardFlow = ({
               normalizedKey === "-"
                 ? lastItem.quantity - 1
                 : lastItem.quantity + 1;
-            if (newQty <= 0) updateCartItemQuantity(lastItem.id, 0);
-            else updateCartItemQuantity(lastItem.id, newQty);
+
+            if (newQty <= 0) {
+              updateCartItemQuantity(lastItem.id, 0);
+            } else {
+              updateCartItemQuantity(lastItem.id, newQty);
+            }
           }
           return;
         }

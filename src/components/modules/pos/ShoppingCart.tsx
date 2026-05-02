@@ -183,8 +183,6 @@ export const ShoppingCart: React.FC = () => {
   const [cashReceived, setCashReceived] = useState<string>("");
 
   const userId = currentUser?.id || "default";
-
-  // --- FETCH DYNAMIC SHORTCUTS ---
   const [shortcuts, setShortcuts] = useState<KeyboardShortcuts>(
     db.shortcuts.get(userId),
   );
@@ -196,7 +194,19 @@ export const ShoppingCart: React.FC = () => {
       window.removeEventListener("shortcuts-updated", handleShortcutUpdate);
   }, [userId]);
 
-  const wsRef = useRef<WebSocket | null>(null);
+  const viewStateRef = useRef(viewState);
+  const cartRef = useRef(cart);
+  const showRegisterModalRef = useRef(showRegisterModal);
+
+  useEffect(() => {
+    viewStateRef.current = viewState;
+  }, [viewState]);
+  useEffect(() => {
+    cartRef.current = cart;
+  }, [cart]);
+  useEffect(() => {
+    showRegisterModalRef.current = showRegisterModal;
+  }, [showRegisterModal]);
 
   // Production Validation: Auto-Kick on Empty Cart
   useEffect(() => {
@@ -205,8 +215,16 @@ export const ShoppingCart: React.FC = () => {
     }
   }, [cart.length, viewState]);
 
+  useEffect(() => {
+    if (showRegisterModal) {
+      setTimeout(
+        () => document.getElementById("new-customer-name")?.focus(),
+        100,
+      );
+    }
+  }, [showRegisterModal]);
+
   // FIX: Dynamic Dependency Event Listeners
-  // Binding the state directly inside the dependencies ensures Escape and Delete always work!
   useEffect(() => {
     const handleCheckoutNav = () => {
       if (cart.length > 0) setViewState("checkout");
@@ -226,19 +244,18 @@ export const ShoppingCart: React.FC = () => {
         if (confirmBtn && !confirmBtn.disabled) confirmBtn.click();
       }
     };
+
     const handleAddCustomer = () => {
       const customerInput = document.getElementById("customer-search-input");
       if (customerInput) customerInput.focus();
     };
 
-    // FIX: Detach customer reliably
     const handleRemoveCustomer = () => {
       setCustomer(null);
       setRedeemPointsInput("");
       setConvertChangeToPoints(false);
     };
 
-    // FIX: Escape to close modal or go back
     const handleEscape = () => {
       if (showRegisterModal) {
         setShowRegisterModal(false);
@@ -262,48 +279,7 @@ export const ShoppingCart: React.FC = () => {
       window.removeEventListener("pos:remove-customer", handleRemoveCustomer);
       window.removeEventListener("pos:escape", handleEscape);
     };
-  }, [cart.length, viewState, showRegisterModal]); // VERY IMPORTANT: These deps fix the bug
-
-  useEffect(() => {
-    let reconnectTimer: ReturnType<typeof setTimeout>;
-    const connectWs = () => {
-      try {
-        const token = localStorage.getItem("pos_auth_token") || "";
-        const wsUrl = new URL(
-          import.meta.env.VITE_WS_URL || "ws://localhost:3001",
-        );
-        wsUrl.searchParams.append("token", token);
-        if (currentShop?.id)
-          wsUrl.searchParams.append("shopId", currentShop.id);
-
-        wsRef.current = new WebSocket(wsUrl.toString());
-        wsRef.current.onmessage = (event) => {
-          try {
-            const data = JSON.parse(event.data);
-            if (
-              data.type === "SALE_CREATED" &&
-              data.shopId === currentShop?.id
-            ) {
-              window.dispatchEvent(new CustomEvent("inventory-force-refresh"));
-            }
-          } catch (e) {
-            console.warn("Failed to parse WS message", e);
-          }
-        };
-        wsRef.current.onerror = () => wsRef.current?.close();
-        wsRef.current.onclose = () => {
-          reconnectTimer = setTimeout(connectWs, 5000);
-        };
-      } catch (e) {
-        reconnectTimer = setTimeout(connectWs, 5000);
-      }
-    };
-    if (currentShop) connectWs();
-    return () => {
-      clearTimeout(reconnectTimer);
-      wsRef.current?.close();
-    };
-  }, [currentShop]);
+  }, [cart.length, viewState, showRegisterModal]);
 
   useEffect(() => {
     const loadedRules = db.businessRules.get();
@@ -468,11 +444,6 @@ export const ShoppingCart: React.FC = () => {
     } else {
       setNewCustomerInfo({ name: "", email: "", phone: searchPhone });
       setShowRegisterModal(true);
-      // AutoFocus trick for when modal pops up dynamically
-      setTimeout(
-        () => document.getElementById("new-customer-name")?.focus(),
-        50,
-      );
     }
   };
 
@@ -514,19 +485,7 @@ export const ShoppingCart: React.FC = () => {
         isSynced: isOnline,
       } as any);
 
-      if (isOnline && wsRef.current?.readyState === WebSocket.OPEN) {
-        try {
-          wsRef.current.send(
-            JSON.stringify({
-              type: "SALE_CREATED",
-              shopId: currentShop.id,
-              payload: { items: cart, total: finalTotal },
-            }),
-          );
-        } catch (e) {
-          console.warn("Socket broadcast failed");
-        }
-      }
+      // FIX 5: Real-time sync is now managed entirely by `db.ts` internally, eliminating duplicate WebSockets.
 
       setViewState("success");
       setTimeout(() => {

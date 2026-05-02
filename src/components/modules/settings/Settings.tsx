@@ -157,8 +157,7 @@ const KeyboardSettings: React.FC = () => {
       >
         <div className="flex justify-between items-start mb-6">
           <p className="text-sm text-gray-500">
-            Click an input and press a key (or combo like Ctrl+K) to assign a
-            new shortcut for this terminal.
+            Click an input and press a key to assign a custom shortcut.
           </p>
           <div className="flex gap-2">
             <Button
@@ -211,7 +210,7 @@ const KeyboardSettings: React.FC = () => {
             {
               id: "addCustomer",
               label: "Add Customer",
-              desc: "Focus customer lookup/name field",
+              desc: "Focus customer lookup field",
             },
             {
               id: "removeCustomer",
@@ -288,7 +287,7 @@ const KeyboardSettings: React.FC = () => {
           )}
           {savedStatus && (
             <span className="text-green-600 text-sm font-bold flex items-center gap-1 animate-in fade-in">
-              <CheckCircle2 size={16} /> Saved to this device
+              <CheckCircle2 size={16} /> Saved Successfully
             </span>
           )}
         </div>
