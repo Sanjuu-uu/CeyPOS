@@ -8,12 +8,14 @@ const ProductCard = memo(
     product,
     quantityInCart,
     viewMode,
+    currencySymbol,
     onAdd,
     onUpdate,
   }: {
     product: Product;
     quantityInCart: number;
     viewMode: "grid" | "row";
+    currencySymbol: string;
     onAdd: (p: Product) => void;
     onUpdate: (p: Product, change: number) => void;
   }) => {
@@ -49,7 +51,8 @@ const ProductCard = memo(
           </div>
           <div className="text-right">
             <div className="font-bold text-gray-900">
-              ${product.price.toFixed(2)}
+              {currencySymbol}
+              {product.price.toFixed(2)}
             </div>
             {quantityInCart === 0 ? (
               <button
@@ -100,7 +103,8 @@ const ProductCard = memo(
             </div>
           )}
           <div className="absolute top-2 right-2 bg-white/90 backdrop-blur-sm px-2 py-1 rounded-md text-sm font-bold shadow-sm border border-gray-100">
-            ${product.price.toFixed(2)}
+            {currencySymbol}
+            {product.price.toFixed(2)}
           </div>
           {quantityInCart > 0 && (
             <div className="absolute top-2 left-2 bg-[#ecff76] text-gray-900 w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shadow-md">
@@ -156,8 +160,12 @@ ProductCard.displayName = "ProductCard";
 export const ProductGrid: React.FC<{ products: Product[] }> = ({
   products,
 }) => {
-  const { addToCart, cart, updateCartItemQuantity } = useApp();
+  // Extract currentShop from useApp
+  const { addToCart, cart, updateCartItemQuantity, currentShop } = useApp();
   const [viewMode, setViewMode] = useState<"grid" | "row">("grid");
+
+  // Determine the currency symbol, defaulting to "$"
+  const currencySymbol = currentShop?.currency ?? "$";
 
   const cartMap = useMemo(
     () => Object.fromEntries(cart.map((item) => [item.id, item.quantity])),
@@ -209,6 +217,7 @@ export const ProductGrid: React.FC<{ products: Product[] }> = ({
               product={product}
               quantityInCart={cartMap[product.id] || 0}
               viewMode={viewMode}
+              currencySymbol={currencySymbol} // Passed down here
               onAdd={handleAddToCart}
               onUpdate={handleUpdateQuantity}
             />
