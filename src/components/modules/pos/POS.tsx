@@ -287,24 +287,6 @@ const usePOSKeyboardFlow = ({
         !isTyping ||
         (isSearchFocused && searchInputRef.current?.value === "")
       ) {
-        if (normalizedKey >= "1" && normalizedKey <= "9") {
-          e.preventDefault();
-          const idx = Number(normalizedKey) - 1;
-          const prod = filteredProductsRef.current[idx];
-          if (prod) {
-            const existing = cartRef.current.find(
-              (item) => item.id === prod.id,
-            );
-            if (existing) {
-              updateCartItemQuantity(prod.id, existing.quantity + 1);
-            } else {
-              addToCart({ ...prod, quantity: 1 });
-            }
-            playBeep("success");
-          }
-          return;
-        }
-
         if (
           currentComboNorm === normalizeKey(shortcuts.increaseQuantity) ||
           currentComboNorm === normalizeKey(shortcuts.decreaseQuantity) ||
