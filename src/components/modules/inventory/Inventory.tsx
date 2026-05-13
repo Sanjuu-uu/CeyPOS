@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Card } from '../../ui/Card';
 import { Input } from '../../ui/Input';
 import { Button } from '../../ui/Button';
@@ -49,6 +49,12 @@ export const Inventory: React.FC = () => {
     barcode: '',
     imageUrl: ''
   });
+
+  const isMatchingShop = (shopId?: string) => {
+    if (!shopId || !currentShop?.id) return false;
+    const normalize = (value: string) => value.replace(/^shop_/, '');
+    return normalize(shopId) === normalize(currentShop.id);
+  };
 
   useEffect(() => {
     if (!currentShop) {
@@ -165,6 +171,46 @@ export const Inventory: React.FC = () => {
     setEditingProduct(product);
     setIsAddingProduct(true);
   };
+
+  const handleBarcodeCapture = useCallback((barcode: string) => {
+    const normalized = barcode.trim();
+    if (!normalized) return;
+
+    const match = products.find((product) => product.barcode === normalized);
+    if (match) {
+      handleEditProduct(match);
+      return;
+    }
+
+    setEditingProduct(null);
+    setIsAddingProduct(true);
+    setNewProduct({
+      name: '',
+      category: '',
+      price: '',
+      stock: '',
+      barcode: normalized,
+      imageUrl: ''
+    });
+  }, [products]);
+
+  useEffect(() => {
+    const handler = (payload: unknown) => {
+      if (!payload || typeof payload !== 'object') return;
+      const candidate = payload as Record<string, unknown>;
+      const value = typeof candidate.value === 'string' ? candidate.value.trim() : '';
+      const sessionType = typeof candidate.sessionType === 'string' ? candidate.sessionType : '';
+      const shopId = typeof candidate.shopId === 'string' ? candidate.shopId : undefined;
+
+      if (!value || !isMatchingShop(shopId)) return;
+      if (sessionType && sessionType !== 'barcode') return;
+
+      handleBarcodeCapture(value);
+    };
+
+    const unsubscribe = db.on('mobileBarcode', handler);
+    return () => unsubscribe();
+  }, [currentShop?.id, handleBarcodeCapture]);
 
   const handleDeleteProduct = async (product: Product) => {
     if (!currentShop) return;
@@ -324,6 +370,12 @@ export const Inventory: React.FC = () => {
             leftIcon={<Search size={18} />}
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && searchTerm.trim()) {
+                e.preventDefault();
+                handleBarcodeCapture(searchTerm);
+              }
+            }}
             fullWidth
           />
           

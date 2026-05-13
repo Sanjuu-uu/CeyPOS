@@ -881,6 +881,10 @@ function ensureSocket(shopKey: string) {
 
   socket.on("change", (event: ChangeEventPayload) => handleChange(event));
 
+  socket.on("mobile:barcode", (payload: unknown) => {
+    emit("mobileBarcode", payload);
+  });
+
   socket.on("disconnect", (reason: unknown) => {
     console.log("WS disconnected", reason);
   });

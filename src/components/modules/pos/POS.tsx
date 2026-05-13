@@ -396,6 +396,36 @@ export const POS: React.FC = () => {
     shortcuts,
   });
 
+  const isMatchingShop = (shopId?: string) => {
+    if (!shopId || !currentShop?.id) return false;
+    const normalize = (value: string) => value.replace(/^shop_/, "");
+    return normalize(shopId) === normalize(currentShop.id);
+  };
+
+  useEffect(() => {
+    const handler = (payload: unknown) => {
+      if (!payload || typeof payload !== "object") return;
+      const candidate = payload as Record<string, unknown>;
+      const value =
+        typeof candidate.value === "string" ? candidate.value.trim() : "";
+      const sessionType =
+        typeof candidate.sessionType === "string"
+          ? candidate.sessionType
+          : "";
+      const shopId =
+        typeof candidate.shopId === "string" ? candidate.shopId : undefined;
+
+      if (!value || !isMatchingShop(shopId)) return;
+      if (sessionType && sessionType !== "checkout") return;
+
+      keepScannerAwake();
+      pushToQueue(value);
+    };
+
+    const unsubscribe = db.on("mobileBarcode", handler);
+    return () => unsubscribe();
+  }, [currentShop?.id, keepScannerAwake, pushToQueue]);
+
   useEffect(() => {
     const handleOnline = () => setIsOnline(true);
     const handleOffline = () => setIsOnline(false);

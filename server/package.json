@@ -9,7 +9,7 @@
   },
   "scripts": {
     "start": "node main-server.js",
-    "dev": "cross-env PORT=4000 node main-server.js"
+    "dev": "cross-env PORT=8080 node main-server.js"
   },
   "dependencies": {
     "better-sqlite3": "^12.4.1",

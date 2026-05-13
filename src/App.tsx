@@ -18,6 +18,7 @@ import Home from "./pages/home/home";
 import Login from "./pages/login/Login";
 import Register from "./pages/register/Register";
 import AboutUs from "./pages/aboutUs/AboutUs";
+import MobileScan from "./pages/mobilesessions/MobileScan";
 
 // Get Clerk publishable key from environment
 const clerkPubKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
@@ -30,6 +31,8 @@ if (!clerkPubKey) {
 function PreAuthApp() {
   return (
     <Routes>
+      <Route path="/mobilesessions" element={<Navigate to="/mobilesessions/scan" replace />} />
+      <Route path="/mobilesessions/scan" element={<MobileScan />} />
       <Route path="/" element={<Home />} />
       <Route path="/home" element={<Home />} />
       <Route path="/login" element={<Login />} />
@@ -441,6 +444,8 @@ function PostAuthContent({
 
   return (
     <Routes>
+      <Route path="/mobilesessions" element={<Navigate to="/mobilesessions/scan" replace />} />
+      <Route path="/mobilesessions/scan" element={<MobileScan />} />
       <Route
         path="/"
         element={

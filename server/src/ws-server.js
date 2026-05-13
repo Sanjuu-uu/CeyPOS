@@ -16,17 +16,20 @@ function init(httpServer, opts = {}) {
     const allowedOrigins = corsOrigin;
     corsOrigin = (origin, callback) => {
       if (!origin) return callback(null, true);
-      
-      // In production, allow Railway domains
-      if (process.env.NODE_ENV === "production" && origin && origin.includes("railway.app")) {
-        return callback(null, true);
+
+      if (process.env.NODE_ENV === "production") {
+        if (origin && origin.includes("railway.app")) {
+          return callback(null, true);
+        }
+
+        if (allowedOrigins.includes(origin)) {
+          return callback(null, true);
+        }
+
+        return callback(new Error("Not allowed by CORS"));
       }
-      
-      if (allowedOrigins.includes(origin)) {
-        return callback(null, true);
-      }
-      
-      return callback(new Error("Not allowed by CORS"));
+
+      return callback(null, true);
     };
   }
   
@@ -119,6 +122,31 @@ function init(httpServer, opts = {}) {
         if (typeof cb === "function") cb({ ok: true, rows });
       } catch (err) {
         console.error("inventory:upsert error", err);
+        if (typeof cb === "function") cb({ ok: false, error: String(err) });
+      }
+    });
+
+    socket.on("mobile:log", (payload) => {
+      if (!payload || typeof payload !== "object") return;
+      const entry = payload;
+      console.log("[mobile]", entry);
+    });
+
+    socket.on("mobile:barcode", (payload, cb) => {
+      try {
+        if (!payload || typeof payload !== "object") {
+          if (typeof cb === "function") cb({ ok: false, error: "Invalid payload" });
+          return;
+        }
+
+        const event = {
+          ...payload,
+          shopId,
+        };
+        io.to(room).emit("mobile:barcode", event);
+        if (typeof cb === "function") cb({ ok: true });
+      } catch (err) {
+        console.error("mobile:barcode error", err);
         if (typeof cb === "function") cb({ ok: false, error: String(err) });
       }
     });

@@ -27,7 +27,7 @@ app.use(
         if (origin.includes("railway.app") || allowedOrigins.includes(origin)) {
           return callback(null, true);
         }
-      } else if (allowedOrigins.includes(origin)) {
+      } else {
         return callback(null, true);
       }
 
