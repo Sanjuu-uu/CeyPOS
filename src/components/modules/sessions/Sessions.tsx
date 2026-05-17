@@ -26,9 +26,19 @@ interface SessionWizardProps {
   shopId: string;
   userEmail: string;
   userId: string | null;
+  sidebarCollapsed: boolean;
 }
 
 type SessionState = "idle" | "creating" | "pending" | "linked" | "error";
+
+const extractOwnerEmail = (shopId: string) => {
+  const value = String(shopId || "").trim();
+  const idIndex = value.indexOf("_id");
+  if (idIndex > 0) {
+    return value.slice(0, idIndex);
+  }
+  return value;
+};
 
 const SessionWizard: React.FC<SessionWizardProps> = ({
   sessionType,
@@ -36,6 +46,7 @@ const SessionWizard: React.FC<SessionWizardProps> = ({
   shopId,
   userEmail,
   userId,
+  sidebarCollapsed,
 }) => {
   const [sessionState, setSessionState] = useState<SessionState>("idle");
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
@@ -47,6 +58,7 @@ const SessionWizard: React.FC<SessionWizardProps> = ({
 
   const canCreateSession = Boolean(shopId && userEmail && sessionType);
   const flowLabel = sessionType === "checkout" ? "Checkout" : "Import";
+  const scopedOwnerEmail = useMemo(() => extractOwnerEmail(shopId), [shopId]);
   const createdSessionId = useMemo(() => {
     if (!sessionLink) return "";
     try {
@@ -159,9 +171,14 @@ const SessionWizard: React.FC<SessionWizardProps> = ({
           : sessionError || "Session not ready.";
 
   return (
-    <div className="fixed inset-0 z-40 flex items-center justify-center">
-      <div className="absolute inset-0 bg-black/10 backdrop-blur-sm" />
-      <div className="relative z-10 mt-8 w-full max-w-2xl rounded-2xl border border-gray-200 bg-white shadow-2xl">
+    <div className="fixed inset-0 z-40">
+      <div
+        className={`absolute bottom-0 top-16 right-0 ${sidebarCollapsed ? "md:left-16" : "md:left-60"} bg-black/10 backdrop-blur-sm`}
+      />
+      <div
+        className={`absolute bottom-0 top-16 right-0 ${sidebarCollapsed ? "md:left-16" : "md:left-60"} flex items-center justify-center p-4 md:p-6`}
+      >
+        <div className="relative z-10 w-full max-w-xl rounded-2xl border border-gray-200 bg-white shadow-2xl">
         <div className="flex items-start justify-between border-b border-gray-200 p-6">
           <div className="space-y-1">
             <h2 className="text-xl font-semibold text-gray-900">
@@ -181,11 +198,11 @@ const SessionWizard: React.FC<SessionWizardProps> = ({
         </div>
 
         <div className="space-y-5 p-6">
-          <div className="grid gap-4 md:grid-cols-[300px,1fr]">
+          <div className="grid gap-4 md:grid-cols-[240px,1fr]">
             <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
-              <div className="mx-auto flex h-[260px] w-[260px] items-center justify-center rounded-lg border border-gray-300 bg-white">
+              <div className="mx-auto flex h-[210px] w-[210px] items-center justify-center rounded-lg border border-gray-300 bg-white">
                 {qrDataUrl ? (
-                  <img src={qrDataUrl} alt="Mobile session QR code" className="h-[240px] w-[240px]" />
+                  <img src={qrDataUrl} alt="Mobile session QR code" className="h-[190px] w-[190px]" />
                 ) : (
                   <div className="text-center text-gray-500">
                     {sessionState === "creating" ? (
@@ -221,7 +238,7 @@ const SessionWizard: React.FC<SessionWizardProps> = ({
 
               <div className="rounded-xl border border-gray-200 bg-white p-4">
                 <p className="text-xs uppercase tracking-wide text-gray-500">Session Scope</p>
-                <p className="mt-1 break-all text-xs text-gray-800">{shopId}</p>
+                <p className="mt-1 break-all text-xs text-gray-800">{scopedOwnerEmail}</p>
               </div>
 
               <div className="rounded-xl border border-gray-200 bg-white p-4">
@@ -264,13 +281,14 @@ const SessionWizard: React.FC<SessionWizardProps> = ({
             </p>
           )}
         </div>
+        </div>
       </div>
     </div>
   );
 };
 
 export const Sessions: React.FC = () => {
-  const { activeShopId } = useApp();
+  const { activeShopId, isSidebarCollapsed } = useApp();
   const { user } = useUser();
   const userEmail =
     user?.primaryEmailAddress?.emailAddress ||
@@ -281,7 +299,15 @@ export const Sessions: React.FC = () => {
 
   const [showWizard, setShowWizard] = useState(false);
   const [activeSession, setActiveSession] = useState<MobileSessionType | null>(null);
-  const [recentLinked, setRecentLinked] = useState<Array<{ sessionId: string; type: string; at: string }>>([]);
+  const [sessionFeed, setSessionFeed] = useState<
+    Array<{
+      sessionId: string;
+      type: string;
+      status: "created" | "linked";
+      at: string;
+      actor?: string;
+    }>
+  >([]);
 
   useEffect(() => {
     if (!shopId) return;
@@ -293,17 +319,34 @@ export const Sessions: React.FC = () => {
           ? (candidate.payload as Record<string, unknown>)
           : {};
       const action = typeof candidate.action === "string" ? candidate.action : "";
-      if (action !== "linked") return;
+      if (action !== "linked" && action !== "created") return;
       const sessionId = String(payload.sessionId || "");
       const type = String(payload.sessionType || "");
       if (!sessionId) return;
-      setRecentLinked((prev) => [
-        { sessionId, type, at: new Date().toLocaleTimeString() },
+      const actor = String(payload.linkedBy || payload.createdBy || "");
+      setSessionFeed((prev) => [
+        {
+          sessionId,
+          type,
+          status: action as "created" | "linked",
+          at: new Date().toLocaleTimeString(),
+          actor: actor || undefined,
+        },
         ...prev.filter((item) => item.sessionId !== sessionId),
       ].slice(0, 5));
     });
     return () => unsubscribe();
   }, [shopId]);
+
+  const activeByType = useMemo(() => {
+    const map: Partial<Record<MobileSessionType, boolean>> = {};
+    for (const item of sessionFeed) {
+      if ((item.type === "barcode" || item.type === "checkout") && item.status === "linked") {
+        map[item.type] = true;
+      }
+    }
+    return map;
+  }, [sessionFeed]);
 
   const startSession = (sessionType: MobileSessionType) => {
     setActiveSession(sessionType);
@@ -342,11 +385,11 @@ export const Sessions: React.FC = () => {
         </p>
       </div>
 
-      <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+      <div className="mx-auto grid w-full max-w-4xl grid-cols-1 gap-5 md:grid-cols-2">
         {cards.map((session) => (
           <motion.div key={session.id} whileHover={{ y: -3 }} transition={{ duration: 0.15 }}>
-            <Card className="h-full border border-gray-100 transition-shadow duration-200 hover:shadow-lg">
-              <div className="space-y-4 p-6">
+            <Card className="mx-auto h-full w-full max-w-md border border-gray-100 transition-shadow duration-200 hover:shadow-lg">
+              <div className="space-y-4 p-5">
                 <div className="flex items-start justify-between">
                   <div className="rounded-lg p-3" style={{ backgroundColor: `${session.color}20` }}>
                     <div style={{ color: session.color }}>{session.icon}</div>
@@ -364,7 +407,7 @@ export const Sessions: React.FC = () => {
                   disabled={!shopId || !userEmail}
                   style={{ backgroundColor: session.color, color: "#0f172a", border: "none" }}
                 >
-                  Start
+                  {activeByType[session.id] ? "Link Another Device" : "Start Session"}
                 </Button>
               </div>
             </Card>
@@ -374,16 +417,22 @@ export const Sessions: React.FC = () => {
 
       <Card className="border border-gray-100">
         <div className="p-6">
-          <h2 className="mb-4 text-lg font-semibold">Recent Linked Sessions</h2>
-          {recentLinked.length === 0 ? (
-            <p className="text-sm text-gray-500">No linked mobile sessions yet.</p>
+          <h2 className="mb-4 text-lg font-semibold">Active & Recent Sessions</h2>
+          {sessionFeed.length === 0 ? (
+            <p className="text-sm text-gray-500">No session activity yet.</p>
           ) : (
             <div className="space-y-2">
-              {recentLinked.map((item) => (
+              {sessionFeed.map((item) => (
                 <div key={item.sessionId} className="flex items-center justify-between rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
                   <div>
-                    <p className="text-sm font-medium text-gray-900">{item.type || "session"}</p>
+                    <p className="text-sm font-medium text-gray-900">
+                      {item.type || "session"}{" "}
+                      <span className={item.status === "linked" ? "text-green-700" : "text-amber-700"}>
+                        ({item.status === "linked" ? "active" : "pending"})
+                      </span>
+                    </p>
                     <p className="text-xs text-gray-500">{item.sessionId}</p>
+                    {item.actor && <p className="text-xs text-gray-500">{item.actor}</p>}
                   </div>
                   <span className="text-xs text-gray-600">{item.at}</span>
                 </div>
@@ -404,10 +453,10 @@ export const Sessions: React.FC = () => {
             shopId={shopId}
             userEmail={userEmail}
             userId={userId}
+            sidebarCollapsed={isSidebarCollapsed}
           />
         )}
       </AnimatePresence>
     </div>
   );
 };
-
