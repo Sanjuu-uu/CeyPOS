@@ -197,7 +197,7 @@ const SessionWizard: React.FC<SessionWizardProps> = ({
           </button>
         </div>
 
-        <div className="space-y-4 overflow-y-auto p-5">
+        <div className="min-h-0 flex-1 overflow-y-auto p-5">
           <div className="grid gap-3 md:grid-cols-[210px,1fr]">
             <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
               <div className="mx-auto flex h-[185px] w-[180px] items-center justify-center rounded-lg border border-gray-300 bg-white">
@@ -253,33 +253,33 @@ const SessionWizard: React.FC<SessionWizardProps> = ({
             </div>
           </div>
 
-          <div className="sticky bottom-0 -mx-5 -mb-5 mt-1 flex flex-wrap items-center gap-2 border-t border-gray-200 bg-white px-5 py-3">
-            <Button
-              variant="secondary"
-              onClick={() => {
-                if (sessionLink) navigator.clipboard.writeText(sessionLink);
-              }}
-              disabled={!sessionLink}
-            >
-              <Copy size={14} className="mr-1" />
-              Copy Link
-            </Button>
-            <Button variant="secondary" onClick={() => void createSession()} disabled={sessionState === "creating"}>
-              <RefreshCw size={14} className="mr-1" />
-              New QR
-            </Button>
-            <div className="ml-auto">
-              <Button variant="primary" onClick={onClose}>
-                {sessionState === "linked" ? "Done" : "Close"}
-              </Button>
-            </div>
-          </div>
-
           {!canCreateSession && (
             <p className="text-sm text-red-600">
               Missing authenticated shop/account context. Re-login on desktop and retry.
             </p>
           )}
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2 border-t border-gray-200 bg-white px-5 py-3">
+          <Button
+            variant="secondary"
+            onClick={() => {
+              if (sessionLink) navigator.clipboard.writeText(sessionLink);
+            }}
+            disabled={!sessionLink}
+          >
+            <Copy size={14} className="mr-1" />
+            Copy Link
+          </Button>
+          <Button variant="secondary" onClick={() => void createSession()} disabled={sessionState === "creating"}>
+            <RefreshCw size={14} className="mr-1" />
+            New QR
+          </Button>
+          <div className="ml-auto">
+            <Button variant="primary" onClick={onClose}>
+              {sessionState === "linked" ? "Done" : "Close"}
+            </Button>
+          </div>
         </div>
         </div>
       </div>
