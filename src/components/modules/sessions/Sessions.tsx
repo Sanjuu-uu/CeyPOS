@@ -1,10 +1,11 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Card } from '../../ui/Card';
 import { Button } from '../../ui/Button';
 import QRCode from 'qrcode';
 import { useUser } from '@clerk/clerk-react';
 import { postJSON } from '../../../lib/api';
+import { db } from '../../../lib/db';
 import { useApp } from '../../../context/AppContext';
 import { 
   Smartphone, 
@@ -15,18 +16,20 @@ import {
   CheckCircle,
   Copy,
   RefreshCw,
-  Shield
+  Shield,
+  Loader2
 } from 'lucide-react';
 
 interface SessionWizardProps {
   sessionType: 'cashier' | 'barcode' | 'checkout' | null;
   onClose: () => void;
+  onSessionLinked: (sessionType: 'barcode' | 'checkout') => void;
   shopId: string;
   userEmail: string;
   userId: string | null;
 }
 
-const SessionWizard: React.FC<SessionWizardProps> = ({ sessionType, onClose, shopId, userEmail, userId }) => {
+const SessionWizard: React.FC<SessionWizardProps> = ({ sessionType, onClose, onSessionLinked, shopId, userEmail, userId }) => {
   const [step, setStep] = useState(1);
   const [twoFACode, setTwoFACode] = useState('CY-4829-3761');
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
@@ -34,9 +37,11 @@ const SessionWizard: React.FC<SessionWizardProps> = ({ sessionType, onClose, sho
   const [sessionExpiresAt, setSessionExpiresAt] = useState<string | null>(null);
   const [sessionError, setSessionError] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [connectionState, setConnectionState] = useState<'pending' | 'connected'>('pending');
 
   const isMobileSession = sessionType === 'barcode' || sessionType === 'checkout';
   const canCreateSession = Boolean(shopId && userEmail && isMobileSession);
+  const flowLabel = sessionType === 'checkout' ? 'mobile checkout' : 'product import';
 
   const generateNewCode = () => {
     const newCode = `CY-${Math.floor(Math.random() * 9000) + 1000}-${Math.floor(Math.random() * 9000) + 1000}`;
@@ -62,6 +67,7 @@ const SessionWizard: React.FC<SessionWizardProps> = ({ sessionType, onClose, sho
       setSessionError(null);
       try {
         const result = await postJSON<{
+          sessionId: string;
           scanUrl: string | null;
           expiresAt: string;
         }>("/api/mobile/sessions/create", {
@@ -90,6 +96,7 @@ const SessionWizard: React.FC<SessionWizardProps> = ({ sessionType, onClose, sho
         setSessionLink(result.scanUrl);
         setSessionExpiresAt(result.expiresAt);
         setQrDataUrl(qrUrl);
+        setConnectionState('pending');
       } catch (err) {
         const message = err instanceof Error ? err.message : "Failed to create session";
         setSessionError(message);
@@ -100,6 +107,32 @@ const SessionWizard: React.FC<SessionWizardProps> = ({ sessionType, onClose, sho
 
     createSession();
   }, [canCreateSession, isGenerating, sessionLink, sessionType, shopId, step, userEmail, userId]);
+
+  useEffect(() => {
+    if (!sessionLink || !shopId) return;
+    const createdSessionId = new URL(sessionLink).searchParams.get('session');
+    if (!createdSessionId) return;
+
+    const unsubscribe = db.on('sessionUpdated', (event: unknown) => {
+      if (!event || typeof event !== 'object') return;
+      const candidate = event as Record<string, unknown>;
+      const payload =
+        candidate.payload && typeof candidate.payload === 'object'
+          ? (candidate.payload as Record<string, unknown>)
+          : {};
+      const action = typeof candidate.action === 'string' ? candidate.action : '';
+      if (payload.sessionId !== createdSessionId) return;
+      if (action === 'linked' || action === 'mobile_connected') {
+        setConnectionState('connected');
+        setStep(3);
+        if (sessionType === 'barcode' || sessionType === 'checkout') {
+          onSessionLinked(sessionType);
+        }
+      }
+    });
+
+    return () => unsubscribe();
+  }, [onSessionLinked, sessionLink, sessionType, shopId]);
 
   if (!sessionType) return null;
 
@@ -217,7 +250,7 @@ const SessionWizard: React.FC<SessionWizardProps> = ({ sessionType, onClose, sho
                 <div className="space-y-2">
                   <h3 className="text-lg font-semibold">Initialize Connection</h3>
                   <p className="text-gray-600">
-                    Preparing to connect your {sessionType === 'cashier' ? 'cashier device' : 'mobile device'}
+                    Preparing to connect your {sessionType === 'cashier' ? 'cashier device' : flowLabel} device
                   </p>
                 </div>
                 
@@ -227,7 +260,7 @@ const SessionWizard: React.FC<SessionWizardProps> = ({ sessionType, onClose, sho
                 >
                   <Wifi size={48} className="mx-auto mb-4 text-gray-400" />
                   <p className="text-sm text-gray-600">
-                    Make sure your device is connected to the same network
+                    The QR link is tied to this shop and expires quickly for safety.
                   </p>
                 </div>
 
@@ -235,8 +268,9 @@ const SessionWizard: React.FC<SessionWizardProps> = ({ sessionType, onClose, sho
                   variant="primary"
                   onClick={() => setStep(2)}
                   className="w-full"
+                  disabled={isMobileSession && !canCreateSession}
                 >
-                  Start Connection
+                  {isMobileSession && !canCreateSession ? 'Shop account required' : 'Start Connection'}
                 </Button>
               </motion.div>
             )}
@@ -256,7 +290,7 @@ const SessionWizard: React.FC<SessionWizardProps> = ({ sessionType, onClose, sho
                   <p className="text-gray-600">
                     {sessionType === 'cashier' 
                       ? 'Enter this code on your cashier device' 
-                      : 'Scan this QR code with your mobile device'
+                      : `Scan this QR code with your phone to start ${flowLabel}`
                     }
                   </p>
                 </div>
@@ -333,6 +367,7 @@ const SessionWizard: React.FC<SessionWizardProps> = ({ sessionType, onClose, sho
                             onClick={() => {
                               setSessionLink(null);
                               setQrDataUrl(null);
+                              setConnectionState('pending');
                             }}
                             className="flex items-center gap-2 px-3 py-1 rounded text-xs hover:bg-gray-200 transition-colors"
                           >
@@ -344,6 +379,19 @@ const SessionWizard: React.FC<SessionWizardProps> = ({ sessionType, onClose, sho
                         {sessionExpiresAt && (
                           <p>Expires: {new Date(sessionExpiresAt).toLocaleTimeString()}</p>
                         )}
+                        <p className="flex items-center justify-center gap-1 text-gray-600">
+                          {connectionState === 'connected' ? (
+                            <>
+                              <CheckCircle size={14} />
+                              Mobile connected
+                            </>
+                          ) : (
+                            <>
+                              <Loader2 size={14} className="animate-spin" />
+                              Waiting for mobile sign in and camera permission
+                            </>
+                          )}
+                        </p>
                       </div>
                     )}
                   </div>
@@ -354,7 +402,7 @@ const SessionWizard: React.FC<SessionWizardProps> = ({ sessionType, onClose, sho
                   onClick={() => setStep(3)}
                   className="w-full"
                 >
-                  Continue
+                  I scanned the QR
                 </Button>
               </motion.div>
             )}
@@ -370,7 +418,9 @@ const SessionWizard: React.FC<SessionWizardProps> = ({ sessionType, onClose, sho
                 <div className="space-y-2">
                   <h3 className="text-lg font-semibold">Session Ready</h3>
                   <p className="text-gray-600">
-                    Keep this window open while the device connects.
+                    {connectionState === 'connected'
+                      ? 'Mobile is connected and scanning into this shop.'
+                      : 'Keep this window open while the device connects.'}
                   </p>
                 </div>
 
@@ -404,7 +454,7 @@ const SessionWizard: React.FC<SessionWizardProps> = ({ sessionType, onClose, sho
 };
 
 export const Sessions: React.FC = () => {
-  const { activeShopId } = useApp();
+  const { activeShopId, setCurrentModule } = useApp();
   const { user } = useUser();
   const userEmail =
     user?.primaryEmailAddress?.emailAddress ||
@@ -425,6 +475,12 @@ export const Sessions: React.FC = () => {
     setShowWizard(false);
     setActiveSession(null);
   };
+
+  const handleSessionLinked = useCallback((sessionType: 'barcode' | 'checkout') => {
+    setShowWizard(false);
+    setActiveSession(null);
+    setCurrentModule(sessionType === 'checkout' ? 'pos' : 'inventory');
+  }, [setCurrentModule]);
 
   const sessions = [
     {
@@ -564,6 +620,7 @@ export const Sessions: React.FC = () => {
           <SessionWizard
             sessionType={activeSession}
             onClose={closeWizard}
+            onSessionLinked={handleSessionLinked}
             shopId={shopId}
             userEmail={userEmail}
             userId={userId}

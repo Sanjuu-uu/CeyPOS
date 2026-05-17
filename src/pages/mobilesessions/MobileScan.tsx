@@ -74,11 +74,11 @@ const buildSocketUrl = () => {
 export default function MobileScan() {
   const navigate = useNavigate();
   const { isSignedIn, userId } = useAuth();
-  const { user } = useUser();
+  const { user, isLoaded: isUserLoaded } = useUser();
   const params = useMemo(() => new URLSearchParams(window.location.search), []);
   const sessionId = params.get("session") ?? "";
   const shopId = params.get("shopId") ?? params.get("shop") ?? "";
-  const sessionType = params.get("type") ?? "barcode";
+  const sessionType = params.get("type") === "checkout" ? "checkout" : "barcode";
   const authToken = params.get("token") ?? "";
   const userEmail =
     user?.primaryEmailAddress?.emailAddress ||
@@ -94,17 +94,20 @@ export default function MobileScan() {
   const [lastValue, setLastValue] = useState<string | null>(null);
   const [lastSentAt, setLastSentAt] = useState<number | null>(null);
   const [isSocketConnected, setIsSocketConnected] = useState(false);
+  const [manualValue, setManualValue] = useState("");
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const socketRef = useRef<ReturnType<typeof clientIo> | null>(null);
   const lastScanRef = useRef<{ value: string; ts: number } | null>(null);
+  const pendingScansRef = useRef<Array<{ value: string; ts: number }>>([]);
   const detectorLoopRef = useRef<number | null>(null);
   const zxingReaderRef = useRef<BrowserMultiFormatReader | null>(null);
   const zxingControlsRef = useRef<ScannerControls | null>(null);
   const hasBarcodeDetectorRef = useRef(false);
 
   const canScan = Boolean(sessionId && shopId);
+  const isCheckoutSession = sessionType === "checkout";
   const signInRedirect = `/login?redirect=${encodeURIComponent(
     `${window.location.pathname}${window.location.search}`
   )}`;
@@ -130,9 +133,15 @@ export default function MobileScan() {
       return;
     }
 
+    if (!isUserLoaded || !userEmail) {
+      setScanStatus("idle");
+      setStatusMessage("Loading your account...");
+      return;
+    }
+
     setScanStatus("validating");
     setStatusMessage("Validating session...");
-  }, [canScan, isSignedIn]);
+  }, [canScan, isSignedIn, isUserLoaded, userEmail]);
 
   useEffect(() => {
     if (scanStatus !== "validating") return;
@@ -175,7 +184,7 @@ export default function MobileScan() {
   }, [authToken, scanStatus, sessionId, sessionType, shopId, userEmail, userId]);
 
   useEffect(() => {
-    if (!canScan || scanStatus === "not-mobile" || !sessionValidated) return;
+    if (!canScan || !sessionValidated) return;
 
     const socketUrl = buildSocketUrl();
     const socket = clientIo(socketUrl, {
@@ -189,8 +198,25 @@ export default function MobileScan() {
 
     socketRef.current = socket;
 
+    const emitScan = (scan: { value: string; ts: number }) => {
+      socket.emit("mobile:barcode", {
+        value: scan.value,
+        source: "mobile",
+        ts: scan.ts,
+        sessionId,
+        shopId,
+        sessionType,
+      });
+    };
+
+    const flushPendingScans = () => {
+      const pending = pendingScansRef.current.splice(0);
+      pending.forEach(emitScan);
+    };
+
     const handleConnect = () => {
       setIsSocketConnected(true);
+      flushPendingScans();
       socket.emit("mobile:log", {
         level: "info",
         message: "mobile socket connected",
@@ -207,7 +233,7 @@ export default function MobileScan() {
 
     socket.on("connect", handleConnect);
     socket.on("disconnect", handleDisconnect);
-    socket.on("connect_error", (err) => {
+    socket.on("connect_error", (err: Error) => {
       setIsSocketConnected(false);
       const message = String(err?.message || err);
       setStatusMessage(`Socket error: ${message}`);
@@ -228,7 +254,7 @@ export default function MobileScan() {
       socket.disconnect();
       socketRef.current = null;
     };
-  }, [authToken, canScan, sessionId, sessionType, shopId, scanStatus, sessionValidated]);
+  }, [authToken, canScan, sessionId, sessionType, shopId, sessionValidated]);
 
   const publishBarcode = (value: string) => {
     const cleaned = normalizeBarcodeValue(value);
@@ -244,14 +270,22 @@ export default function MobileScan() {
     setLastValue(cleaned);
     setLastSentAt(now);
 
-    socketRef.current?.emit("mobile:barcode", {
-      value: cleaned,
-      source: "mobile",
-      ts: now,
-      sessionId,
-      shopId,
-      sessionType,
-    });
+    if (socketRef.current?.connected) {
+      socketRef.current.emit("mobile:barcode", {
+        value: cleaned,
+        source: "mobile",
+        ts: now,
+        sessionId,
+        shopId,
+        sessionType,
+      });
+    } else {
+      pendingScansRef.current = [
+        ...pendingScansRef.current.slice(-9),
+        { value: cleaned, ts: now },
+      ];
+      setStatusMessage("Scanner is reconnecting. Scan queued.");
+    }
 
     if (navigator.vibrate) {
       navigator.vibrate(25);
@@ -313,7 +347,7 @@ export default function MobileScan() {
           if (results.length > 0) {
             publishBarcode(results[0].rawValue);
           }
-        } catch (err) {
+        } catch {
           // Ignore detection errors to keep loop running
         }
       }
@@ -418,12 +452,19 @@ export default function MobileScan() {
     return "Idle";
   };
 
+  const pageTitle = isCheckoutSession ? "Mobile Checkout" : "Product Import";
+  const pageSubtitle = isCheckoutSession
+    ? "Scan products to add them to the desktop cart."
+    : "Scan barcodes to create or edit inventory items.";
+  const lastScanLabel = isCheckoutSession ? "Last cart scan" : "Last product scan";
+
   return (
     <div className="min-h-screen bg-white text-gray-900 flex flex-col">
       <header className="px-6 py-5 flex items-center justify-between border-b border-gray-100">
         <div>
           <p className="text-xs uppercase tracking-[0.3em] text-gray-400">CeyPOS Mobile</p>
-          <h1 className="text-xl font-semibold text-gray-900">Scan & Sync</h1>
+          <h1 className="text-xl font-semibold text-gray-900">{pageTitle}</h1>
+          <p className="text-xs text-gray-500 mt-1">{pageSubtitle}</p>
         </div>
         <div className="text-right">
           <p className="text-xs text-gray-400">Session</p>
@@ -487,7 +528,7 @@ export default function MobileScan() {
 
             <div className="grid grid-cols-2 gap-3 text-sm">
               <div className="bg-[#f8ffe1] rounded-2xl p-3 border border-[#ecff76]">
-                <p className="text-gray-500 text-xs">Last scan</p>
+                <p className="text-gray-500 text-xs">{lastScanLabel}</p>
                 <p className="font-semibold truncate">{lastValue || "--"}</p>
               </div>
               <div className="bg-gray-50 rounded-2xl p-3 border border-gray-200">
@@ -499,15 +540,39 @@ export default function MobileScan() {
             </div>
 
             {scanStatus === "error" && (
-              <button
-                onClick={() => {
-                  setScanStatus("starting");
-                  setStatusMessage("Restarting camera...");
-                }}
-                className="w-full py-3 rounded-full bg-[#ecff76] text-gray-900 font-semibold"
-              >
-                {permissionState === "denied" ? "Enable Camera" : "Retry Camera"}
-              </button>
+              <div className="space-y-3">
+                <button
+                  onClick={() => {
+                    setScanStatus("starting");
+                    setStatusMessage("Restarting camera...");
+                  }}
+                  className="w-full py-3 rounded-full bg-[#ecff76] text-gray-900 font-semibold"
+                >
+                  {permissionState === "denied" ? "Enable Camera" : "Retry Camera"}
+                </button>
+                <form
+                  className="flex gap-2"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    publishBarcode(manualValue);
+                    setManualValue("");
+                  }}
+                >
+                  <input
+                    value={manualValue}
+                    onChange={(event) => setManualValue(event.target.value)}
+                    inputMode="numeric"
+                    className="min-w-0 flex-1 rounded-full border border-gray-200 px-4 py-3 text-sm outline-none focus:border-[#ecff76]"
+                    placeholder="Enter barcode manually"
+                  />
+                  <button
+                    type="submit"
+                    className="rounded-full bg-gray-900 px-5 py-3 text-sm font-semibold text-white"
+                  >
+                    Send
+                  </button>
+                </form>
+              </div>
             )}
           </div>
         )}

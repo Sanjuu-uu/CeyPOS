@@ -1,11 +1,61 @@
 // WebSocket server for real-time two-way sync per shop
 import { Server } from "socket.io";
-import { shopDatabaseExists } from "./utils/shop-database.js";
+import { openShopDatabase, shopDatabaseExists } from "./utils/shop-database.js";
 import { getInventory, upsertProducts } from "./services/inventory-service.js";
 import { getShopSnapshot } from "./services/shop-snapshot.js";
 import { bus as changeBus, publishChange } from "./realtime/change-bus.js";
 
 let ioInstance;
+
+const validateMobileSocketSession = (shopId, sessionId, token, sessionType) => {
+  if (!sessionId && !token) {
+    return { ok: true, isMobileSession: false };
+  }
+
+  if (!sessionId || !token) {
+    return { ok: false, error: "sessionId and token are required" };
+  }
+
+  const db = openShopDatabase(shopId);
+  try {
+    const session = db
+      .prepare(
+        `SELECT session_id, session_type, status, auth_token, expires_at
+         FROM mobile_sessions
+         WHERE session_id = ? AND shop_id = ?`
+      )
+      .get(sessionId, shopId);
+
+    if (!session) {
+      return { ok: false, error: "Mobile session not found" };
+    }
+
+    if (String(session.auth_token) !== String(token)) {
+      return { ok: false, error: "Invalid mobile session token" };
+    }
+
+    if (sessionType && String(session.session_type) !== String(sessionType)) {
+      return { ok: false, error: "Mobile session type mismatch" };
+    }
+
+    const expiresAtMs = Date.parse(session.expires_at);
+    if (Number.isFinite(expiresAtMs) && Date.now() > expiresAtMs) {
+      return { ok: false, error: "Mobile session expired" };
+    }
+
+    if (session.status !== "active") {
+      return { ok: false, error: "Mobile session is not active" };
+    }
+
+    return {
+      ok: true,
+      isMobileSession: true,
+      sessionType: session.session_type,
+    };
+  } finally {
+    db.close();
+  }
+};
 
 function init(httpServer, opts = {}) {
   if (ioInstance) return ioInstance;
@@ -57,6 +107,11 @@ function init(httpServer, opts = {}) {
   io.on("connection", async (socket) => {
     const shopId =
       socket.handshake.query?.shopId || socket.handshake.auth?.shopId;
+    const sessionId =
+      socket.handshake.query?.sessionId || socket.handshake.auth?.sessionId;
+    const token = socket.handshake.query?.token || socket.handshake.auth?.token;
+    const requestedSessionType =
+      socket.handshake.query?.sessionType || socket.handshake.auth?.sessionType;
     if (!shopId) {
       console.warn("Socket connection without shopId - disconnecting");
       socket.emit("error", { message: "shopId is required" });
@@ -76,6 +131,32 @@ function init(httpServer, opts = {}) {
         socket.emit("error", { message: "Shop database not found. Please complete shop setup first." });
         socket.disconnect(true);
         return;
+      }
+
+      const sessionCheck = validateMobileSocketSession(
+        shopId,
+        sessionId,
+        token,
+        requestedSessionType
+      );
+      if (!sessionCheck.ok) {
+        console.warn(`Mobile socket rejected for ${shopId}: ${sessionCheck.error}`);
+        socket.emit("error", { message: sessionCheck.error });
+        socket.disconnect(true);
+        return;
+      }
+
+      if (sessionCheck.isMobileSession) {
+        publishChange({
+          shopId,
+          entity: "sessions",
+          action: "mobile_connected",
+          payload: {
+            sessionId,
+            sessionType: sessionCheck.sessionType,
+            socketId: socket.id,
+          },
+        });
       }
     } catch (err) {
       console.error("Failed to open shop DB for socket connection", err);
@@ -142,6 +223,8 @@ function init(httpServer, opts = {}) {
         const event = {
           ...payload,
           shopId,
+          sessionId: sessionId || payload.sessionId,
+          sessionType: requestedSessionType || payload.sessionType,
         };
         io.to(room).emit("mobile:barcode", event);
         if (typeof cb === "function") cb({ ok: true });

@@ -11,6 +11,8 @@ import { processUserQuestion } from '../mcp-server/mcp.js';
 const app = express();
 const PORT = process.env.PORT || 8080;
 
+app.set("trust proxy", 1);
+
 app.use(
   cors({
     origin: function (origin, callback) {

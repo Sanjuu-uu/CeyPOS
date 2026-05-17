@@ -10,7 +10,7 @@ import {
 } from "../types";
 import clientIo from "socket.io-client";
 
-const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:8080";
+const API_BASE = import.meta.env.VITE_API_BASE || "";
 
 type SocketEmitCallback = (response: unknown) => void;
 
@@ -843,6 +843,14 @@ function handleChange(event: ChangeEventPayload | null | undefined) {
         cache.businessRules = rules;
         emit("businessRulesUpdated", { shopId: shopKey, rules });
       }
+      break;
+    }
+    case "sessions": {
+      emit("sessionUpdated", {
+        shopId: shopKey,
+        action: event.action,
+        payload,
+      });
       break;
     }
     default:

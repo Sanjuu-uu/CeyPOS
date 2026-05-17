@@ -7,14 +7,73 @@ const router = express.Router();
 
 const SESSION_TTL_MS = 5 * 60 * 1000;
 
+const normalizeOrigin = (value) => {
+  if (typeof value !== "string") {
+    return "";
+  }
+
+  const trimmed = value.trim().replace(/\/$/, "");
+  if (!trimmed) {
+    return "";
+  }
+
+  if (/^https?:\/\//i.test(trimmed)) {
+    return trimmed;
+  }
+
+  return `https://${trimmed}`;
+};
+
+const firstHeaderValue = (value) => {
+  const candidate = Array.isArray(value) ? value[0] : value;
+  return typeof candidate === "string" ? candidate.split(",")[0].trim() : "";
+};
+
+const getConfiguredAppOrigin = () => {
+  const candidates = [
+    process.env.PUBLIC_APP_URL,
+    process.env.RAILWAY_PUBLIC_DOMAIN
+      ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`
+      : "",
+    process.env.RAILWAY_STATIC_URL,
+    process.env.APP_URL,
+  ];
+
+  for (const candidate of candidates) {
+    const value = normalizeOrigin(candidate);
+    if (value) {
+      return value;
+    }
+  }
+
+  return "";
+};
+
 const resolveOrigin = (req) => {
+  const configuredOrigin = getConfiguredAppOrigin();
+  if (configuredOrigin) {
+    return configuredOrigin;
+  }
+
+  const originHeader = req.get("origin");
+  if (originHeader) {
+    return normalizeOrigin(originHeader);
+  }
+
   const forwardedProto = req.get("x-forwarded-proto");
   const forwardedHost = req.get("x-forwarded-host");
-  if (forwardedProto && forwardedHost) {
-    return `${forwardedProto}://${forwardedHost}`;
+  const forwardedProtocol = firstHeaderValue(forwardedProto);
+  const forwardedHostname = firstHeaderValue(forwardedHost);
+  if (forwardedProtocol && forwardedHostname) {
+    return normalizeOrigin(`${forwardedProtocol}://${forwardedHostname}`);
   }
+
   const host = req.get("host");
-  return host ? `${req.protocol}://${host}` : "";
+  if (host) {
+    return normalizeOrigin(`${req.protocol}://${host}`);
+  }
+
+  return "";
 };
 
 const toIso = (value) => new Date(value).toISOString();
