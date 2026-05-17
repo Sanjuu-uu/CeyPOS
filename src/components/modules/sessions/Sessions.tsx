@@ -200,7 +200,7 @@ const SessionWizard: React.FC<SessionWizardProps> = ({
         <div className="space-y-4 overflow-y-auto p-5">
           <div className="grid gap-3 md:grid-cols-[210px,1fr]">
             <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
-              <div className="mx-auto flex h-[185px] w-[185px] items-center justify-center rounded-lg border border-gray-300 bg-white">
+              <div className="mx-auto flex h-[185px] w-[180px] items-center justify-center rounded-lg border border-gray-300 bg-white">
                 {qrDataUrl ? (
                   <img src={qrDataUrl} alt="Mobile session QR code" className="h-[170px] w-[170px]" />
                 ) : (
