@@ -4,6 +4,9 @@ import Database from "better-sqlite3";
 
 const SHOP_DATABASE_DIRECTORY =
   process.env.RAILWAY_VOLUME_MOUNT_PATH ||
+  (process.env.NODE_ENV === "production" && fs.existsSync("/data")
+    ? "/data"
+    : null) ||
   path.resolve(process.cwd(), "../database");
 
 function ensureShopDatabaseDirectory() {
