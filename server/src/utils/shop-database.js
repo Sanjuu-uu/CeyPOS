@@ -71,6 +71,7 @@ function openShopDatabase(shopId) {
   }
   const db = new Database(existingPath, { fileMustExist: true });
   db.pragma("journal_mode = WAL");
+  initializeShopDatabaseSchema(db);
   return db;
 }
 
@@ -81,6 +82,7 @@ function openShopDatabaseIfExists(shopId) {
   }
   const db = new Database(existingPath, { fileMustExist: true });
   db.pragma("journal_mode = WAL");
+  initializeShopDatabaseSchema(db);
   return db;
 }
 
@@ -223,6 +225,22 @@ function initializeShopDatabaseSchema(db) {
     min_amount DECIMAL(10,2),
     type TEXT,
     value DECIMAL(10,2)
+  );
+
+  CREATE TABLE IF NOT EXISTS mobile_sessions (
+    session_id TEXT PRIMARY KEY,
+    shop_id TEXT NOT NULL,
+    session_type TEXT NOT NULL,
+    status TEXT NOT NULL,
+    auth_token TEXT NOT NULL,
+    created_at DATETIME NOT NULL,
+    expires_at DATETIME NOT NULL,
+    created_by_email TEXT,
+    created_by_user_id TEXT,
+    last_seen_at DATETIME,
+    last_seen_email TEXT,
+    last_seen_user_id TEXT,
+    device_meta TEXT
   );
   `;
 

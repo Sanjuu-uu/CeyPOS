@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { useAuth, useUser } from "@clerk/clerk-react";
 import clientIo from "socket.io-client";
 import { BrowserMultiFormatReader } from "@zxing/browser";
-import { API_BASE } from "../../lib/api";
+import { API_BASE, postJSON } from "../../lib/api";
 
 const SCAN_COOLDOWN_MS = 900;
 const MIN_BARCODE_LENGTH = 6;
@@ -9,10 +11,12 @@ const MIN_BARCODE_LENGTH = 6;
 type ScanStatus =
   | "idle"
   | "starting"
+  | "validating"
   | "ready"
   | "error"
   | "not-mobile"
-  | "missing-session";
+  | "missing-session"
+  | "auth-required";
 
 type BarcodeResult = {
   rawValue: string;
@@ -55,26 +59,38 @@ const buildSocketUrl = () => {
   const isLocalApi = /localhost|127\.0\.0\.1/i.test(api);
   const hostname = window.location.hostname;
   const protocol = window.location.protocol;
+  const isLocalHost = /localhost|127\.0\.0\.1/i.test(hostname);
 
   if (!api || isLocalApi) {
-    return `${protocol}//${hostname}:8080`;
+    if (isLocalHost && window.location.port === "5173") {
+      return `${protocol}//${hostname}:8080`;
+    }
+    return window.location.origin;
   }
 
   return api;
 };
 
 export default function MobileScan() {
+  const navigate = useNavigate();
+  const { isSignedIn, userId } = useAuth();
+  const { user } = useUser();
   const params = useMemo(() => new URLSearchParams(window.location.search), []);
   const sessionId = params.get("session") ?? "";
   const shopId = params.get("shopId") ?? params.get("shop") ?? "";
   const sessionType = params.get("type") ?? "barcode";
   const authToken = params.get("token") ?? "";
+  const userEmail =
+    user?.primaryEmailAddress?.emailAddress ||
+    user?.emailAddresses?.[0]?.emailAddress ||
+    "";
 
   const [scanStatus, setScanStatus] = useState<ScanStatus>("idle");
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [permissionState, setPermissionState] = useState<
     "unknown" | "granted" | "denied"
   >("unknown");
+  const [sessionValidated, setSessionValidated] = useState(false);
   const [lastValue, setLastValue] = useState<string | null>(null);
   const [lastSentAt, setLastSentAt] = useState<number | null>(null);
   const [isSocketConnected, setIsSocketConnected] = useState(false);
@@ -89,6 +105,9 @@ export default function MobileScan() {
   const hasBarcodeDetectorRef = useRef(false);
 
   const canScan = Boolean(sessionId && shopId);
+  const signInRedirect = `/login?redirect=${encodeURIComponent(
+    `${window.location.pathname}${window.location.search}`
+  )}`;
 
   useEffect(() => {
     if (!isMobileDevice()) {
@@ -103,12 +122,60 @@ export default function MobileScan() {
       return;
     }
 
-    setScanStatus("starting");
-    setStatusMessage("Starting camera...");
-  }, [canScan]);
+    if (!isSignedIn) {
+      setScanStatus("auth-required");
+      setStatusMessage(
+        "Sign in with the same account used on desktop to continue.",
+      );
+      return;
+    }
+
+    setScanStatus("validating");
+    setStatusMessage("Validating session...");
+  }, [canScan, isSignedIn]);
 
   useEffect(() => {
-    if (!canScan || scanStatus === "not-mobile") return;
+    if (scanStatus !== "validating") return;
+    let cancelled = false;
+
+    const validateSession = async () => {
+      try {
+        setSessionValidated(false);
+        await postJSON("/api/mobile/sessions/validate", {
+          sessionId,
+          token: authToken,
+          shopId,
+          sessionType,
+          userEmail,
+          userId,
+          deviceMeta: {
+            userAgent: navigator.userAgent,
+            platform: navigator.platform,
+            timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+          },
+        });
+        if (cancelled) return;
+        setSessionValidated(true);
+        setScanStatus("starting");
+        setStatusMessage("Starting camera...");
+      } catch (err) {
+        if (cancelled) return;
+        const message = err instanceof Error ? err.message : "Session validation failed";
+        setSessionValidated(false);
+        setScanStatus("error");
+        setStatusMessage(message);
+      }
+    };
+
+    validateSession();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authToken, scanStatus, sessionId, sessionType, shopId, userEmail, userId]);
+
+  useEffect(() => {
+    if (!canScan || scanStatus === "not-mobile" || !sessionValidated) return;
 
     const socketUrl = buildSocketUrl();
     const socket = clientIo(socketUrl, {
@@ -161,7 +228,7 @@ export default function MobileScan() {
       socket.disconnect();
       socketRef.current = null;
     };
-  }, [authToken, canScan, sessionId, sessionType, shopId, scanStatus]);
+  }, [authToken, canScan, sessionId, sessionType, shopId, scanStatus, sessionValidated]);
 
   const publishBarcode = (value: string) => {
     const cleaned = normalizeBarcodeValue(value);
@@ -379,6 +446,21 @@ export default function MobileScan() {
             <div className="max-w-sm">
               <h2 className="text-lg font-semibold mb-2">Missing Session</h2>
               <p className="text-sm text-gray-500">{statusMessage}</p>
+            </div>
+          </div>
+        ) : scanStatus === "auth-required" ? (
+          <div className="flex-1 flex items-center justify-center text-center">
+            <div className="max-w-sm space-y-4">
+              <div>
+                <h2 className="text-lg font-semibold mb-2">Sign In Required</h2>
+                <p className="text-sm text-gray-500">{statusMessage}</p>
+              </div>
+              <button
+                onClick={() => navigate(signInRedirect)}
+                className="w-full py-3 rounded-full bg-[#ecff76] text-gray-900 font-semibold"
+              >
+                Continue to Sign In
+              </button>
             </div>
           </div>
         ) : (

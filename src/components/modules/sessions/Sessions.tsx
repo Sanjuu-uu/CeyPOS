@@ -1,7 +1,11 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Card } from '../../ui/Card';
 import { Button } from '../../ui/Button';
+import QRCode from 'qrcode';
+import { useUser } from '@clerk/clerk-react';
+import { postJSON } from '../../../lib/api';
+import { useApp } from '../../../context/AppContext';
 import { 
   Smartphone, 
   MonitorSpeaker, 
@@ -17,24 +21,22 @@ import {
 interface SessionWizardProps {
   sessionType: 'cashier' | 'barcode' | 'checkout' | null;
   onClose: () => void;
+  shopId: string;
+  userEmail: string;
+  userId: string | null;
 }
 
-const SessionWizard: React.FC<SessionWizardProps> = ({ sessionType, onClose }) => {
+const SessionWizard: React.FC<SessionWizardProps> = ({ sessionType, onClose, shopId, userEmail, userId }) => {
   const [step, setStep] = useState(1);
   const [twoFACode, setTwoFACode] = useState('CY-4829-3761');
-  const [isConnecting, setIsConnecting] = useState(false);
-  const [isConnected, setIsConnected] = useState(false);
+  const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
+  const [sessionLink, setSessionLink] = useState<string | null>(null);
+  const [sessionExpiresAt, setSessionExpiresAt] = useState<string | null>(null);
+  const [sessionError, setSessionError] = useState<string | null>(null);
+  const [isGenerating, setIsGenerating] = useState(false);
 
-  const handleConnect = () => {
-    setIsConnecting(true);
-    setTimeout(() => {
-      setIsConnecting(false);
-      setIsConnected(true);
-      setTimeout(() => {
-        onClose();
-      }, 2000);
-    }, 3000);
-  };
+  const isMobileSession = sessionType === 'barcode' || sessionType === 'checkout';
+  const canCreateSession = Boolean(shopId && userEmail && isMobileSession);
 
   const generateNewCode = () => {
     const newCode = `CY-${Math.floor(Math.random() * 9000) + 1000}-${Math.floor(Math.random() * 9000) + 1000}`;
@@ -44,6 +46,60 @@ const SessionWizard: React.FC<SessionWizardProps> = ({ sessionType, onClose }) =
   const copyToClipboard = () => {
     navigator.clipboard.writeText(twoFACode);
   };
+
+  const copySessionLink = () => {
+    if (sessionLink) {
+      navigator.clipboard.writeText(sessionLink);
+    }
+  };
+
+  useEffect(() => {
+    if (!canCreateSession || step !== 2) return;
+    if (sessionLink || isGenerating) return;
+
+    const createSession = async () => {
+      setIsGenerating(true);
+      setSessionError(null);
+      try {
+        const result = await postJSON<{
+          scanUrl: string | null;
+          expiresAt: string;
+        }>("/api/mobile/sessions/create", {
+          shopId,
+          sessionType,
+          userEmail,
+          userId,
+          deviceMeta: {
+            userAgent: navigator.userAgent,
+          },
+        });
+
+        if (!result?.scanUrl) {
+          throw new Error("Failed to generate QR link");
+        }
+
+        const qrUrl = await QRCode.toDataURL(result.scanUrl, {
+          width: 240,
+          margin: 2,
+          color: {
+            dark: "#0f172a",
+            light: "#ffffff",
+          },
+        });
+
+        setSessionLink(result.scanUrl);
+        setSessionExpiresAt(result.expiresAt);
+        setQrDataUrl(qrUrl);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Failed to create session";
+        setSessionError(message);
+      } finally {
+        setIsGenerating(false);
+      }
+    };
+
+    createSession();
+  }, [canCreateSession, isGenerating, sessionLink, sessionType, shopId, step, userEmail, userId]);
 
   if (!sessionType) return null;
 
@@ -130,11 +186,7 @@ const SessionWizard: React.FC<SessionWizardProps> = ({ sessionType, onClose }) =
                       : 'var(--gray--200)',
                   }}
                 >
-                  {isConnected && stepNum <= 3 ? (
-                    <CheckCircle size={16} />
-                  ) : (
-                    stepNum
-                  )}
+                  {stepNum < step ? <CheckCircle size={16} /> : stepNum}
                 </div>
                 {stepNum < 3 && (
                   <div 
@@ -249,17 +301,51 @@ const SessionWizard: React.FC<SessionWizardProps> = ({ sessionType, onClose }) =
                       className="p-8 rounded-lg border flex items-center justify-center"
                       style={{ borderColor: 'var(--gray--200)', backgroundColor: 'var(--gray--50)' }}
                     >
-                      {/* QR Code Placeholder */}
                       <div className="w-48 h-48 bg-white border-2 border-gray-300 flex items-center justify-center">
-                        <div className="text-center">
-                          <QrCode size={64} className="mx-auto mb-2 text-gray-400" />
-                          <p className="text-xs text-gray-500">QR Code</p>
-                        </div>
+                        {qrDataUrl ? (
+                          <img src={qrDataUrl} alt="Mobile session QR code" className="w-40 h-40" />
+                        ) : (
+                          <div className="text-center">
+                            <QrCode size={64} className="mx-auto mb-2 text-gray-400" />
+                            <p className="text-xs text-gray-500">
+                              {isGenerating ? "Generating..." : "QR Code"}
+                            </p>
+                          </div>
+                        )}
                       </div>
                     </div>
-                    <p className="text-xs text-gray-500">
-                      Open CeyPoS Mobile app and scan this code
-                    </p>
+
+                    {sessionError && (
+                      <p className="text-xs text-red-500">{sessionError}</p>
+                    )}
+
+                    {sessionLink && (
+                      <div className="space-y-2 text-xs text-gray-500">
+                        <div className="flex items-center justify-center gap-2">
+                          <button
+                            onClick={copySessionLink}
+                            className="flex items-center gap-2 px-3 py-1 rounded text-xs hover:bg-gray-200 transition-colors"
+                          >
+                            <Copy size={14} />
+                            Copy Link
+                          </button>
+                          <button
+                            onClick={() => {
+                              setSessionLink(null);
+                              setQrDataUrl(null);
+                            }}
+                            className="flex items-center gap-2 px-3 py-1 rounded text-xs hover:bg-gray-200 transition-colors"
+                          >
+                            <RefreshCw size={14} />
+                            New QR
+                          </button>
+                        </div>
+                        <p>Open CeyPoS Mobile and scan this QR code.</p>
+                        {sessionExpiresAt && (
+                          <p>Expires: {new Date(sessionExpiresAt).toLocaleTimeString()}</p>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -281,67 +367,33 @@ const SessionWizard: React.FC<SessionWizardProps> = ({ sessionType, onClose }) =
                 exit={{ opacity: 0, y: -20 }}
                 className="text-center space-y-6"
               >
-                {!isConnecting && !isConnected && (
-                  <>
-                    <div className="space-y-2">
-                      <h3 className="text-lg font-semibold">Ready to Connect</h3>
-                      <p className="text-gray-600">
-                        Click connect to establish the session
-                      </p>
-                    </div>
+                <div className="space-y-2">
+                  <h3 className="text-lg font-semibold">Session Ready</h3>
+                  <p className="text-gray-600">
+                    Keep this window open while the device connects.
+                  </p>
+                </div>
 
-                    <div 
-                      className="p-6 rounded-lg border"
-                      style={{ borderColor: 'var(--gray--200)', backgroundColor: 'var(--gray--50)' }}
-                    >
-                      <div className="flex items-center gap-3 justify-center mb-4">
-                        {config.icon}
-                        <span className="text-lg font-medium">{config.title}</span>
-                      </div>
-                      <p className="text-sm text-gray-600">
-                        Session will be active for this shop
-                      </p>
-                    </div>
+                <div 
+                  className="p-6 rounded-lg border"
+                  style={{ borderColor: 'var(--gray--200)', backgroundColor: 'var(--gray--50)' }}
+                >
+                  <div className="flex items-center gap-3 justify-center mb-4">
+                    {config.icon}
+                    <span className="text-lg font-medium">{config.title}</span>
+                  </div>
+                  <p className="text-sm text-gray-600">
+                    Session will be active for this shop
+                  </p>
+                </div>
 
-                    <Button
-                      variant="primary"
-                      onClick={handleConnect}
-                      className="w-full"
-                    >
-                      Connect Device
-                    </Button>
-                  </>
-                )}
-
-                {isConnecting && (
-                  <>
-                    <div className="space-y-2">
-                      <h3 className="text-lg font-semibold">Connecting...</h3>
-                      <p className="text-gray-600">
-                        Establishing secure connection
-                      </p>
-                    </div>
-
-                    <div className="flex items-center justify-center">
-                      <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-green-500"></div>
-                    </div>
-                  </>
-                )}
-
-                {isConnected && (
-                  <>
-                    <div className="space-y-2">
-                      <h3 className="text-lg font-semibold text-green-600">Connected Successfully!</h3>
-                      <p className="text-gray-600">
-                        Your device is now connected to the shop
-                      </p>
-                    </div>
-
-                    <div className="flex items-center justify-center">
-                      <CheckCircle size={64} className="text-green-500" />
-                    </div>
-                  </>
-                )}
+                <Button
+                  variant="primary"
+                  onClick={onClose}
+                  className="w-full"
+                >
+                  Close
+                </Button>
               </motion.div>
             )}
           </AnimatePresence>
@@ -352,6 +404,15 @@ const SessionWizard: React.FC<SessionWizardProps> = ({ sessionType, onClose }) =
 };
 
 export const Sessions: React.FC = () => {
+  const { activeShopId } = useApp();
+  const { user } = useUser();
+  const userEmail =
+    user?.primaryEmailAddress?.emailAddress ||
+    user?.emailAddresses?.[0]?.emailAddress ||
+    "";
+  const userId = user?.id ?? null;
+  const shopId = activeShopId ?? "";
+
   const [showWizard, setShowWizard] = useState(false);
   const [activeSession, setActiveSession] = useState<'cashier' | 'barcode' | 'checkout' | null>(null);
 
@@ -503,6 +564,9 @@ export const Sessions: React.FC = () => {
           <SessionWizard
             sessionType={activeSession}
             onClose={closeWizard}
+            shopId={shopId}
+            userEmail={userEmail}
+            userId={userId}
           />
         )}
       </AnimatePresence>

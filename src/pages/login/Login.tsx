@@ -1,7 +1,7 @@
 import { useEffect, useState, useMemo } from "react";
 import { Eye, EyeOff, Mail, Lock, ArrowRight, X } from "lucide-react";
 import { useClerk, useSignIn } from "@clerk/clerk-react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import Navigation from "../components/Navigation";
 import Footer from "../components/Footer";
 
@@ -40,6 +40,16 @@ const Login = () => {
   const clerk = useClerk();
   const { isLoaded: isSignInLoaded, signIn, setActive } = useSignIn();
   const navigate = useNavigate();
+  const location = useLocation();
+
+  const redirectTo = useMemo(() => {
+    const params = new URLSearchParams(location.search);
+    const target = params.get("redirect") || "/";
+    if (target.startsWith("/") && !target.startsWith("//")) {
+      return target;
+    }
+    return "/";
+  }, [location.search]);
 
   const [showPassword, setShowPassword] = useState(false);
   const [email, setEmail] = useState("");
@@ -186,7 +196,7 @@ const Login = () => {
           // --- End of Logic ---
 
           deactivateRegisterPrompt();
-          navigate("/");
+          navigate(redirectTo);
         } catch (sessionError) {
           console.error("Failed to activate session:", sessionError);
           deactivateRegisterPrompt();
@@ -364,7 +374,7 @@ const Login = () => {
           }
           // --- End of Logic ---
 
-          navigate("/");
+          navigate(redirectTo);
         } catch (sessionError) {
           console.error("Failed to activate session:", sessionError);
           deactivateRegisterPrompt();
@@ -456,8 +466,8 @@ const Login = () => {
     try {
       await signIn.authenticateWithRedirect({
         strategy: "oauth_google",
-        redirectUrl: "/login",
-        redirectUrlComplete: "/",
+        redirectUrl: `/login?redirect=${encodeURIComponent(redirectTo)}`,
+        redirectUrlComplete: redirectTo,
       });
     } catch (err: any) {
       console.error("Google login error:", err);
@@ -479,8 +489,8 @@ const Login = () => {
     try {
       await signIn.authenticateWithRedirect({
         strategy: "oauth_apple",
-        redirectUrl: "/login",
-        redirectUrlComplete: "/",
+        redirectUrl: `/login?redirect=${encodeURIComponent(redirectTo)}`,
+        redirectUrlComplete: redirectTo,
       });
     } catch (err: any) {
       console.error("Apple login error:", err);
