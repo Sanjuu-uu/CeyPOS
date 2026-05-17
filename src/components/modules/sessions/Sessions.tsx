@@ -173,12 +173,12 @@ const SessionWizard: React.FC<SessionWizardProps> = ({
   return (
     <div className="fixed inset-0 z-40">
       <div
-        className={`absolute bottom-0 top-16 right-0 ${sidebarCollapsed ? "md:left-16" : "md:left-60"} bg-black/10 backdrop-blur-sm`}
+        className={`absolute right-0 top-16 bottom-0 ${sidebarCollapsed ? "md:left-16" : "md:left-60"} bg-black/10 backdrop-blur-sm`}
       />
       <div
-        className={`absolute bottom-0 top-16 right-0 ${sidebarCollapsed ? "md:left-16" : "md:left-60"} flex items-center justify-center p-4 md:p-6`}
+        className={`absolute right-0 top-16 bottom-0 ${sidebarCollapsed ? "md:left-16" : "md:left-60"} flex items-center justify-center p-3 md:p-5`}
       >
-        <div className="relative z-10 w-full max-w-xl rounded-2xl border border-gray-200 bg-white shadow-2xl">
+        <div className="relative z-10 flex w-full max-w-xl max-h-[calc(100vh-88px)] flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl">
         <div className="flex items-start justify-between border-b border-gray-200 p-6">
           <div className="space-y-1">
             <h2 className="text-xl font-semibold text-gray-900">
@@ -197,12 +197,12 @@ const SessionWizard: React.FC<SessionWizardProps> = ({
           </button>
         </div>
 
-        <div className="space-y-5 p-6">
-          <div className="grid gap-4 md:grid-cols-[240px,1fr]">
+        <div className="space-y-4 overflow-y-auto p-5">
+          <div className="grid gap-3 md:grid-cols-[210px,1fr]">
             <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
-              <div className="mx-auto flex h-[210px] w-[210px] items-center justify-center rounded-lg border border-gray-300 bg-white">
+              <div className="mx-auto flex h-[185px] w-[185px] items-center justify-center rounded-lg border border-gray-300 bg-white">
                 {qrDataUrl ? (
-                  <img src={qrDataUrl} alt="Mobile session QR code" className="h-[190px] w-[190px]" />
+                  <img src={qrDataUrl} alt="Mobile session QR code" className="h-[170px] w-[170px]" />
                 ) : (
                   <div className="text-center text-gray-500">
                     {sessionState === "creating" ? (
@@ -253,7 +253,7 @@ const SessionWizard: React.FC<SessionWizardProps> = ({
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="sticky bottom-0 -mx-5 -mb-5 mt-1 flex flex-wrap items-center gap-2 border-t border-gray-200 bg-white px-5 py-3">
             <Button
               variant="secondary"
               onClick={() => {
