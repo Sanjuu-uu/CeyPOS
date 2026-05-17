@@ -178,7 +178,7 @@ const SessionWizard: React.FC<SessionWizardProps> = ({
       <div
         className={`absolute right-0 bottom-0 top-[65px] ${sidebarCollapsed ? "md:left-16" : "md:left-60"} flex items-center justify-center px-3 py-5 md:px-5 md:py-7`}
       >
-        <div className="relative z-10 flex w-full max-w-xl max-h-[min(760px,calc(100dvh-220px))] flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl">
+        <div className="relative z-10 flex w-full max-w-xl max-h-[min(820px,calc(100dvh-200px))] flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl">
         <div className="flex items-start justify-between border-b border-gray-200 p-6">
           <div className="space-y-1">
             <h2 className="text-xl font-semibold text-gray-900">
