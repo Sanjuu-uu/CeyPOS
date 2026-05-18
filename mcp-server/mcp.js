@@ -59,6 +59,16 @@ const MAX_TOOL_ITERATIONS = (() => {
   return 6;
 })();
 
+const MAX_MODEL_RETRIES = (() => {
+  const rawValue = Number.parseInt(process.env.MCP_GEMINI_MAX_RETRIES ?? '', 10);
+  if (Number.isFinite(rawValue)) {
+    return Math.min(Math.max(rawValue, 0), 4);
+  }
+  return 2;
+})();
+
+const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
 let geminiClient;
 
 function resolveGeminiApiKey() {
@@ -122,6 +132,17 @@ Always use the tools to fetch real data - do not make up information.
 When showing charts or cards, provide a brief explanation of what the visualization shows.`;
 
 const TOOLS = [
+  {
+    type: 'function',
+    function: {
+      name: 'get_schema',
+      description: 'Return the live SQLite schema for the selected shop database',
+      parameters: {
+        type: 'object',
+        properties: {},
+      },
+    },
+  },
   {
     type: 'function',
     function: {
@@ -663,6 +684,59 @@ function runSqlQuery(shopId, query) {
   });
 }
 
+function validateReadOnlySql(query) {
+  const sql = String(query || '').trim();
+  if (!sql) {
+    return { ok: false, error: 'SQL query is empty' };
+  }
+
+  const withoutTrailingSemicolon = sql.replace(/;\s*$/, '').trim();
+  if (withoutTrailingSemicolon.includes(';')) {
+    return { ok: false, error: 'Only one SQL statement is allowed' };
+  }
+
+  const normalized = withoutTrailingSemicolon
+    .replace(/--.*$/gm, '')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .trim()
+    .toLowerCase();
+
+  const startsReadOnly =
+    normalized.startsWith('select ') ||
+    normalized.startsWith('with ') ||
+    normalized.startsWith('pragma table_info') ||
+    normalized.startsWith('pragma index_list') ||
+    normalized.startsWith('pragma foreign_key_list');
+
+  if (!startsReadOnly) {
+    return { ok: false, error: 'Only read-only SELECT, WITH, and safe PRAGMA queries are allowed' };
+  }
+
+  const blocked = /\b(insert|update|delete|drop|alter|create|replace|attach|detach|vacuum|reindex|truncate)\b/i;
+  if (blocked.test(normalized)) {
+    return { ok: false, error: 'Mutating SQL statements are not allowed' };
+  }
+
+  return { ok: true, sql: withoutTrailingSemicolon };
+}
+
+async function getLiveSchema(shopId) {
+  const rows = await runSqlQuery(
+    shopId,
+    `SELECT name, sql
+     FROM sqlite_schema
+     WHERE type = 'table'
+       AND name NOT LIKE 'sqlite_%'
+     ORDER BY name`,
+  );
+  return {
+    tables: rows.map((row) => ({
+      name: row.name,
+      definition: row.sql,
+    })),
+  };
+}
+
 function formatToolResultForModelPayload(result) {
   if (Array.isArray(result)) {
     return { rows: result };
@@ -683,7 +757,59 @@ function formatToolResultForModelPayload(result) {
   return { result: result ?? null };
 }
 
-async function processUserQuestion(question, shopId) {
+function toUserFacingModelError(error) {
+  const raw = String(error?.message || error || 'Unknown model error').trim();
+  const normalized = raw.toLowerCase();
+
+  if (
+    normalized.includes('api key not valid') ||
+    normalized.includes('api_key_invalid') ||
+    (normalized.includes('400 bad request') && normalized.includes('generativelanguage.googleapis.com'))
+  ) {
+    return 'Gemini API authentication failed. Please set a valid GEMINI_API_KEY or MCP_GEMINI_API_KEY, then restart the server.';
+  }
+
+  if (normalized.includes('429') || normalized.includes('quota') || normalized.includes('rate limit')) {
+    return 'Gemini API quota/rate limit reached. Please review billing and quota, then retry.';
+  }
+
+  if (
+    normalized.includes('503') ||
+    normalized.includes('service unavailable') ||
+    normalized.includes('timed out') ||
+    normalized.includes('timeout')
+  ) {
+    return 'Gemini API is temporarily unavailable or timed out. Please try again shortly.';
+  }
+
+  if (raw.length > 600) {
+    return `${raw.slice(0, 600)}...`;
+  }
+  return raw;
+}
+
+function isTransientModelError(error) {
+  const raw = String(error?.message || error || '').toLowerCase();
+  return (
+    raw.includes('503') ||
+    raw.includes('service unavailable') ||
+    raw.includes('timed out') ||
+    raw.includes('timeout') ||
+    raw.includes('gateway')
+  );
+}
+
+function buildContentsFromHistory(history = []) {
+  if (!Array.isArray(history)) return [];
+  return history
+    .filter((entry) => entry && typeof entry.message === 'string' && entry.message.trim())
+    .map((entry) => ({
+      role: entry.sender === 'user' ? 'user' : 'model',
+      parts: [{ text: String(entry.message) }],
+    }));
+}
+
+async function processUserQuestion(question, shopId, history = []) {
   const effectiveShopId = normalizeShopId(shopId);
   const session = createSessionLog(question, shopId, effectiveShopId);
   const startedAt = Date.now();
@@ -717,6 +843,7 @@ async function processUserQuestion(question, shopId) {
   try {
     const model = buildGeminiModel();
     const contents = [
+      ...buildContentsFromHistory(history),
       {
         role: 'user',
         parts: [{ text: question }],
@@ -733,9 +860,19 @@ async function processUserQuestion(question, shopId) {
       let generation;
 
       try {
-        generation = await model.generateContent({ contents });
+        for (let attempt = 0; attempt <= MAX_MODEL_RETRIES; attempt += 1) {
+          try {
+            generation = await model.generateContent({ contents });
+            break;
+          } catch (generationError) {
+            recordError(session, 'generation', generationError);
+            if (!isTransientModelError(generationError) || attempt === MAX_MODEL_RETRIES) {
+              throw generationError;
+            }
+            await wait(350 * (attempt + 1));
+          }
+        }
       } catch (generationError) {
-        recordError(session, 'generation', generationError);
         throw generationError;
       }
 
@@ -883,7 +1020,7 @@ async function processUserQuestion(question, shopId) {
     console.error('Error processing question:', error);
     recordError(session, 'processing', error);
     responsePayload = {
-      answer: `Error: ${error.message}`,
+      answer: `Error: ${toUserFacingModelError(error)}`,
       visualizations: [],
     };
   } finally {
@@ -920,6 +1057,17 @@ async function executeTool(name, args, shopId) {
     return { error: 'Missing shop identifier for analytics query' };
   }
 
+  if (name === 'get_schema') {
+    if (!shopDatabaseExists(effectiveShopId)) {
+      return { error: `Shop database not found for ${effectiveShopId}` };
+    }
+    try {
+      return getLiveSchema(effectiveShopId);
+    } catch (error) {
+      return { error: error.message };
+    }
+  }
+
   if (SQL_TOOL_NAMES.has(name)) {
     if (!args || typeof args.query !== 'string' || !args.query.trim()) {
       return { error: 'SQL query is required for this tool' };
@@ -930,7 +1078,11 @@ async function executeTool(name, args, shopId) {
     }
 
     try {
-      const rows = await runSqlQuery(effectiveShopId, args.query);
+      const validation = validateReadOnlySql(args.query);
+      if (!validation.ok) {
+        return { error: validation.error };
+      }
+      const rows = await runSqlQuery(effectiveShopId, validation.sql);
       return rows;
     } catch (error) {
       return { error: error.message };

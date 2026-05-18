@@ -153,7 +153,7 @@ export const DatabasePreview: React.FC = () => {
           </div>
         </div>
       }
-      subtitle="Real-time database content"
+      subtitle="Shop Data"
       className="mb-6"
     >
       <div className="space-y-4 max-h-96 overflow-y-auto">

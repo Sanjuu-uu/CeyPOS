@@ -1,13 +1,60 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { MessageCircle, X, Send, ChevronLeft, ChevronRight, AlertTriangle, Loader2, RefreshCcw } from 'lucide-react';
+import {
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  Clipboard,
+  Code2,
+  FileText,
+  History,
+  Loader2,
+  Mic,
+  MoreHorizontal,
+  PanelRightClose,
+  PanelRightOpen,
+  Paperclip,
+  Plus,
+  Send,
+  Square,
+  Trash2,
+  X,
+} from 'lucide-react';
 import { ChatVisualization, type VisualizationData } from './ChatVisualization';
 import { useApp } from '../../../context/AppContext';
+import { API_BASE } from '../../../lib/api';
+
+interface Attachment {
+  id: string;
+  name: string;
+  size: number;
+  type: string;
+  preview?: string;
+}
 
 interface Message {
+  id: string;
   sender: 'user' | 'ai';
   message: string;
   timestamp: Date;
+  status: 'sending' | 'streaming' | 'sent' | 'error';
+  attachments?: Attachment[];
   visualizations?: VisualizationData[];
+}
+
+interface Conversation {
+  id: string;
+  title: string;
+  createdAt: Date;
+  updatedAt: Date;
+  messages: Message[];
+}
+
+interface ConversationSummary {
+  id: string;
+  title: string;
+  updatedAt: Date;
+  lastMessage: string;
+  questionCount: number;
 }
 
 interface ChatSidebarProps {
@@ -26,207 +73,699 @@ type AnalyticsResponse = {
   answer?: string;
   visualizations?: VisualizationData[];
   visualizationConfig?: VisualizationConfig;
+  conversation?: {
+    title?: string;
+    updatedAt?: string;
+  };
   error?: string;
 };
 
-const STORAGE_PREFIX = 'ceypos.analytics.chat.history';
-
-const DEFAULT_MESSAGES: Message[] = [
-  {
-    sender: 'ai',
-    message: 'Hello! I can help you analyze your sales data. What would you like to know?',
-    timestamp: new Date(),
-    visualizations: [],
-  },
-];
-
-const serializeMessages = (messages: Message[]) =>
-  messages.map((message) => ({
-    ...message,
-    timestamp: message.timestamp.toISOString(),
-  }));
-
-const deserializeMessages = (raw: unknown): Message[] | null => {
-  if (!Array.isArray(raw)) return null;
-  try {
-    return raw
-      .map((item) => {
-        if (!item || typeof item !== 'object') return null;
-        const sender = item.sender === 'user' ? 'user' : 'ai';
-        const message = typeof item.message === 'string' ? item.message : '';
-        const timestamp = item.timestamp ? new Date(item.timestamp) : new Date();
-        const visualizations = Array.isArray(item.visualizations) ? item.visualizations : [];
-        if (!message.trim()) return null;
-        return { sender, message, timestamp, visualizations } as Message;
-      })
-      .filter((value): value is Message => Boolean(value));
-  } catch (error) {
-    console.warn('Failed to parse stored analytics chat history', error);
-    return null;
-  }
+type SpeechRecognitionLike = {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  onresult: ((event: { results: ArrayLike<{ 0: { transcript: string }; isFinal: boolean }> }) => void) | null;
+  onend: (() => void) | null;
+  onerror: (() => void) | null;
+  start: () => void;
+  stop: () => void;
 };
 
-const storageKeyForShop = (shopId: string | null) =>
-  `${STORAGE_PREFIX}.${shopId && shopId.trim() ? shopId : 'global'}`;
+type SpeechRecognitionConstructor = new () => SpeechRecognitionLike;
+
+const ACCENT = '#ecff76';
+const MAX_ATTACHMENT_BYTES = 2 * 1024 * 1024;
+
+const createId = () => {
+  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
+    return crypto.randomUUID();
+  }
+  return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+};
+
+
+const formatBytes = (bytes: number) => {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+};
+
+const formatConversationTime = (date: Date) =>
+  date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+
+
+const getSpeechRecognitionConstructor = (): SpeechRecognitionConstructor | null => {
+  if (typeof window === 'undefined') return null;
+  const win = window as Window &
+    typeof globalThis & {
+      SpeechRecognition?: SpeechRecognitionConstructor;
+      webkitSpeechRecognition?: SpeechRecognitionConstructor;
+    };
+  return win.SpeechRecognition ?? win.webkitSpeechRecognition ?? null;
+};
+
+const renderInlineMarkdown = (text: string) => {
+  const segments = text.split(/(`[^`]+`|\*\*[^*]+\*\*)/g);
+  return segments.map((segment, index) => {
+    if (segment.startsWith('`') && segment.endsWith('`')) {
+      return (
+        <code key={index} className="rounded bg-gray-100 px-1.5 py-0.5 font-mono text-[0.9em] text-gray-900">
+          {segment.slice(1, -1)}
+        </code>
+      );
+    }
+    if (segment.startsWith('**') && segment.endsWith('**')) {
+      return <strong key={index}>{segment.slice(2, -2)}</strong>;
+    }
+    return <React.Fragment key={index}>{segment}</React.Fragment>;
+  });
+};
+
+const MarkdownMessage: React.FC<{ text: string }> = ({ text }) => {
+  const blocks = text.split(/```/g);
+  return (
+    <div className="space-y-3 text-sm leading-6 break-words [overflow-wrap:anywhere]">
+      {blocks.map((block, index) => {
+        if (index % 2 === 1) {
+          const lines = block.replace(/^\w+\n/, '').trim();
+          return (
+            <pre key={index} className="overflow-x-auto rounded-md border border-gray-900 bg-gray-950 p-3 text-xs text-white">
+              <code>{lines}</code>
+            </pre>
+          );
+        }
+
+        return block
+          .split(/\n{2,}/)
+          .filter((paragraph) => paragraph.trim())
+          .map((paragraph, paragraphIndex) => {
+            const trimmed = paragraph.trim();
+            if (/^[-*]\s/m.test(trimmed)) {
+              return (
+                <ul key={`${index}-${paragraphIndex}`} className="list-disc space-y-1 pl-5">
+                  {trimmed.split('\n').map((line, lineIndex) => (
+                    <li key={lineIndex}>{renderInlineMarkdown(line.replace(/^[-*]\s/, ''))}</li>
+                  ))}
+                </ul>
+              );
+            }
+            return <p key={`${index}-${paragraphIndex}`}>{renderInlineMarkdown(trimmed)}</p>;
+          });
+      })}
+    </div>
+  );
+};
 
 export const ChatSidebar: React.FC<ChatSidebarProps> = ({ isOpen, onToggle }) => {
+  const { activeShopId, currentUser, currentShop } = useApp();
+  const [conversations, setConversations] = useState<ConversationSummary[]>([]);
+  const [activeConversationId, setActiveConversationId] = useState<string>('');
+  const [activeConversation, setActiveConversation] = useState<Conversation | null>(null);
   const [chatInput, setChatInput] = useState('');
-  const [chatMessages, setChatMessages] = useState<Message[]>(DEFAULT_MESSAGES);
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [config, setConfig] = useState<VisualizationConfig | null>(null);
-  const [isConfigNoticeDismissed, setIsConfigNoticeDismissed] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const { activeShopId } = useApp();
-  const appendMessage = useCallback((message: Message) => {
-    setChatMessages((prev) => [...prev, message]);
-  }, []);
-  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const [isListening, setIsListening] = useState(false);
+  const [showRecent, setShowRecent] = useState(false);
+  const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
+  const [autoScroll, setAutoScroll] = useState(true);
+  const scrollAreaRef = useRef<HTMLDivElement | null>(null);
+  const endRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
+  const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
+  const userEmail = currentUser?.email ?? '';
+
   const normalizedShopId = useMemo(() => {
     if (!activeShopId) return null;
     return String(activeShopId).replace(/^shop_/, '').replace(/\.db$/i, '');
   }, [activeShopId]);
 
+  const shopLabel = useMemo(() => {
+    const name = currentShop?.name?.trim();
+    if (name) return name;
+    return normalizedShopId ?? null;
+  }, [currentShop?.name, normalizedShopId]);
+
+  const normalizeMessage = (message: Message) => ({
+    ...message,
+    timestamp: new Date(message.timestamp),
+  });
+
+  const normalizeConversation = (conversation: Conversation) => ({
+    ...conversation,
+    createdAt: new Date(conversation.createdAt),
+    updatedAt: new Date(conversation.updatedAt),
+    messages: conversation.messages.map(normalizeMessage),
+  });
+
+  const normalizeSummary = (conversation: ConversationSummary) => ({
+    ...conversation,
+    updatedAt: new Date(conversation.updatedAt),
+    questionCount: Number(conversation.questionCount ?? 0),
+    lastMessage: conversation.lastMessage ?? '',
+  });
+
+  const requestRecentChats = useCallback(async () => {
+    const response = await fetch(
+      `${API_BASE}/api/analytics/chats?shopId=${encodeURIComponent(
+        normalizedShopId ?? ''
+      )}&userEmail=${encodeURIComponent(userEmail)}`
+    );
+    if (!response.ok) {
+      throw new Error('Failed to load recent chats');
+    }
+    const data = (await response.json()) as { conversations?: ConversationSummary[] };
+    return (data.conversations ?? []).map(normalizeSummary);
+  }, [normalizedShopId, userEmail]);
+
+  const requestConversation = useCallback(async (conversationId: string) => {
+    const response = await fetch(
+      `${API_BASE}/api/analytics/chats/${encodeURIComponent(
+        conversationId
+      )}?shopId=${encodeURIComponent(normalizedShopId ?? '')}&userEmail=${encodeURIComponent(
+        userEmail
+      )}`
+    );
+    if (!response.ok) {
+      throw new Error('Failed to load chat');
+    }
+    const data = (await response.json()) as { conversation: Conversation };
+    return normalizeConversation(data.conversation);
+  }, [normalizedShopId, userEmail]);
+
+  const requestNewChat = useCallback(async () => {
+    const response = await fetch(`${API_BASE}/api/analytics/chats`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ shopId: normalizedShopId, userEmail }),
+    });
+    if (!response.ok) {
+      throw new Error('Failed to create chat');
+    }
+    const data = (await response.json()) as { conversation: Conversation };
+    return normalizeConversation(data.conversation);
+  }, [normalizedShopId, userEmail]);
+
+  const requestDeleteChat = useCallback(async (conversationId: string) => {
+    const response = await fetch(
+      `${API_BASE}/api/analytics/chats/${encodeURIComponent(
+        conversationId
+      )}?shopId=${encodeURIComponent(normalizedShopId ?? '')}&userEmail=${encodeURIComponent(
+        userEmail
+      )}`,
+      { method: 'DELETE' }
+    );
+    if (!response.ok) {
+      throw new Error('Failed to delete chat');
+    }
+  }, [normalizedShopId, userEmail]);
+
+  const filteredConversations = useMemo(() => {
+    return [...conversations].sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime());
+  }, [conversations]);
+
+  const updateActiveConversation = useCallback(
+    (updater: (conversation: Conversation) => Conversation) => {
+      setActiveConversation((prev) => (prev ? updater(prev) : prev));
+    },
+    [],
+  );
+
+  const appendMessage = useCallback(
+    (message: Message, conversationIdOverride?: string) => {
+      const targetId = conversationIdOverride ?? activeConversationId;
+      if (!targetId) return;
+      if (targetId === activeConversationId) {
+        updateActiveConversation((conversation) => ({
+          ...conversation,
+          title:
+            conversation.title === 'New analytics chat' && message.sender === 'user'
+              ? message.message.slice(0, 56)
+              : conversation.title,
+          updatedAt: new Date(),
+          messages: [...conversation.messages, message],
+        }));
+      }
+      setConversations((prev) =>
+        prev.map((conversation) => {
+          if (conversation.id !== targetId) return conversation;
+          return {
+            ...conversation,
+            title:
+              conversation.title === 'New analytics chat' && message.sender === 'user'
+                ? message.message.slice(0, 56)
+                : conversation.title,
+            lastMessage: message.message,
+            questionCount:
+              message.sender === 'user' ? conversation.questionCount + 1 : conversation.questionCount,
+            updatedAt: new Date(),
+          };
+        }),
+      );
+    },
+    [activeConversationId, updateActiveConversation],
+  );
+
+  const updateMessage = useCallback(
+    (messageId: string, patch: Partial<Message>, conversationIdOverride?: string) => {
+      const targetId = conversationIdOverride ?? activeConversationId;
+      if (!targetId || targetId !== activeConversationId) return;
+      updateActiveConversation((conversation) => ({
+        ...conversation,
+        updatedAt: new Date(),
+        messages: conversation.messages.map((message) =>
+          message.id === messageId ? { ...message, ...patch } : message,
+        ),
+      }));
+    },
+    [activeConversationId, updateActiveConversation],
+  );
+
+  const appendToMessage = useCallback(
+    (messageId: string, delta: string, conversationIdOverride?: string) => {
+      const targetId = conversationIdOverride ?? activeConversationId;
+      if (!targetId || targetId !== activeConversationId) return;
+      updateActiveConversation((conversation) => ({
+        ...conversation,
+        updatedAt: new Date(),
+        messages: conversation.messages.map((message) =>
+          message.id === messageId
+            ? { ...message, message: `${message.message}${delta}`, status: 'streaming' }
+            : message,
+        ),
+      }));
+    },
+    [activeConversationId, updateActiveConversation],
+  );
+
+  const focusInput = useCallback(() => {
+    window.requestAnimationFrame(() => {
+      inputRef.current?.focus();
+    });
+  }, []);
+
+  const buildSummaryFromConversation = (conversation: Conversation): ConversationSummary => {
+    const lastMessage = conversation.messages[conversation.messages.length - 1]?.message ?? '';
+    const questionCount = conversation.messages.filter((message) => message.sender === 'user').length;
+    return {
+      id: conversation.id,
+      title: conversation.title,
+      updatedAt: conversation.updatedAt,
+      lastMessage,
+      questionCount,
+    };
+  };
+
   useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const key = storageKeyForShop(normalizedShopId);
-    try {
-      const raw = localStorage.getItem(key);
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        const restored = deserializeMessages(parsed);
-        if (restored && restored.length) {
-          setChatMessages(restored);
+    if (!normalizedShopId || !userEmail) {
+      setConversations([]);
+      setActiveConversation(null);
+      setActiveConversationId('');
+      return;
+    }
+
+    let cancelled = false;
+
+    const bootstrap = async () => {
+      try {
+        const recent = await requestRecentChats();
+        if (cancelled) return;
+
+        if (!recent.length) {
+          const conversation = await requestNewChat();
+          if (cancelled) return;
+          setConversations([buildSummaryFromConversation(conversation)]);
+          setActiveConversation(conversation);
+          setActiveConversationId(conversation.id);
+          setShowRecent(false);
           return;
         }
+
+        setConversations(recent);
+        const first = recent[0];
+        const conversation = await requestConversation(first.id);
+        if (cancelled) return;
+        setActiveConversation(conversation);
+        setActiveConversationId(conversation.id);
+        setShowRecent(false);
+      } catch (error) {
+        console.warn('Analytics conversations load failed', error);
       }
-    } catch (error) {
-      console.warn('Analytics chat history load failed', error);
-    }
-    setChatMessages(DEFAULT_MESSAGES.map((message) => ({ ...message, timestamp: new Date() })));
-  }, [normalizedShopId]);
+    };
+
+    bootstrap();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [normalizedShopId, requestConversation, requestNewChat, requestRecentChats, userEmail]);
 
   useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollIntoView({ behavior: 'smooth' });
-    }
-  }, [chatMessages]);
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const key = storageKeyForShop(normalizedShopId);
-    try {
-      localStorage.setItem(key, JSON.stringify(serializeMessages(chatMessages)));
-    } catch (error) {
-      console.warn('Analytics chat history persist failed', error);
-    }
-  }, [chatMessages, normalizedShopId]);
+    if (!autoScroll) return;
+    endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+  }, [activeConversation?.messages, autoScroll, isLoading]);
 
   useEffect(() => {
     const textarea = inputRef.current;
     if (!textarea) return;
     textarea.style.height = 'auto';
-    const maxHeight = 120;
-    textarea.style.height = `${Math.min(maxHeight, textarea.scrollHeight)}px`;
+    textarea.style.height = `${Math.min(156, textarea.scrollHeight)}px`;
   }, [chatInput]);
 
-  const handleSendMessage = async () => {
-    const question = chatInput.trim();
-    if (!question) return;
-    setIsLoading(true);
-    setChatInput('');
-    const userMessage: Message = {
-      sender: 'user',
-      message: question,
-      timestamp: new Date()
+  useEffect(() => {
+    return () => {
+      abortRef.current?.abort();
+      recognitionRef.current?.stop();
     };
-    appendMessage(userMessage);
+  }, []);
 
-    if (!normalizedShopId) {
-      const aiMessage: Message = {
-        sender: 'ai',
-        message: 'Analytics chat requires an active shop. Please finish onboarding or refresh after selecting your shop.',
-        timestamp: new Date(),
-        visualizations: []
-      };
-      appendMessage(aiMessage);
-      setIsLoading(false);
+  const handleScroll = () => {
+    const element = scrollAreaRef.current;
+    if (!element) return;
+    const distanceFromBottom = element.scrollHeight - element.scrollTop - element.clientHeight;
+    setAutoScroll(distanceFromBottom < 140);
+  };
+
+  const handleStartNewChat = () => {
+    if (!normalizedShopId || !userEmail) return;
+    requestNewChat()
+      .then((conversation) => {
+        const summary = buildSummaryFromConversation(conversation);
+        setConversations((prev) => [summary, ...prev.filter((item) => item.id !== summary.id)].slice(0, 6));
+        setActiveConversation(conversation);
+        setActiveConversationId(conversation.id);
+        setShowRecent(false);
+        setChatInput('');
+        setAttachments([]);
+        setConfig(null);
+        setAutoScroll(true);
+        focusInput();
+      })
+      .catch((error) => {
+        console.warn('Failed to create chat', error);
+      });
+  };
+
+  const handleOpenConversation = (conversationId: string) => {
+    if (!normalizedShopId || !userEmail) return;
+    requestConversation(conversationId)
+      .then((conversation) => {
+        setActiveConversation(conversation);
+        setActiveConversationId(conversationId);
+        setShowRecent(false);
+        setChatInput('');
+        setAttachments([]);
+        setAutoScroll(true);
+        focusInput();
+      })
+      .catch((error) => {
+        console.warn('Failed to open chat', error);
+      });
+  };
+
+  const handleDeleteConversation = (conversationId: string, options?: { preferRecent?: boolean }) => {
+    if (!normalizedShopId || !userEmail) return;
+    const preferRecent = options?.preferRecent ?? false;
+    requestDeleteChat(conversationId)
+      .then(() => {
+        setConversations((prev) => prev.filter((conversation) => conversation.id !== conversationId));
+        if (conversationId !== activeConversationId) return;
+        setActiveConversation(null);
+        setActiveConversationId('');
+        if (!preferRecent) {
+          handleStartNewChat();
+        }
+      })
+      .catch((error) => {
+        console.warn('Failed to delete chat', error);
+      });
+  };
+
+  const handleFilesSelected = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files ?? []);
+    const nextAttachments: Attachment[] = [];
+
+    for (const file of files) {
+      if (file.size > MAX_ATTACHMENT_BYTES) {
+        nextAttachments.push({
+          id: createId(),
+          name: `${file.name} (too large)`,
+          size: file.size,
+          type: file.type || 'application/octet-stream',
+        });
+        continue;
+      }
+
+      let preview: string | undefined;
+      if (file.type.startsWith('text/') || file.name.endsWith('.csv') || file.name.endsWith('.json')) {
+        preview = (await file.text()).slice(0, 4000);
+      }
+      nextAttachments.push({
+        id: createId(),
+        name: file.name,
+        size: file.size,
+        type: file.type || 'application/octet-stream',
+        preview,
+      });
+    }
+
+    setAttachments((prev) => [...prev, ...nextAttachments].slice(0, 5));
+    event.target.value = '';
+  };
+
+  const handleToggleVoice = () => {
+    const Recognition = getSpeechRecognitionConstructor();
+    if (!Recognition) {
+      setChatInput((prev) => `${prev}${prev ? '\n' : ''}Voice typing is not supported in this browser.`);
       return;
     }
-    
-    // Call AI API
-    try {
-      const response = await fetch('/api/analytics/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          question,
-          shopId: normalizedShopId,
-        })
+
+    if (isListening) {
+      recognitionRef.current?.stop();
+      setIsListening(false);
+      return;
+    }
+
+    const recognition = new Recognition();
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = 'en-US';
+    recognition.onresult = (event) => {
+      const transcript = Array.from(event.results)
+        .map((result) => result[0].transcript)
+        .join(' ');
+      setChatInput((prev) => {
+        const base = prev.replace(/\s*\[listening:.*?\]$/i, '').trimEnd();
+        return `${base}${base ? ' ' : ''}[listening: ${transcript.trim()}]`;
       });
+    };
+    recognition.onend = () => setIsListening(false);
+    recognition.onerror = () => setIsListening(false);
+    recognitionRef.current = recognition;
+    recognition.start();
+    setIsListening(true);
+  };
+
+  const streamResponse = async (
+    question: string,
+    aiMessageId: string,
+    sentAttachments: Attachment[],
+    conversationIdOverride?: string,
+  ) => {
+    const conversationId = conversationIdOverride ?? activeConversationId;
+    if (!conversationId) {
+      throw new Error('No active chat selected');
+    }
+    const historyPayload = (activeConversation?.messages ?? [])
+      .slice(-4)
+      .map((message) => ({ sender: message.sender, message: message.message }));
+
+    const response = await fetch(
+      `${API_BASE}/api/analytics/chats/${encodeURIComponent(
+        conversationId
+      )}/messages/stream`,
+      {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        question,
+        shopId: normalizedShopId,
+        userEmail,
+        attachments: sentAttachments.map(({ name, size, type, preview }) => ({ name, size, type, preview })),
+        history: historyPayload,
+      }),
+      signal: abortRef.current?.signal,
+    }
+    );
+
+    if (!response.ok || !response.body) {
       let data: AnalyticsResponse | null = null;
       try {
         data = await response.json();
-      } catch (parseError) {
-        console.error('Failed to parse analytics response', parseError);
+      } catch {
+        data = null;
+      }
+      throw new Error(data?.error ?? `Request failed with status ${response.status}`);
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    const consumeEvent = (eventText: string) => {
+      const eventName = eventText.match(/^event:\s*(.+)$/m)?.[1]?.trim() ?? 'message';
+      const dataText = eventText
+        .split('\n')
+        .filter((line) => line.startsWith('data:'))
+        .map((line) => line.slice(5).trimStart())
+        .join('\n');
+      if (!dataText) return;
+      const payload = JSON.parse(dataText) as AnalyticsResponse & { delta?: string };
+
+      if (eventName === 'chunk' && payload.delta) {
+        appendToMessage(aiMessageId, payload.delta, conversationId);
       }
 
-      if (!response.ok) {
-        const errorMessage = data?.error ?? `Request failed with status ${response.status}`;
-        appendMessage({
-          sender: 'ai',
-          message: `Error: ${errorMessage}`,
-          timestamp: new Date(),
-          visualizations: [],
-        });
-        setIsLoading(false);
-        return;
+      if (eventName === 'done') {
+        if (payload.visualizationConfig) {
+          setConfig(payload.visualizationConfig);
+        }
+        updateMessage(
+          aiMessageId,
+          {
+          message: payload.answer || 'Sorry, I could not generate a response.',
+          visualizations: Array.isArray(payload.visualizations) ? payload.visualizations : [],
+          status: 'sent',
+          },
+          conversationId,
+        );
+        if (payload.conversation && conversationId) {
+          const conversationMeta = payload.conversation;
+          setConversations((prev) =>
+            prev.map((conversation) =>
+              conversation.id === conversationId
+                ? {
+                    ...conversation,
+                    title: conversationMeta.title ?? conversation.title,
+                    updatedAt: conversationMeta.updatedAt
+                      ? new Date(conversationMeta.updatedAt)
+                      : conversation.updatedAt,
+                  }
+                : conversation,
+            ),
+          );
+        }
       }
 
-      if (!data) {
-        appendMessage({
-          sender: 'ai',
-          message: 'Sorry, I could not generate a response.',
-          timestamp: new Date(),
-          visualizations: [],
-        });
-        setIsLoading(false);
-        return;
+      if (eventName === 'error') {
+        throw new Error(payload.error ?? 'Analytics request failed');
       }
+    };
 
-      if (
-        data.visualizationConfig &&
-        Array.isArray(data.visualizations) &&
-        data.visualizations.length > 0
-      ) {
-        setConfig({
-          provider: data.visualizationConfig.provider,
-          configured: Boolean(data.visualizationConfig.configured),
-          baseUrl: data.visualizationConfig.baseUrl ?? null,
-          serviceId: data.visualizationConfig.serviceId ?? null,
-        });
-        setIsConfigNoticeDismissed(false);
-      } else {
-        setConfig(null);
-      }
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const events = buffer.split('\n\n');
+      buffer = events.pop() ?? '';
+      events.filter(Boolean).forEach(consumeEvent);
+    }
+  };
 
-      const aiMessage: Message = {
-        sender: 'ai',
-        message: data.answer || 'Sorry, I could not generate a response.',
-        timestamp: new Date(),
-        visualizations: Array.isArray(data.visualizations) ? data.visualizations : []
-      };
-      appendMessage(aiMessage);
-    } catch (error) {
-      console.error('Analytics chat request failed', error);
+  const handleSendMessage = async () => {
+    const question = chatInput.replace(/\s*\[listening:\s*(.*?)\]$/i, ' $1').trim();
+    if (!question || isLoading) return;
+
+    if (!normalizedShopId || !userEmail) {
       appendMessage({
+        id: createId(),
         sender: 'ai',
-        message: 'Error: Could not connect to AI service.',
+        message: 'Analytics chat requires an active shop and signed-in user. Please finish onboarding or refresh after selecting your shop.',
         timestamp: new Date(),
+        status: 'error',
         visualizations: [],
       });
+      return;
     }
-    
+
+    let conversationId = activeConversationId;
+    if (!conversationId) {
+      try {
+        const conversation = await requestNewChat();
+        const summary = buildSummaryFromConversation(conversation);
+        setConversations((prev) => [summary, ...prev.filter((item) => item.id !== summary.id)].slice(0, 6));
+        setActiveConversation(conversation);
+        setActiveConversationId(conversation.id);
+        setShowRecent(false);
+        setChatInput('');
+        setAttachments([]);
+        setConfig(null);
+        setAutoScroll(true);
+        conversationId = conversation.id;
+      } catch (error) {
+        console.warn('Failed to create chat before sending', error);
+        return;
+      }
+    }
+
+    const sentAttachments = attachments;
+    const aiMessageId = createId();
+    appendMessage({
+      id: createId(),
+      sender: 'user',
+      message: question,
+      timestamp: new Date(),
+      status: 'sent',
+      attachments: sentAttachments,
+    }, conversationId);
+    appendMessage({
+      id: aiMessageId,
+      sender: 'ai',
+      message: '',
+      timestamp: new Date(),
+      status: 'streaming',
+      visualizations: [],
+    }, conversationId);
+
+    setChatInput('');
+    setAttachments([]);
+    setIsLoading(true);
+    setAutoScroll(true);
+    focusInput();
+    abortRef.current = new AbortController();
+
+    try {
+      await streamResponse(question, aiMessageId, sentAttachments, conversationId);
+    } catch (error) {
+      if ((error as Error).name === 'AbortError') {
+        updateMessage(aiMessageId, {
+          message: 'Response stopped.',
+          status: 'sent',
+        }, conversationId);
+      } else {
+        updateMessage(aiMessageId, {
+          message: `Error: ${(error as Error).message || 'Could not connect to AI service.'}`,
+          status: 'error',
+        }, conversationId);
+      }
+    } finally {
+      setIsLoading(false);
+      abortRef.current = null;
+      focusInput();
+    }
+  };
+
+  const handleStop = () => {
+    abortRef.current?.abort();
     setIsLoading(false);
+  };
+
+  const handleCopy = async (message: Message) => {
+    await navigator.clipboard.writeText(message.message);
+    setCopiedMessageId(message.id);
+    window.setTimeout(() => setCopiedMessageId(null), 1400);
   };
 
   const handleKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -236,146 +775,330 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({ isOpen, onToggle }) =>
     }
   };
 
-  const handleStartNewChat = () => {
-    const freshMessages = DEFAULT_MESSAGES.map((message) => ({ ...message, timestamp: new Date() }));
-    setChatMessages(freshMessages);
-    setChatInput('');
-    setConfig(null);
-    setIsConfigNoticeDismissed(false);
-  };
-
   return (
-    <>
-      {/* Toggle Button - Always visible */}
+    <aside
+      className={`relative flex h-full shrink-0 flex-col border-l border-gray-200 bg-white shadow-sm transition-[width] duration-300 ${
+        isOpen ? 'w-full md:w-[340px] xl:w-[380px]' : 'w-[52px]'
+      }`}
+    >
       <button
+        type="button"
         onClick={onToggle}
-        className={`fixed z-50 bg-blue-500 hover:bg-blue-600 text-white p-2 rounded-l-lg shadow-lg transition-all duration-300 ${
-          isOpen ? 'right-80' : 'right-0'
-        }`}
-        style={{ top: 'calc(64px + 50vh)', transform: 'translateY(-50%)' }}
-        title={isOpen ? 'Close Chat' : 'Open Chat'}
+        className="absolute -left-4 top-1/2 z-10 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full bg-[#c5f542] text-gray-950 shadow-sm transition hover:brightness-95"
+        title={isOpen ? 'Collapse chat' : 'Expand chat'}
       >
-        {isOpen ? <ChevronRight className="w-5 h-5" /> : <ChevronLeft className="w-5 h-5" />}
+        {isOpen ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
       </button>
 
-      {/* Chat Sidebar */}
-      <div
-        className={`fixed right-0 bg-white shadow-xl z-40 transform transition-transform duration-300 ease-in-out ${
-          isOpen ? 'translate-x-0' : 'translate-x-full'
-        } flex flex-col`}
-        style={{ width: '320px', top: '64px', height: 'calc(100vh - 64px)' }}
-      >
-        {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b border-gray-200 bg-blue-50">
-          <div className="flex items-center gap-2">
-            <MessageCircle className="w-5 h-5 text-blue-600" />
-            <h3 className="font-semibold text-gray-800">AI Analytics Assistant</h3>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={handleStartNewChat}
-              className="flex items-center gap-1 text-sm text-blue-600 hover:text-blue-800 focus:outline-none"
-              title="Start a new chat"
-            >
-              <RefreshCcw className="w-4 h-4" />
-              <span>New chat</span>
-            </button>
-            
+      {!isOpen ? (
+        <div className="flex h-full flex-col items-center gap-3 py-4">
           <button
-            onClick={onToggle}
-            className="p-1 hover:bg-gray-200 rounded-full transition-colors"
+            type="button"
+            onClick={() => {
+              setShowRecent(false);
+              onToggle();
+            }}
+            className="rounded-md p-2 text-gray-700 hover:bg-gray-100"
+            title="Open AI chat"
           >
-            <X className="w-4 h-4 text-gray-600" />
+            <PanelRightOpen className="h-5 w-5" />
           </button>
-          </div>
+          <button
+            type="button"
+            onClick={() => {
+              handleStartNewChat();
+              onToggle();
+            }}
+            className="rounded-md p-2 text-gray-700 hover:bg-gray-100"
+            title="New chat"
+          >
+            <Plus className="h-5 w-5" />
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setShowRecent(true);
+              onToggle();
+            }}
+            className="rounded-md p-2 text-gray-700 hover:bg-gray-100"
+            title="Recent chats"
+          >
+            <History className="h-5 w-5" />
+          </button>
         </div>
-
-        {config && !config.configured && !isConfigNoticeDismissed && (
-          <div className="flex items-start gap-3 px-4 py-3 text-xs text-amber-700 bg-amber-50 border-b border-amber-100">
-            <AlertTriangle className="w-4 h-4 mt-0.5" />
-            <div>
-              Remote chart generation is not fully configured. Ask your administrator to set the
-              visualization service variables so the assistant can embed hosted charts.
+      ) : (
+        <>
+          <header className="border-b border-gray-200 bg-white px-4 py-3">
+            <div className="mb-3 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div>
+                  <p className="text-sm font-semibold text-gray-950">AI Analytics</p>
+                  <p className="text-xs text-gray-500">{currentUser?.email ?? 'Shop assistant'}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-1">
+                <button type="button" onClick={() => setShowRecent((value) => !value)} className="rounded-md p-2 text-gray-600 hover:bg-gray-100" title="Preview recent chats">
+                  <History className="h-4 w-4" />
+                </button>
+                <button type="button" onClick={handleStartNewChat} className="rounded-md bg-[var(--verde-naturale--primary)] p-2 text-gray-950 hover:brightness-95" title="New chat">
+                  <Plus className="h-4 w-4" />
+                </button>
+                <button type="button" onClick={onToggle} className="rounded-md p-2 text-gray-600 hover:bg-gray-100" title="Collapse">
+                  <PanelRightClose className="h-4 w-4" />
+                </button>
+              </div>
             </div>
+
+          </header>
+
+          {config && !config.configured && (
+            <div className="border-b border-amber-200 bg-amber-50 px-4 py-3 text-xs leading-5 text-amber-800">
+              Remote chart hosting is not fully configured. Text analysis still works, and chart requests will return a setup notice.
+            </div>
+          )}
+
+          {showRecent ? (
+            <div className="flex-1 overflow-y-auto bg-gray-50/70 px-4 py-5">
+              <div className="mb-4 flex items-center justify-between">
+                <div>
+                  <h3 className="text-sm font-semibold text-gray-950">Recent chats</h3>
+                  <p className="text-xs text-gray-500">Stored for this user and shop.</p>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                {filteredConversations.map((conversation) => {
+                  const lastMessage = conversation.lastMessage;
+                  return (
+                    <div
+                      key={conversation.id}
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => handleOpenConversation(conversation.id)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault();
+                          handleOpenConversation(conversation.id);
+                        }
+                      }}
+                      className={`w-full rounded-md border px-3 py-2 text-left transition ${
+                        conversation.id === activeConversation?.id
+                          ? 'border-gray-300 bg-[var(--verde-naturale--primary)]'
+                          : 'border-gray-200 bg-white hover:border-gray-400'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="truncate text-[13px] font-semibold leading-5 text-gray-950">{conversation.title}</p>
+                          <p className="mt-0.5 line-clamp-1 text-[12px] leading-5 text-gray-600">
+                            {lastMessage || 'No messages yet'}
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            handleDeleteConversation(conversation.id, { preferRecent: true });
+                          }}
+                          className="rounded p-1 text-gray-500 hover:bg-rose-50 hover:text-rose-600"
+                          title="Delete chat"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
+                      <div className="mt-1.5 flex items-center justify-between text-[10px] font-medium uppercase tracking-wide text-gray-500">
+                        <span>{formatConversationTime(conversation.updatedAt)}</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ) : (
+            <>
+          <div ref={scrollAreaRef} onScroll={handleScroll} className="flex-1 overflow-y-auto bg-gray-50/70 px-4 py-5">
+            <div className="space-y-3">
+              {activeConversation?.messages.map((message) => {
+                const isUser = message.sender === 'user';
+                const isEmptyStreaming = message.status === 'streaming' && !message.message;
+                return (
+                  <div key={message.id} className={`group flex ${isUser ? 'justify-end' : 'justify-start'}`}>
+                    <div className={`max-w-[92%] ${isUser ? 'items-end' : 'items-start'} flex flex-col gap-1`}>
+                      <div
+                        className={`rounded-lg transition break-words [overflow-wrap:anywhere] ${
+                          isEmptyStreaming
+                            ? 'border-0 bg-transparent px-1 py-1 shadow-none'
+                            : `border border-gray-200 px-4 py-3 shadow-sm ${
+                                isUser
+                                  ? 'bg-[var(--verde-naturale--primary)] text-gray-950'
+                                  : 'bg-white text-gray-950'
+                              } ${message.status === 'error' ? 'bg-rose-50' : ''}`
+                        }`}
+                        style={isUser && !isEmptyStreaming ? { backgroundColor: ACCENT } : undefined}
+                      >
+                        {isEmptyStreaming ? (
+                          <div className="flex items-center gap-2 text-sm text-gray-600">
+                            <span className="flex gap-1">
+                              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-gray-500" />
+                              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-gray-500 [animation-delay:120ms]" />
+                              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-gray-500 [animation-delay:240ms]" />
+                            </span>
+                          </div>
+                        ) : (
+                          <MarkdownMessage text={message.message} />
+                        )}
+
+                        {message.attachments && message.attachments.length > 0 && (
+                          <div className="mt-3 grid gap-2">
+                            {message.attachments.map((attachment) => (
+                              <div key={attachment.id} className="flex min-w-0 items-center gap-2 rounded-md border border-gray-900/20 bg-white/60 px-2 py-1.5 text-xs">
+                                <FileText className="h-3.5 w-3.5" />
+                                <span className="truncate">{attachment.name}</span>
+                                <span className="ml-auto text-gray-500">{formatBytes(attachment.size)}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      {message.visualizations && message.visualizations.length > 0 && (
+                        <div className="w-full space-y-2">
+                          {message.visualizations.map((visualization, index) => (
+                            <ChatVisualization key={`${message.id}-${index}`} visualization={visualization} />
+                          ))}
+                        </div>
+                      )}
+
+                      <div className="flex items-center gap-1 text-[11px] text-gray-500 opacity-100 transition md:opacity-0 md:group-hover:opacity-100">
+                        <span>
+                          {message.timestamp.toLocaleTimeString([], {
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          })}
+                        </span>
+                        <button type="button" onClick={() => handleCopy(message)} className="rounded p-1 hover:bg-gray-200" title="Copy message">
+                          {copiedMessageId === message.id ? <Check className="h-3.5 w-3.5" /> : <Clipboard className="h-3.5 w-3.5" />}
+                        </button>
+                        {!isUser && (
+                          <button type="button" className="rounded p-1 hover:bg-gray-200" title="More actions">
+                            <MoreHorizontal className="h-3.5 w-3.5" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+              <div ref={endRef} />
+            </div>
+          </div>
+
+          {!autoScroll && (
             <button
               type="button"
-              className="ml-auto text-amber-700 hover:text-amber-900"
-              onClick={() => setIsConfigNoticeDismissed(true)}
-              aria-label="Dismiss visualization notice"
+              onClick={() => {
+                setAutoScroll(true);
+                endRef.current?.scrollIntoView({ behavior: 'smooth' });
+              }}
+              className="absolute bottom-24 left-1/2 flex -translate-x-1/2 items-center rounded-full border border-gray-200 bg-white p-2 text-gray-700 shadow-lg"
+              title="Jump to latest"
             >
-              <X className="w-4 h-4" />
+              <ChevronRight className="h-3.5 w-3.5 rotate-90" />
             </button>
-          </div>
-        )}
+          )}
 
-        {/* Chat Messages */}
-        <div className="flex-1 p-4 overflow-y-auto">
-          <div className="space-y-4">
-            {chatMessages.map((msg, idx) => (
-              <div
-                key={idx}
-                className={`flex ${
-                  msg.sender === 'user' ? 'justify-end' : 'justify-start'
-                } mb-4`}
-              >
-                <div className="max-w-[90%]">
-                  <div
-                    className={`px-3 py-2 rounded-lg ${
-                      msg.sender === 'user'
-                        ? 'bg-blue-500 text-white rounded-br-none'
-                        : 'bg-gray-100 text-gray-800 rounded-bl-none'
-                    }`}
+          <footer className="border-t border-gray-200 bg-white p-4">
+            {attachments.length > 0 && (
+              <div className="mb-3 flex flex-wrap gap-2">
+                {attachments.map((attachment) => (
+                  <span key={attachment.id} className="inline-flex max-w-full items-center gap-2 rounded-md border border-gray-200 bg-gray-50 px-2.5 py-1.5 text-xs text-gray-700">
+                    <FileText className="h-3.5 w-3.5" />
+                    <span className="max-w-[180px] truncate">{attachment.name}</span>
+                    <button
+                      type="button"
+                      onClick={() => setAttachments((prev) => prev.filter((item) => item.id !== attachment.id))}
+                      className="rounded hover:bg-gray-200"
+                      title="Remove attachment"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+
+            <div className="rounded-lg border border-gray-200 bg-white p-2 shadow-sm focus-within:ring-2 focus-within:ring-[var(--verde-naturale--primary)]">
+              <textarea
+                ref={inputRef}
+                placeholder="Ask a follow-up question"
+                value={chatInput}
+                onChange={(event) => setChatInput(event.target.value)}
+                onKeyDown={handleKeyDown}
+                rows={1}
+                className="max-h-40 min-h-[48px] w-full resize-none border-0 bg-transparent px-2 py-2 text-sm text-gray-950 outline-none placeholder:text-gray-400 disabled:opacity-70"
+              />
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-1">
+                  <input ref={fileInputRef} type="file" multiple className="hidden" onChange={handleFilesSelected} />
+                  <button type="button" onClick={() => fileInputRef.current?.click()} className="rounded-md p-2 text-gray-600 hover:bg-gray-100" title="Attach files">
+                    <Paperclip className="h-4 w-4" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleToggleVoice}
+                    className={`rounded-md p-2 ${isListening ? 'bg-[var(--verde-naturale--primary)] text-gray-950' : 'text-gray-600 hover:bg-gray-100'}`}
+                    title="Voice typing"
                   >
-                    <p className="text-sm">{msg.message}</p>
-                    <p className={`text-xs mt-1 ${
-                      msg.sender === 'user' ? 'text-blue-100' : 'text-gray-500'
-                    }`}>
-                      {msg.timestamp.toLocaleTimeString([], { 
-                        hour: '2-digit', 
-                        minute: '2-digit' 
-                      })}
-                    </p>
-                  </div>
-                  
-                  {/* Render visualizations */}
-                  {msg.visualizations && msg.visualizations.length > 0 && (
-                    <div className="mt-2 space-y-2">
-                      {msg.visualizations.map((viz, vizIdx) => (
-                        <ChatVisualization key={vizIdx} visualization={viz} />
-                      ))}
-                    </div>
+                    <Mic className="h-4 w-4" />
+                  </button>
+                  <button type="button" className="rounded-md p-2 text-gray-600 hover:bg-gray-100" title="Code block helper">
+                    <Code2 className="h-4 w-4" />
+                  </button>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  {activeConversation && activeConversation.messages.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteConversation(activeConversation.id)}
+                      className="rounded-md p-2 text-gray-500 hover:bg-rose-50 hover:text-rose-600"
+                      title="Delete current chat"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  )}
+                  {isLoading ? (
+                    <button type="button" onClick={handleStop} className="rounded-md bg-gray-950 p-2 text-white" title="Stop response">
+                      <Square className="h-4 w-4" />
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={handleSendMessage}
+                      disabled={!chatInput.trim() || !normalizedShopId}
+                      className="rounded-md bg-[var(--verde-naturale--primary)] p-2 text-gray-950 transition hover:brightness-95 disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-400"
+                      title="Send message"
+                    >
+                      <Send className="h-4 w-4" />
+                    </button>
                   )}
                 </div>
               </div>
-            ))}
-            <div ref={scrollRef} />
-          </div>
-        </div>
-
-        {/* Input Area */}
-        <div className="p-4 border-t border-gray-200 bg-gray-50">
-          <div className="flex items-center gap-2">
-            <textarea
-              ref={inputRef}
-              placeholder="Ask about your data..."
-              value={chatInput}
-              onChange={(event) => setChatInput(event.target.value)}
-              onKeyDown={handleKeyDown}
-              disabled={isLoading}
-              rows={1}
-              className="flex-1 text-sm bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#ECFF76]/20 focus:border-[#ECFF76] resize-none px-3 py-2 text-gray-900 placeholder-gray-400 disabled:bg-gray-100"
-            />
-            <button
-              onClick={handleSendMessage}
-              disabled={!chatInput.trim() || !normalizedShopId || isLoading}
-              className="p-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors flex items-center justify-center"
-            >
-              {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-            </button>
-          </div>
-        </div>
-      </div>
-    </>
+            </div>
+            <div className="mt-2 flex items-center justify-between text-[11px] text-gray-500">
+              <span>{shopLabel ? `Shop: ${shopLabel}` : 'No active shop selected'}</span>
+              {isLoading && (
+                <span className="flex items-center gap-1">
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                  Streaming
+                </span>
+              )}
+            </div>
+          </footer>
+            </>
+          )}
+        </>
+      )}
+    </aside>
   );
 };

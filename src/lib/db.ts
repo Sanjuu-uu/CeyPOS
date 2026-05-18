@@ -470,9 +470,22 @@ function buildSale(
     };
   });
 
+  const customerRow =
+    typeof transaction.customer_id === "number"
+      ? cache.customersById.get(transaction.customer_id)
+      : undefined;
+  const customerInfo = customerRow
+    ? {
+        name: customerRow.name ?? "",
+        email: customerRow.email ?? "",
+        phone: customerRow.phone ?? "",
+      }
+    : undefined;
+
   return {
     id: String(transaction.transaction_id),
     shopId: shopKey,
+    customerInfo,
     items: cartItems,
     total: Number(transaction.total ?? 0),
     paymentMethod: (transaction.payment_method ||
@@ -540,6 +553,7 @@ function upsertCustomer(shopKey: string, row: CustomerRow) {
     shopId: shopKey,
     customers: cache.customers.slice(),
   });
+  rebuildSales(shopKey);
 }
 
 function upsertDailySale(shopKey: string, row: DailySalesRow) {

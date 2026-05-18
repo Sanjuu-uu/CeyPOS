@@ -245,6 +245,35 @@ function initializeShopDatabaseSchema(db) {
     last_seen_user_id TEXT,
     device_meta TEXT
   );
+
+  CREATE TABLE IF NOT EXISTS analytics_conversations (
+    id TEXT PRIMARY KEY,
+    shop_id TEXT NOT NULL,
+    title TEXT NOT NULL,
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS analytics_messages (
+    id TEXT PRIMARY KEY,
+    conversation_id TEXT NOT NULL,
+    shop_id TEXT NOT NULL,
+    sender TEXT NOT NULL,
+    message TEXT NOT NULL,
+    status TEXT NOT NULL,
+    attachments TEXT,
+    visualizations TEXT,
+    created_at DATETIME NOT NULL
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_analytics_conversations_shop_updated
+    ON analytics_conversations (shop_id, updated_at);
+
+  CREATE INDEX IF NOT EXISTS idx_analytics_messages_conversation_created
+    ON analytics_messages (conversation_id, created_at);
+
+  CREATE INDEX IF NOT EXISTS idx_analytics_messages_shop
+    ON analytics_messages (shop_id);
   `;
 
   db.exec(ddl);
