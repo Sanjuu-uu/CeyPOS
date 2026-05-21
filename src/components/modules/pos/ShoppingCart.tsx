@@ -147,7 +147,6 @@ export const ShoppingCart: React.FC = () => {
     cartTotal,
     currentShop,
     currentUser,
-    getAvailableStock,
   } = useApp();
   const currencySymbol = currentShop?.currency ?? "$";
 
@@ -721,16 +720,7 @@ export const ShoppingCart: React.FC = () => {
                       onClick={() =>
                         updateCartItemQuantity(item.id, item.quantity + 1)
                       }
-                      disabled={
-                        item.quantity >=
-                        getAvailableStock(item.id, item.stock)
-                      }
-                      title={
-                        item.quantity >= getAvailableStock(item.id, item.stock)
-                          ? "No more stock available — may be reserved by another terminal"
-                          : undefined
-                      }
-                      className="text-gray-400 hover:text-black transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                      className="text-gray-400 hover:text-black transition-colors"
                     >
                       <Plus size={14} />
                     </button>

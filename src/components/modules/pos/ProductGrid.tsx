@@ -1,13 +1,12 @@
 import React, { useState, useMemo, memo } from "react";
 import { Product } from "../../../types";
 import { useApp } from "../../../context/AppContext";
-import { Plus, Minus, LayoutGrid, List, Package, Lock } from "lucide-react";
+import { Plus, Minus, LayoutGrid, List, Package } from "lucide-react";
 
 const ProductCard = memo(
   ({
     product,
     quantityInCart,
-    reservedByOthers,
     viewMode,
     currencySymbol,
     onAdd,
@@ -15,18 +14,13 @@ const ProductCard = memo(
   }: {
     product: Product;
     quantityInCart: number;
-    reservedByOthers: number;
     viewMode: "grid" | "row";
     currencySymbol: string;
     onAdd: (p: Product) => void;
     onUpdate: (p: Product, change: number) => void;
   }) => {
-    const availableStock = Math.max(0, product.stock - reservedByOthers);
     const isOutOfStock = product.stock <= 0;
-    const isFullyReserved = availableStock <= 0 && !isOutOfStock;
-    // Max we can add: available minus what we already have in cart
-    const canAddMore = availableStock - quantityInCart > 0;
-    const isMaxed = !canAddMore;
+    const isMaxStock = product.stock <= quantityInCart;
 
     if (viewMode === "row") {
       return (
@@ -49,16 +43,10 @@ const ProductCard = memo(
             <h3 className="font-semibold text-gray-800 text-sm truncate">
               {product.name}
             </h3>
-            <div className="flex items-center gap-2 mt-1 flex-wrap">
+            <div className="flex items-center gap-2 mt-1">
               <span className="text-xs font-medium text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded">
                 {product.stock} in stock
               </span>
-              {reservedByOthers > 0 && (
-                <span className="text-xs font-medium text-amber-700 bg-amber-50 border border-amber-100 px-1.5 py-0.5 rounded flex items-center gap-1">
-                  <Lock size={9} />
-                  {reservedByOthers} reserved
-                </span>
-              )}
             </div>
           </div>
           <div className="text-right">
@@ -69,14 +57,10 @@ const ProductCard = memo(
             {quantityInCart === 0 ? (
               <button
                 onClick={() => onAdd(product)}
-                disabled={isOutOfStock || isFullyReserved}
+                disabled={isOutOfStock}
                 className="mt-1 h-8 px-4 bg-[#ecff76] text-gray-900 text-xs font-bold rounded hover:brightness-95 disabled:bg-gray-200 disabled:text-gray-400 transition-colors"
               >
-                {isOutOfStock
-                  ? "Out of Stock"
-                  : isFullyReserved
-                    ? "Reserved"
-                    : "Add"}
+                Add
               </button>
             ) : (
               <div className="flex items-center gap-2 mt-1 bg-gray-100 rounded p-0.5">
@@ -91,7 +75,7 @@ const ProductCard = memo(
                 </span>
                 <button
                   onClick={() => onUpdate(product, 1)}
-                  disabled={isMaxed}
+                  disabled={isMaxStock}
                   className="w-7 h-7 flex items-center justify-center bg-white rounded shadow-sm hover:bg-gray-50 disabled:opacity-50"
                 >
                   <Plus size={12} />
@@ -104,13 +88,7 @@ const ProductCard = memo(
     }
 
     return (
-      <div
-        className={`group bg-white rounded-xl shadow-sm border transition-all flex flex-col h-full overflow-hidden relative ${
-          isFullyReserved
-            ? "border-amber-200 opacity-80"
-            : "border-gray-100 hover:shadow-md hover:border-[#ecff76]"
-        }`}
-      >
+      <div className="group bg-white rounded-xl shadow-sm border border-gray-100 hover:shadow-md hover:border-[#ecff76] transition-all flex flex-col h-full overflow-hidden relative">
         <div className="aspect-[4/3] bg-gray-100 relative overflow-hidden">
           {product.imageUrl ? (
             <img
@@ -133,45 +111,22 @@ const ProductCard = memo(
               {quantityInCart}
             </div>
           )}
-          {/* Reserved badge — shown when another terminal has stock locked */}
-          {reservedByOthers > 0 && quantityInCart === 0 && (
-            <div className="absolute top-2 left-2 bg-amber-400 text-gray-900 flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold shadow-md">
-              <Lock size={9} />
-              {reservedByOthers} reserved
-            </div>
-          )}
         </div>
         <div className="p-3 flex flex-col flex-1">
           <h3 className="font-semibold text-gray-800 text-sm leading-tight mb-1 line-clamp-2">
             {product.name}
           </h3>
-          <p
-            className={`text-xs mb-3 ${availableStock <= 0 ? "text-red-500 font-medium" : availableStock <= 2 ? "text-amber-600 font-medium" : "text-gray-500"}`}
-          >
-            {isOutOfStock
-              ? "Out of stock"
-              : isFullyReserved
-                ? `0 available (${reservedByOthers} reserved)`
-                : reservedByOthers > 0
-                  ? `${availableStock} available (${reservedByOthers} reserved)`
-                  : `${product.stock} available`}
+          <p className="text-xs text-gray-500 mb-3">
+            {product.stock} available
           </p>
           <div className="mt-auto">
             {quantityInCart === 0 ? (
               <button
                 onClick={() => onAdd(product)}
-                disabled={isOutOfStock || isFullyReserved}
-                className="w-full h-9 flex items-center justify-center text-sm font-medium rounded-lg transition-all active:scale-95 bg-gray-100 text-gray-800 hover:bg-[#ecff76] hover:text-gray-900 disabled:bg-gray-50 disabled:text-gray-300"
+                disabled={isOutOfStock}
+                className="w-full h-9 flex items-center justify-center bg-gray-100 text-gray-800 text-sm font-medium rounded-lg hover:bg-[#ecff76] hover:text-gray-900 disabled:bg-gray-50 disabled:text-gray-300 transition-all active:scale-95"
               >
-                {isOutOfStock ? (
-                  "Out of Stock"
-                ) : isFullyReserved ? (
-                  <span className="flex items-center gap-1.5">
-                    <Lock size={13} /> Reserved by other terminal
-                  </span>
-                ) : (
-                  "Add to Cart"
-                )}
+                {isOutOfStock ? "Out of Stock" : "Add to Cart"}
               </button>
             ) : (
               <div className="flex items-center justify-between bg-gray-100 rounded-lg p-1">
@@ -186,14 +141,7 @@ const ProductCard = memo(
                 </span>
                 <button
                   onClick={() => onUpdate(product, 1)}
-                  disabled={isMaxed}
-                  title={
-                    isMaxed
-                      ? reservedByOthers > 0
-                        ? `${reservedByOthers} unit(s) reserved by another terminal`
-                        : "No more stock available"
-                      : undefined
-                  }
+                  disabled={isMaxStock}
                   className="w-8 h-7 flex items-center justify-center bg-white rounded shadow-sm hover:bg-gray-50 disabled:opacity-50 active:scale-95 transition-transform"
                 >
                   <Plus size={14} />
@@ -212,16 +160,11 @@ ProductCard.displayName = "ProductCard";
 export const ProductGrid: React.FC<{ products: Product[] }> = ({
   products,
 }) => {
-  const {
-    addToCart,
-    cart,
-    updateCartItemQuantity,
-    currentShop,
-    getAvailableStock,
-    getReservedByOthers,
-  } = useApp();
+  // Extract currentShop from useApp
+  const { addToCart, cart, updateCartItemQuantity, currentShop } = useApp();
   const [viewMode, setViewMode] = useState<"grid" | "row">("grid");
 
+  // Determine the currency symbol, defaulting to "$"
   const currencySymbol = currentShop?.currency ?? "$";
 
   const cartMap = useMemo(
@@ -231,17 +174,12 @@ export const ProductGrid: React.FC<{ products: Product[] }> = ({
 
   const handleAddToCart = (product: Product) =>
     addToCart({ ...product, quantity: 1 });
-
   const handleUpdateQuantity = (product: Product, change: number) => {
-    const current = cartMap[product.id] || 0;
-    const newQuantity = Math.max(0, current + change);
-    if (newQuantity === 0) {
-      updateCartItemQuantity(product.id, 0);
-    } else if (current === 0 && change > 0) {
+    const newQuantity = Math.max(0, (cartMap[product.id] || 0) + change);
+    if (newQuantity === 0) updateCartItemQuantity(product.id, 0);
+    else if ((cartMap[product.id] || 0) === 0 && change > 0)
       addToCart({ ...product, quantity: newQuantity });
-    } else {
-      updateCartItemQuantity(product.id, newQuantity);
-    }
+    else updateCartItemQuantity(product.id, newQuantity);
   };
 
   return (
@@ -273,21 +211,17 @@ export const ProductGrid: React.FC<{ products: Product[] }> = ({
               : "flex flex-col gap-2 pb-20"
           }
         >
-          {products.map((product) => {
-            const reservedByOthers = getReservedByOthers(product.id);
-            return (
-              <ProductCard
-                key={product.id}
-                product={product}
-                quantityInCart={cartMap[product.id] || 0}
-                reservedByOthers={reservedByOthers}
-                viewMode={viewMode}
-                currencySymbol={currencySymbol}
-                onAdd={handleAddToCart}
-                onUpdate={handleUpdateQuantity}
-              />
-            );
-          })}
+          {products.map((product) => (
+            <ProductCard
+              key={product.id}
+              product={product}
+              quantityInCart={cartMap[product.id] || 0}
+              viewMode={viewMode}
+              currencySymbol={currencySymbol} // Passed down here
+              onAdd={handleAddToCart}
+              onUpdate={handleUpdateQuantity}
+            />
+          ))}
         </div>
       ) : (
         <div className="flex-1 flex flex-col items-center justify-center text-gray-400 pb-20">
