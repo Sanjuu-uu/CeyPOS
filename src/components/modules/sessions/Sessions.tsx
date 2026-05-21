@@ -707,6 +707,7 @@ export const Sessions: React.FC = () => {
       status: "created" | "linked";
       at: string;
       actor?: string;
+      expiresAt?: string; // present for pending sessions
     }>
   >([]);
   const [expandedSession, setExpandedSession] = useState<string | null>(null);
@@ -717,7 +718,7 @@ export const Sessions: React.FC = () => {
     Record<string, { scanUrl: string; expiresAt: string }>
   >({});
 
-  // Restore feed from localStorage when shop is known
+  // ── Restore feed from localStorage ──────────────────────────────────────────
   useEffect(() => {
     if (!shopId) return;
     try {
@@ -728,24 +729,42 @@ export const Sessions: React.FC = () => {
           setSessionFeed(parsed);
         }
       }
-    } catch {
-      // ignore parse errors
-    }
+    } catch { /* ignore */ }
   }, [shopId]);
 
-  // Persist feed to localStorage whenever it changes
+  // ── Persist feed ─────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!shopId) return;
     try {
-      localStorage.setItem(
-        `ceypos_session_feed_${shopId}`,
-        JSON.stringify(sessionFeed),
-      );
-    } catch {
-      // ignore storage errors
-    }
+      localStorage.setItem(`ceypos_session_feed_${shopId}`, JSON.stringify(sessionFeed));
+    } catch { /* ignore */ }
   }, [sessionFeed, shopId]);
 
+  // ── Restore scanUrls from localStorage (skip already-expired entries) ────────
+  useEffect(() => {
+    if (!shopId) return;
+    try {
+      const raw = localStorage.getItem(`ceypos_scan_urls_${shopId}`);
+      if (raw) {
+        const parsed = JSON.parse(raw) as Record<string, { scanUrl: string; expiresAt: string }>;
+        const now = Date.now();
+        const fresh = Object.fromEntries(
+          Object.entries(parsed).filter(([, v]) => Date.parse(v.expiresAt) > now),
+        );
+        if (Object.keys(fresh).length > 0) setSessionScanUrls(fresh);
+      }
+    } catch { /* ignore */ }
+  }, [shopId]);
+
+  // ── Persist scanUrls ─────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!shopId) return;
+    try {
+      localStorage.setItem(`ceypos_scan_urls_${shopId}`, JSON.stringify(sessionScanUrls));
+    } catch { /* ignore */ }
+  }, [sessionScanUrls, shopId]);
+
+  // ── WebSocket session events ─────────────────────────────────────────────────
   useEffect(() => {
     if (!shopId) return;
     const unsubscribe = db.on("sessionUpdated", (event: unknown) => {
@@ -755,15 +774,12 @@ export const Sessions: React.FC = () => {
         candidate.payload && typeof candidate.payload === "object"
           ? (candidate.payload as Record<string, unknown>)
           : {};
-      const action =
-        typeof candidate.action === "string" ? candidate.action : "";
+      const action = typeof candidate.action === "string" ? candidate.action : "";
       const sessionId = String(payload.sessionId || "");
       if (!sessionId) return;
 
       if (action === "revoked") {
-        setSessionFeed((prev) =>
-          prev.filter((item) => item.sessionId !== sessionId),
-        );
+        setSessionFeed((prev) => prev.filter((item) => item.sessionId !== sessionId));
         setExpandedSession((prev) => (prev === sessionId ? null : prev));
         setConfirmingRevoke((prev) => (prev === sessionId ? null : prev));
         return;
@@ -772,6 +788,10 @@ export const Sessions: React.FC = () => {
       if (action !== "linked" && action !== "created") return;
       const type = String(payload.sessionType || "");
       const actor = String(payload.linkedBy || payload.createdBy || "");
+      const expiresAt =
+        action === "created" && typeof payload.expiresAt === "string"
+          ? payload.expiresAt
+          : undefined;
       setSessionFeed((prev) =>
         [
           {
@@ -780,6 +800,7 @@ export const Sessions: React.FC = () => {
             status: action as "created" | "linked",
             at: new Date().toLocaleTimeString(),
             actor: actor || undefined,
+            expiresAt,
           },
           ...prev.filter((item) => item.sessionId !== sessionId),
         ].slice(0, 5),
@@ -787,6 +808,61 @@ export const Sessions: React.FC = () => {
     });
     return () => unsubscribe();
   }, [shopId]);
+
+  // ── Auto-delete pending sessions when they expire ────────────────────────────
+  useEffect(() => {
+    const timers: ReturnType<typeof setTimeout>[] = [];
+
+    for (const item of sessionFeed) {
+      if (item.status === "linked") continue;
+
+      // Prefer expiresAt from scanUrls map, fall back to feed item field
+      const expiresAt = sessionScanUrls[item.sessionId]?.expiresAt ?? item.expiresAt;
+      if (!expiresAt) continue;
+
+      const msLeft = Date.parse(expiresAt) - Date.now();
+      if (msLeft <= 0) {
+        // Already expired — queue microtask so we don't setState during render
+        const id = setTimeout(() => {
+          setSessionFeed((prev) => prev.filter((f) => f.sessionId !== item.sessionId));
+          setSessionScanUrls((prev) => {
+            const next = { ...prev };
+            delete next[item.sessionId];
+            return next;
+          });
+          setExpandedSession((prev) => (prev === item.sessionId ? null : prev));
+          setConfirmingRevoke((prev) => (prev === item.sessionId ? null : prev));
+          // Fire-and-forget revoke so the server record is also cleaned up
+          void postJSON("/api/mobile/sessions/revoke", {
+            sessionId: item.sessionId,
+            shopId,
+            userEmail,
+          }).catch(() => { /* already gone on server */ });
+        }, 0);
+        timers.push(id);
+      } else {
+        const id = setTimeout(() => {
+          setSessionFeed((prev) => prev.filter((f) => f.sessionId !== item.sessionId));
+          setSessionScanUrls((prev) => {
+            const next = { ...prev };
+            delete next[item.sessionId];
+            return next;
+          });
+          setExpandedSession((prev) => (prev === item.sessionId ? null : prev));
+          setConfirmingRevoke((prev) => (prev === item.sessionId ? null : prev));
+          void postJSON("/api/mobile/sessions/revoke", {
+            sessionId: item.sessionId,
+            shopId,
+            userEmail,
+          }).catch(() => { /* already gone on server */ });
+        }, msLeft);
+        timers.push(id);
+      }
+    }
+
+    return () => timers.forEach(clearTimeout);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionFeed, sessionScanUrls]);
 
   const activeByType = useMemo(() => {
     const map: Partial<Record<MobileSessionType, boolean>> = {};
@@ -806,10 +882,19 @@ export const Sessions: React.FC = () => {
     try {
       await postJSON("/api/mobile/sessions/revoke", { sessionId, shopId, userEmail });
       setSessionFeed((prev) => prev.filter((item) => item.sessionId !== sessionId));
+      setSessionScanUrls((prev) => {
+        const next = { ...prev };
+        delete next[sessionId];
+        return next;
+      });
       setExpandedSession((prev) => (prev === sessionId ? null : prev));
     } catch {
-      // session may already be gone — remove from feed anyway
       setSessionFeed((prev) => prev.filter((item) => item.sessionId !== sessionId));
+      setSessionScanUrls((prev) => {
+        const next = { ...prev };
+        delete next[sessionId];
+        return next;
+      });
     } finally {
       setRevokingSession(null);
       setConfirmingRevoke(null);
@@ -821,7 +906,14 @@ export const Sessions: React.FC = () => {
     scanUrl: string,
     expiresAt: string,
   ) => {
+    // Store the scan URL so the detail panel can render the QR
     setSessionScanUrls((prev) => ({ ...prev, [sessionId]: { scanUrl, expiresAt } }));
+    // Also stamp expiresAt onto the feed item (may arrive before/after WS event)
+    setSessionFeed((prev) =>
+      prev.map((item) =>
+        item.sessionId === sessionId ? { ...item, expiresAt } : item,
+      ),
+    );
   };
 
   const startSession = (sessionType: SessionType) => {
