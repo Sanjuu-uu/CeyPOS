@@ -340,7 +340,61 @@ interface SessionWizardProps {
   userEmail: string;
   userId: string | null;
   sidebarCollapsed: boolean;
+  onSessionCreated?: (sessionId: string, scanUrl: string, expiresAt: string) => void;
 }
+
+// ─── Detail panel helpers ─────────────────────────────────────────────────────
+
+/** Renders a QR code from a scan URL, self-contained with loading state. */
+const SessionQR: React.FC<{ scanUrl: string }> = ({ scanUrl }) => {
+  const [dataUrl, setDataUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    void QRCode.toDataURL(scanUrl, {
+      width: 160,
+      margin: 1,
+      color: { dark: "#0f172a", light: "#ffffff" },
+    }).then(setDataUrl).catch(() => setDataUrl(null));
+  }, [scanUrl]);
+
+  if (!dataUrl) {
+    return (
+      <div className="w-[140px] h-[140px] flex items-center justify-center rounded-lg border border-gray-200 bg-gray-50">
+        <Loader2 size={22} className="animate-spin text-gray-400" />
+      </div>
+    );
+  }
+  return (
+    <img
+      src={dataUrl}
+      alt="Session QR code"
+      className="w-[140px] h-[140px] rounded-lg border border-gray-200"
+    />
+  );
+};
+
+/** Live countdown until session expiry. */
+const SessionExpiry: React.FC<{ expiresAt: string }> = ({ expiresAt }) => {
+  const [secs, setSecs] = useState(() =>
+    Math.max(0, Math.floor((Date.parse(expiresAt) - Date.now()) / 1000)),
+  );
+
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      setSecs(Math.max(0, Math.floor((Date.parse(expiresAt) - Date.now()) / 1000)));
+    }, 1000);
+    return () => window.clearInterval(id);
+  }, [expiresAt]);
+
+  if (secs <= 0) {
+    return <span className="text-xs font-medium text-red-500">Expired</span>;
+  }
+  return (
+    <span className="text-xs font-medium text-amber-600">
+      Expires in {secs}s
+    </span>
+  );
+};
 
 type SessionState = "idle" | "creating" | "pending" | "linked" | "error";
 
@@ -360,6 +414,7 @@ const SessionWizard: React.FC<SessionWizardProps> = ({
   userEmail,
   userId,
   sidebarCollapsed,
+  onSessionCreated,
 }) => {
   const [sessionState, setSessionState] = useState<SessionState>("idle");
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
@@ -420,6 +475,7 @@ const SessionWizard: React.FC<SessionWizardProps> = ({
       setSessionLink(result.scanUrl);
       setSessionExpiresAt(result.expiresAt);
       setSessionState("pending");
+      onSessionCreated?.(result.sessionId, result.scanUrl, result.expiresAt);
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "Failed to create session.";
@@ -656,6 +712,10 @@ export const Sessions: React.FC = () => {
   const [expandedSession, setExpandedSession] = useState<string | null>(null);
   const [confirmingRevoke, setConfirmingRevoke] = useState<string | null>(null);
   const [revokingSession, setRevokingSession] = useState<string | null>(null);
+  // Maps sessionId → { scanUrl, expiresAt } for QR display in detail panel
+  const [sessionScanUrls, setSessionScanUrls] = useState<
+    Record<string, { scanUrl: string; expiresAt: string }>
+  >({});
 
   // Restore feed from localStorage when shop is known
   useEffect(() => {
@@ -754,6 +814,14 @@ export const Sessions: React.FC = () => {
       setRevokingSession(null);
       setConfirmingRevoke(null);
     }
+  };
+
+  const handleSessionCreated = (
+    sessionId: string,
+    scanUrl: string,
+    expiresAt: string,
+  ) => {
+    setSessionScanUrls((prev) => ({ ...prev, [sessionId]: { scanUrl, expiresAt } }));
   };
 
   const startSession = (sessionType: SessionType) => {
@@ -1054,53 +1122,95 @@ export const Sessions: React.FC = () => {
                           transition={{ duration: 0.18 }}
                           className="overflow-hidden"
                         >
-                          <div className="px-4 py-3 bg-white border-t border-gray-100 grid grid-cols-2 gap-x-6 gap-y-2.5">
-                            <div>
-                              <p className="text-[10px] uppercase tracking-wide text-gray-400">
-                                Session ID
-                              </p>
-                              <div className="flex items-center gap-1.5 mt-0.5">
-                                <p className="text-xs font-mono text-gray-700 break-all">
-                                  {item.sessionId}
-                                </p>
-                                <button
-                                  onClick={() =>
-                                    navigator.clipboard.writeText(
-                                      item.sessionId,
-                                    )
-                                  }
-                                  className="flex-shrink-0 p-0.5 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors"
-                                  title="Copy session ID"
-                                >
-                                  <Copy size={11} />
-                                </button>
+                          {(() => {
+                            const urlInfo = sessionScanUrls[item.sessionId];
+                            return (
+                              <div className="px-4 py-4 bg-white border-t border-gray-100">
+                                <div className="flex gap-4">
+                                  {/* QR code column */}
+                                  <div className="flex-shrink-0 flex flex-col items-center gap-2">
+                                    {urlInfo ? (
+                                      <>
+                                        <SessionQR scanUrl={urlInfo.scanUrl} />
+                                        <SessionExpiry
+                                          expiresAt={urlInfo.expiresAt}
+                                        />
+                                      </>
+                                    ) : (
+                                      <div className="w-[140px] h-[140px] flex flex-col items-center justify-center rounded-lg border border-dashed border-gray-200 bg-gray-50 text-center gap-2 px-3">
+                                        <QrCode size={28} className="text-gray-300" />
+                                        <p className="text-[10px] text-gray-400 leading-tight">
+                                          QR available only in the current session
+                                        </p>
+                                      </div>
+                                    )}
+                                  </div>
+
+                                  {/* Info column */}
+                                  <div className="flex-1 min-w-0 grid grid-cols-1 gap-2.5 content-start">
+                                    <div>
+                                      <p className="text-[10px] uppercase tracking-wide text-gray-400">
+                                        Session ID
+                                      </p>
+                                      <div className="flex items-center gap-1.5 mt-0.5">
+                                        <p className="text-xs font-mono text-gray-700 break-all">
+                                          {item.sessionId}
+                                        </p>
+                                        <button
+                                          onClick={() =>
+                                            navigator.clipboard.writeText(
+                                              item.sessionId,
+                                            )
+                                          }
+                                          className="flex-shrink-0 p-0.5 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors"
+                                          title="Copy session ID"
+                                        >
+                                          <Copy size={11} />
+                                        </button>
+                                      </div>
+                                    </div>
+                                    <div>
+                                      <p className="text-[10px] uppercase tracking-wide text-gray-400">
+                                        Type
+                                      </p>
+                                      <p className="text-xs text-gray-700 mt-0.5 capitalize">
+                                        {item.type}
+                                      </p>
+                                    </div>
+                                    <div>
+                                      <p className="text-[10px] uppercase tracking-wide text-gray-400">
+                                        Created by
+                                      </p>
+                                      <p className="text-xs text-gray-700 mt-0.5">
+                                        {item.actor || "—"}
+                                      </p>
+                                    </div>
+                                    <div>
+                                      <p className="text-[10px] uppercase tracking-wide text-gray-400">
+                                        Created at
+                                      </p>
+                                      <p className="text-xs text-gray-700 mt-0.5">
+                                        {item.at}
+                                      </p>
+                                    </div>
+                                    {urlInfo && (
+                                      <button
+                                        onClick={() =>
+                                          navigator.clipboard.writeText(
+                                            urlInfo.scanUrl,
+                                          )
+                                        }
+                                        className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-800 transition-colors self-start"
+                                      >
+                                        <Copy size={11} />
+                                        Copy scan link
+                                      </button>
+                                    )}
+                                  </div>
+                                </div>
                               </div>
-                            </div>
-                            <div>
-                              <p className="text-[10px] uppercase tracking-wide text-gray-400">
-                                Type
-                              </p>
-                              <p className="text-xs text-gray-700 mt-0.5 capitalize">
-                                {item.type}
-                              </p>
-                            </div>
-                            <div>
-                              <p className="text-[10px] uppercase tracking-wide text-gray-400">
-                                Created by
-                              </p>
-                              <p className="text-xs text-gray-700 mt-0.5">
-                                {item.actor || "—"}
-                              </p>
-                            </div>
-                            <div>
-                              <p className="text-[10px] uppercase tracking-wide text-gray-400">
-                                Created at
-                              </p>
-                              <p className="text-xs text-gray-700 mt-0.5">
-                                {item.at}
-                              </p>
-                            </div>
-                          </div>
+                            );
+                          })()}
                         </motion.div>
                       )}
                     </AnimatePresence>
@@ -1130,6 +1240,7 @@ export const Sessions: React.FC = () => {
             userEmail={userEmail}
             userId={userId}
             sidebarCollapsed={isSidebarCollapsed}
+            onSessionCreated={handleSessionCreated}
           />
         )}
       </AnimatePresence>
