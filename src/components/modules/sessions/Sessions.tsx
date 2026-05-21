@@ -5,12 +5,16 @@ import { useUser } from "@clerk/clerk-react";
 import {
   CheckCircle,
   Copy,
+  Eye,
+  EyeOff,
   Loader2,
   MonitorSpeaker,
+  PowerOff,
   QrCode,
   RefreshCw,
   Shield,
   Smartphone,
+  Trash2,
   Wifi,
   X,
 } from "lucide-react";
@@ -649,6 +653,9 @@ export const Sessions: React.FC = () => {
       actor?: string;
     }>
   >([]);
+  const [expandedSession, setExpandedSession] = useState<string | null>(null);
+  const [confirmingRevoke, setConfirmingRevoke] = useState<string | null>(null);
+  const [revokingSession, setRevokingSession] = useState<string | null>(null);
 
   // Restore feed from localStorage when shop is known
   useEffect(() => {
@@ -690,10 +697,20 @@ export const Sessions: React.FC = () => {
           : {};
       const action =
         typeof candidate.action === "string" ? candidate.action : "";
-      if (action !== "linked" && action !== "created") return;
       const sessionId = String(payload.sessionId || "");
-      const type = String(payload.sessionType || "");
       if (!sessionId) return;
+
+      if (action === "revoked") {
+        setSessionFeed((prev) =>
+          prev.filter((item) => item.sessionId !== sessionId),
+        );
+        setExpandedSession((prev) => (prev === sessionId ? null : prev));
+        setConfirmingRevoke((prev) => (prev === sessionId ? null : prev));
+        return;
+      }
+
+      if (action !== "linked" && action !== "created") return;
+      const type = String(payload.sessionType || "");
       const actor = String(payload.linkedBy || payload.createdBy || "");
       setSessionFeed((prev) =>
         [
@@ -723,6 +740,21 @@ export const Sessions: React.FC = () => {
     }
     return map;
   }, [sessionFeed]);
+
+  const handleRevoke = async (sessionId: string) => {
+    setRevokingSession(sessionId);
+    try {
+      await postJSON("/api/mobile/sessions/revoke", { sessionId, shopId, userEmail });
+      setSessionFeed((prev) => prev.filter((item) => item.sessionId !== sessionId));
+      setExpandedSession((prev) => (prev === sessionId ? null : prev));
+    } catch {
+      // session may already be gone — remove from feed anyway
+      setSessionFeed((prev) => prev.filter((item) => item.sessionId !== sessionId));
+    } finally {
+      setRevokingSession(null);
+      setConfirmingRevoke(null);
+    }
+  };
 
   const startSession = (sessionType: SessionType) => {
     if (sessionType === "cashier") {
@@ -893,32 +925,188 @@ export const Sessions: React.FC = () => {
                 </p>
               </div>
             ) : (
-              sessionFeed.map((item) => (
-                <div
-                  key={item.sessionId}
-                  className="flex items-center justify-between rounded-lg border border-gray-200 bg-gray-50 px-3 py-2"
-                >
-                  <div>
-                    <p className="text-sm font-medium text-gray-900">
-                      {item.type || "session"}{" "}
-                      <span
-                        className={
-                          item.status === "linked"
-                            ? "text-green-700"
-                            : "text-amber-700"
-                        }
-                      >
-                        ({item.status === "linked" ? "active" : "pending"})
-                      </span>
-                    </p>
-                    <p className="text-xs text-gray-500">{item.sessionId}</p>
-                    {item.actor && (
-                      <p className="text-xs text-gray-500">{item.actor}</p>
-                    )}
+              sessionFeed.map((item) => {
+                const isLinked = item.status === "linked";
+                const isExpanded = expandedSession === item.sessionId;
+                const isConfirming = confirmingRevoke === item.sessionId;
+                const isRevoking = revokingSession === item.sessionId;
+
+                return (
+                  <div
+                    key={item.sessionId}
+                    className="rounded-lg border border-gray-200 overflow-hidden"
+                  >
+                    {/* Main row */}
+                    <div
+                      className={`flex items-center gap-3 px-3 py-2.5 ${
+                        isLinked ? "bg-green-50/60" : "bg-amber-50/40"
+                      }`}
+                    >
+                      {/* Status dot */}
+                      <div
+                        className={`w-2 h-2 rounded-full flex-shrink-0 ${
+                          isLinked
+                            ? "bg-green-500 animate-pulse"
+                            : "bg-amber-400"
+                        }`}
+                      />
+
+                      {/* Info */}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-sm font-medium text-gray-900 capitalize">
+                            {item.type || "session"}
+                          </span>
+                          <span
+                            className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${
+                              isLinked
+                                ? "bg-green-100 text-green-700"
+                                : "bg-amber-100 text-amber-700"
+                            }`}
+                          >
+                            {isLinked ? "active" : "pending"}
+                          </span>
+                        </div>
+                        <p className="text-xs text-gray-400 font-mono truncate">
+                          {item.sessionId}
+                        </p>
+                        {item.actor && (
+                          <p className="text-xs text-gray-500">{item.actor}</p>
+                        )}
+                      </div>
+
+                      {/* Time + actions */}
+                      <div className="flex items-center gap-1 flex-shrink-0">
+                        <span className="text-xs text-gray-400 mr-1">
+                          {item.at}
+                        </span>
+
+                        {isConfirming ? (
+                          /* Inline confirm row */
+                          <div className="flex items-center gap-1">
+                            <button
+                              onClick={() => void handleRevoke(item.sessionId)}
+                              disabled={isRevoking}
+                              className="flex items-center gap-1 px-2 py-1 rounded text-xs font-medium bg-red-500 text-white hover:bg-red-600 transition-colors disabled:opacity-50"
+                            >
+                              {isRevoking ? (
+                                <Loader2 size={11} className="animate-spin" />
+                              ) : null}
+                              {isLinked ? "Deactivate" : "Delete"}
+                            </button>
+                            <button
+                              onClick={() => setConfirmingRevoke(null)}
+                              className="px-2 py-1 rounded text-xs text-gray-500 hover:bg-gray-100 transition-colors"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        ) : isLinked ? (
+                          /* Deactivate button for linked sessions */
+                          <button
+                            onClick={() =>
+                              setConfirmingRevoke(item.sessionId)
+                            }
+                            className="p-1.5 rounded-lg hover:bg-red-50 text-gray-400 hover:text-red-500 transition-colors"
+                            title="Deactivate session"
+                          >
+                            <PowerOff size={14} />
+                          </button>
+                        ) : (
+                          /* View details + delete for pending sessions */
+                          <>
+                            <button
+                              onClick={() =>
+                                setExpandedSession(
+                                  isExpanded ? null : item.sessionId,
+                                )
+                              }
+                              className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors"
+                              title={isExpanded ? "Hide details" : "View details"}
+                            >
+                              {isExpanded ? (
+                                <EyeOff size={14} />
+                              ) : (
+                                <Eye size={14} />
+                              )}
+                            </button>
+                            <button
+                              onClick={() =>
+                                setConfirmingRevoke(item.sessionId)
+                              }
+                              className="p-1.5 rounded-lg hover:bg-red-50 text-gray-400 hover:text-red-500 transition-colors"
+                              title="Delete session"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Expandable details panel (pending sessions only) */}
+                    <AnimatePresence>
+                      {isExpanded && !isLinked && (
+                        <motion.div
+                          initial={{ height: 0, opacity: 0 }}
+                          animate={{ height: "auto", opacity: 1 }}
+                          exit={{ height: 0, opacity: 0 }}
+                          transition={{ duration: 0.18 }}
+                          className="overflow-hidden"
+                        >
+                          <div className="px-4 py-3 bg-white border-t border-gray-100 grid grid-cols-2 gap-x-6 gap-y-2.5">
+                            <div>
+                              <p className="text-[10px] uppercase tracking-wide text-gray-400">
+                                Session ID
+                              </p>
+                              <div className="flex items-center gap-1.5 mt-0.5">
+                                <p className="text-xs font-mono text-gray-700 break-all">
+                                  {item.sessionId}
+                                </p>
+                                <button
+                                  onClick={() =>
+                                    navigator.clipboard.writeText(
+                                      item.sessionId,
+                                    )
+                                  }
+                                  className="flex-shrink-0 p-0.5 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors"
+                                  title="Copy session ID"
+                                >
+                                  <Copy size={11} />
+                                </button>
+                              </div>
+                            </div>
+                            <div>
+                              <p className="text-[10px] uppercase tracking-wide text-gray-400">
+                                Type
+                              </p>
+                              <p className="text-xs text-gray-700 mt-0.5 capitalize">
+                                {item.type}
+                              </p>
+                            </div>
+                            <div>
+                              <p className="text-[10px] uppercase tracking-wide text-gray-400">
+                                Created by
+                              </p>
+                              <p className="text-xs text-gray-700 mt-0.5">
+                                {item.actor || "—"}
+                              </p>
+                            </div>
+                            <div>
+                              <p className="text-[10px] uppercase tracking-wide text-gray-400">
+                                Created at
+                              </p>
+                              <p className="text-xs text-gray-700 mt-0.5">
+                                {item.at}
+                              </p>
+                            </div>
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
                   </div>
-                  <span className="text-xs text-gray-600">{item.at}</span>
-                </div>
-              ))
+                );
+              })
             )}
           </div>
         </div>

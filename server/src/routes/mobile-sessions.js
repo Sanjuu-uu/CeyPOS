@@ -255,4 +255,50 @@ router.post("/sessions/validate", (req, res) => {
   }
 });
 
+// POST /api/mobile/sessions/revoke  — delete / deactivate any session by sessionId
+router.post("/sessions/revoke", (req, res) => {
+  try {
+    const { sessionId, shopId, userEmail } = req.body || {};
+    if (!sessionId || !shopId) {
+      return res.status(400).json({ error: "sessionId and shopId are required" });
+    }
+    if (!shopDatabaseExists(shopId)) {
+      return res.status(404).json({ error: "Shop not found" });
+    }
+
+    const db = openShopDatabase(shopId);
+    try {
+      const session = db
+        .prepare(
+          "SELECT session_id, session_type FROM mobile_sessions WHERE session_id = ? AND shop_id = ?"
+        )
+        .get(sessionId, shopId);
+
+      if (!session) {
+        return res.status(404).json({ error: "Session not found" });
+      }
+
+      db.prepare("DELETE FROM mobile_sessions WHERE session_id = ?").run(sessionId);
+
+      publishChange({
+        shopId,
+        entity: "sessions",
+        action: "revoked",
+        payload: {
+          sessionId,
+          sessionType: session.session_type,
+          revokedBy: userEmail || null,
+        },
+      });
+
+      return res.json({ ok: true });
+    } finally {
+      db.close();
+    }
+  } catch (err) {
+    console.error("/mobile/sessions/revoke error", err);
+    return res.status(500).json({ error: "Failed to revoke session" });
+  }
+});
+
 export default router;
