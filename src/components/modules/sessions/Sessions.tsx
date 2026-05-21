@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import QRCode from "qrcode";
 import { useUser } from "@clerk/clerk-react";
@@ -364,6 +364,7 @@ const SessionWizard: React.FC<SessionWizardProps> = ({
   const [sessionError, setSessionError] = useState<string | null>(null);
   const [secondsRemaining, setSecondsRemaining] = useState<number>(0);
   const [linkedAt, setLinkedAt] = useState<string | null>(null);
+  const createCalledRef = useRef(false);
 
   const canCreateSession = Boolean(shopId && userEmail && sessionType);
   const flowLabel = sessionType === "checkout" ? "Checkout" : "Import";
@@ -424,7 +425,8 @@ const SessionWizard: React.FC<SessionWizardProps> = ({
   };
 
   useEffect(() => {
-    if (!sessionType) return;
+    if (!sessionType || createCalledRef.current) return;
+    createCalledRef.current = true;
     void createSession();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionType, shopId, userEmail]);
@@ -647,6 +649,35 @@ export const Sessions: React.FC = () => {
       actor?: string;
     }>
   >([]);
+
+  // Restore feed from localStorage when shop is known
+  useEffect(() => {
+    if (!shopId) return;
+    try {
+      const raw = localStorage.getItem(`ceypos_session_feed_${shopId}`);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setSessionFeed(parsed);
+        }
+      }
+    } catch {
+      // ignore parse errors
+    }
+  }, [shopId]);
+
+  // Persist feed to localStorage whenever it changes
+  useEffect(() => {
+    if (!shopId) return;
+    try {
+      localStorage.setItem(
+        `ceypos_session_feed_${shopId}`,
+        JSON.stringify(sessionFeed),
+      );
+    } catch {
+      // ignore storage errors
+    }
+  }, [sessionFeed, shopId]);
 
   useEffect(() => {
     if (!shopId) return;
