@@ -34,6 +34,14 @@ export interface CartItem extends Product {
   quantity: number;
 }
 
+export interface TerminalInfo {
+  terminalId: string;
+  label: string;
+  shopId: string;
+  reservations: Record<string, number>; // productId → quantity reserved in this terminal's cart
+  lastSeen: number; // ms timestamp
+}
+
 export interface Customer {
   id: string;
   shopId: string;
