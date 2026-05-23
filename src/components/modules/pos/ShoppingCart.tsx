@@ -35,6 +35,7 @@ import { useApp } from "../../../context/AppContext";
 import { db, BusinessRules } from "../../../lib/db";
 import { Customer, KeyboardShortcuts } from "../../../types";
 import { sendEmailReceipt } from "../../../lib/emailReceipt";
+import { sendSmsReceipt } from "../../../lib/smsReceipt";
 
 type PaymentMethod = "card" | "cash" | "mobile";
 type ReceiptMethod = "print" | "sms" | "email";
@@ -170,6 +171,10 @@ export const ShoppingCart: React.FC = () => {
   const [emailReceiptError, setEmailReceiptError] = useState<string | null>(
     null,
   );
+  const [smsReceiptStatus, setSmsReceiptStatus] = useState<
+    "idle" | "sending" | "sent" | "error"
+  >("idle");
+  const [smsReceiptError, setSmsReceiptError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
 
@@ -297,14 +302,19 @@ export const ShoppingCart: React.FC = () => {
   }, [cart.length, viewState, showRegisterModal]);
 
   const customerEmailRef = useRef<string>("");
+  const customerPhoneRef = useRef<string>("");
   useEffect(() => {
     customerEmailRef.current = (customer?.email || "").trim();
-    // If the customer (and their email) is removed, ensure the email pill
-    // is also deselected to keep the UI honest.
     if (!customerEmailRef.current) {
       setReceiptMethods((prev) => prev.filter((m) => m !== "email"));
     }
   }, [customer?.email]);
+  useEffect(() => {
+    customerPhoneRef.current = (customer?.phone || "").trim();
+    if (!customerPhoneRef.current) {
+      setReceiptMethods((prev) => prev.filter((m) => m !== "sms"));
+    }
+  }, [customer?.phone]);
 
   useEffect(() => {
     const toggle = (id: ReceiptMethod) => {
@@ -317,7 +327,11 @@ export const ShoppingCart: React.FC = () => {
       );
     };
     const handlePrint = () => toggle("print");
-    const handleSms = () => toggle("sms");
+    const handleSms = () => {
+      // SMS pill is gated on a customer phone being present.
+      if (!customerPhoneRef.current) return;
+      toggle("sms");
+    };
     const handleEmail = () => {
       // Email pill is gated on a customer email being present.
       if (!customerEmailRef.current) return;
@@ -540,24 +554,17 @@ export const ShoppingCart: React.FC = () => {
 
       // FIX 5: Real-time sync is now managed entirely by `db.ts` internally, eliminating duplicate WebSockets.
 
-      const shouldEmail =
-        receiptMethods.includes("email") &&
-        Boolean(customer?.email) &&
-        Boolean(currentShop?.id);
-
-      if (shouldEmail && customer?.email && currentShop) {
-        setEmailReceiptStatus("sending");
-        setEmailReceiptError(null);
-        sendEmailReceipt(
-          currentShop.id,
-          {
+      const sharedSalePayload = currentShop
+        ? {
             id: `sale_${Date.now()}`,
-            transactionCode: undefined,
-            customerInfo: {
-              name: customer.name || "",
-              email: customer.email,
-              phone: customer.phone || "",
-            },
+            transactionCode: undefined as string | undefined,
+            customerInfo: customer
+              ? {
+                  name: customer.name || "",
+                  email: customer.email || "",
+                  phone: customer.phone || "",
+                }
+              : undefined,
             shop: {
               name: currentShop.name,
               address: currentShop.address,
@@ -580,9 +587,18 @@ export const ShoppingCart: React.FC = () => {
               (pointsToEarn + pointsFromChange).toFixed(2),
             ),
             pointsRedeemed: actualPointsRedeemed,
-          },
-          customer.email,
-        )
+          }
+        : null;
+
+      const shouldEmail =
+        receiptMethods.includes("email") &&
+        Boolean(customer?.email) &&
+        Boolean(currentShop?.id);
+
+      if (shouldEmail && customer?.email && currentShop && sharedSalePayload) {
+        setEmailReceiptStatus("sending");
+        setEmailReceiptError(null);
+        sendEmailReceipt(currentShop.id, sharedSalePayload, customer.email)
           .then((result) => {
             if (result.ok) {
               setEmailReceiptStatus("sent");
@@ -602,6 +618,34 @@ export const ShoppingCart: React.FC = () => {
         setEmailReceiptError(null);
       }
 
+      const shouldSms =
+        receiptMethods.includes("sms") &&
+        Boolean(customer?.phone) &&
+        Boolean(currentShop?.id);
+
+      if (shouldSms && customer?.phone && currentShop && sharedSalePayload) {
+        setSmsReceiptStatus("sending");
+        setSmsReceiptError(null);
+        sendSmsReceipt(currentShop.id, sharedSalePayload, customer.phone)
+          .then((result) => {
+            if (result.ok) {
+              setSmsReceiptStatus("sent");
+            } else {
+              setSmsReceiptStatus("error");
+              setSmsReceiptError(result.message || result.error || null);
+            }
+          })
+          .catch((err: unknown) => {
+            setSmsReceiptStatus("error");
+            setSmsReceiptError(
+              err instanceof Error ? err.message : "send_failed",
+            );
+          });
+      } else {
+        setSmsReceiptStatus("idle");
+        setSmsReceiptError(null);
+      }
+
       setViewState("success");
       setTimeout(() => {
         clearCart();
@@ -616,6 +660,8 @@ export const ShoppingCart: React.FC = () => {
         setReceiptMethods(["print"]);
         setEmailReceiptStatus("idle");
         setEmailReceiptError(null);
+        setSmsReceiptStatus("idle");
+        setSmsReceiptError(null);
         setSaving(false);
       }, 2000);
     } catch (error) {
@@ -640,7 +686,7 @@ export const ShoppingCart: React.FC = () => {
         </p>
         {emailReceiptStatus !== "idle" && (
           <div
-            className={`mb-4 px-4 py-2 rounded-full text-xs font-medium border inline-flex items-center gap-2 ${
+            className={`mb-3 px-4 py-2 rounded-full text-xs font-medium border inline-flex items-center gap-2 ${
               emailReceiptStatus === "sent"
                 ? "bg-green-50 text-green-700 border-green-200"
                 : emailReceiptStatus === "sending"
@@ -654,6 +700,24 @@ export const ShoppingCart: React.FC = () => {
               `Receipt emailed to ${customer?.email}`}
             {emailReceiptStatus === "error" &&
               `Email failed${emailReceiptError ? `: ${emailReceiptError}` : ""}`}
+          </div>
+        )}
+        {smsReceiptStatus !== "idle" && (
+          <div
+            className={`mb-4 px-4 py-2 rounded-full text-xs font-medium border inline-flex items-center gap-2 ${
+              smsReceiptStatus === "sent"
+                ? "bg-green-50 text-green-700 border-green-200"
+                : smsReceiptStatus === "sending"
+                  ? "bg-blue-50 text-blue-700 border-blue-200"
+                  : "bg-red-50 text-red-700 border-red-200"
+            }`}
+          >
+            <MessageSquare size={14} />
+            {smsReceiptStatus === "sending" && "Sending SMS receipt…"}
+            {smsReceiptStatus === "sent" &&
+              `SMS sent to ${customer?.phone}`}
+            {smsReceiptStatus === "error" &&
+              `SMS failed${smsReceiptError ? `: ${smsReceiptError}` : ""}`}
           </div>
         )}
         {rules?.loyalty.enabled && customer && (

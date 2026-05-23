@@ -7,6 +7,7 @@ import { useApp } from '../../../context/AppContext';
 import { db } from '../../../lib/db';
 import { Sale } from '../../../types';
 import { sendEmailReceipt } from '../../../lib/emailReceipt';
+import { sendSmsReceipt } from '../../../lib/smsReceipt';
 
 interface SalesUpdatedPayload {
   shopId?: string;
@@ -44,6 +45,8 @@ export const Receipts: React.FC = () => {
   const [selectedSaleId, setSelectedSaleId] = useState<string | null>(null);
   const [emailRecipient, setEmailRecipient] = useState('');
   const [emailState, setEmailState] = useState<EmailSendState>({ status: 'idle' });
+  const [smsRecipient, setSmsRecipient] = useState('');
+  const [smsState, setSmsState] = useState<EmailSendState>({ status: 'idle' });
 
   useEffect(() => {
     if (!currentShop) {
@@ -119,11 +122,16 @@ export const Receipts: React.FC = () => {
 
   useEffect(() => {
     setEmailRecipient(selectedReceipt?.customerInfo?.email ?? '');
+    setSmsRecipient(selectedReceipt?.customerInfo?.phone ?? '');
     setEmailState({ status: 'idle' });
+    setSmsState({ status: 'idle' });
   }, [selectedReceipt?.id]);
 
   const isValidEmail = (value: string) =>
     /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
+
+  const isValidPhone = (value: string) =>
+    String(value || '').replace(/\D+/g, '').length >= 9;
 
   const handleSendEmail = async () => {
     if (!selectedReceipt || !currentShop) return;
@@ -172,6 +180,57 @@ export const Receipts: React.FC = () => {
       setEmailState({
         status: 'error',
         message: result.message || result.error || 'Failed to send email',
+      });
+    }
+  };
+
+  const handleSendSms = async () => {
+    if (!selectedReceipt || !currentShop) return;
+    const recipient = smsRecipient.trim();
+    if (!isValidPhone(recipient)) {
+      setSmsState({ status: 'error', message: 'Enter a valid phone number.' });
+      return;
+    }
+    setSmsState({ status: 'sending' });
+    const result = await sendSmsReceipt(
+      currentShop.id,
+      {
+        id: selectedReceipt.id,
+        transactionCode: selectedReceipt.id,
+        customerInfo: {
+          name: selectedReceipt.customerInfo?.name || '',
+          email: selectedReceipt.customerInfo?.email || '',
+          phone: recipient,
+        },
+        shop: {
+          name: currentShop.name,
+          address: currentShop.address,
+          contact: currentShop.contact,
+        },
+        items: selectedReceipt.items.map((item) => ({
+          name: item.name,
+          quantity: item.quantity,
+          price: item.price,
+        })),
+        subtotal: selectedReceipt.subtotal ?? selectedReceipt.total,
+        tax: selectedReceipt.tax ?? 0,
+        discount: selectedReceipt.discount ?? 0,
+        total: selectedReceipt.total,
+        paymentMethod: selectedReceipt.paymentMethod,
+        currency: currentShop.currency ?? '$',
+        timestamp: selectedReceipt.timestamp,
+        receiptNumber: receiptNumber(selectedReceipt.id),
+        pointsEarned: selectedReceipt.pointsEarned,
+        pointsRedeemed: selectedReceipt.pointsRedeemed,
+      },
+      recipient,
+    );
+    if (result.ok) {
+      setSmsState({ status: 'sent', url: result.url });
+    } else {
+      setSmsState({
+        status: 'error',
+        message: result.message || result.error || 'Failed to send SMS',
       });
     }
   };
@@ -419,19 +478,61 @@ export const Receipts: React.FC = () => {
               )}
               <div className="flex space-x-3">
                 <Input
-                  placeholder="Phone number"
+                  placeholder="Phone number (e.g. 0771234567)"
                   leftIcon={<Phone size={16} />}
-                  defaultValue={selectedReceipt.customerInfo?.phone || ''}
+                  value={smsRecipient}
+                  onChange={(e) => {
+                    setSmsRecipient(e.target.value);
+                    if (smsState.status !== 'idle') {
+                      setSmsState({ status: 'idle' });
+                    }
+                  }}
                 />
                 <Button
                   variant="primary"
-                  icon={<Phone size={16} />}
-                  disabled
-                  title="SMS receipt — not yet implemented"
+                  icon={
+                    smsState.status === 'sending' ? (
+                      <Loader2 size={16} className="animate-spin" />
+                    ) : (
+                      <Phone size={16} />
+                    )
+                  }
+                  onClick={handleSendSms}
+                  disabled={
+                    smsState.status === 'sending' ||
+                    !isValidPhone(smsRecipient)
+                  }
                 >
-                  Send
+                  {smsState.status === 'sending' ? 'Sending…' : 'Send'}
                 </Button>
               </div>
+              {smsState.status === 'sent' && (
+                <div className="flex items-start gap-2 text-xs text-green-700 bg-green-50 border border-green-200 rounded-lg px-3 py-2">
+                  <CheckCircle2 size={14} className="mt-0.5 flex-shrink-0" />
+                  <div>
+                    SMS sent to <strong>{smsRecipient}</strong>.
+                    {smsState.url && (
+                      <>
+                        {' '}
+                        <a
+                          href={smsState.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="underline decoration-green-400 hover:decoration-green-700"
+                        >
+                          Open link
+                        </a>
+                      </>
+                    )}
+                  </div>
+                </div>
+              )}
+              {smsState.status === 'error' && (
+                <div className="flex items-start gap-2 text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                  <AlertCircle size={14} className="mt-0.5 flex-shrink-0" />
+                  <div>{smsState.message}</div>
+                </div>
+              )}
             </div>
           </Card>
         ) : (

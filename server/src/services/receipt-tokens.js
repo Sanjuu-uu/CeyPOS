@@ -34,6 +34,7 @@ function getDb() {
       transaction_code TEXT,
       receipt_id TEXT,
       recipient_email TEXT,
+      recipient_phone TEXT,
       snapshot_json TEXT NOT NULL,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       sent_at DATETIME,
@@ -47,6 +48,17 @@ function getDb() {
     CREATE INDEX IF NOT EXISTS idx_receipt_tokens_txcode
       ON receipt_tokens(shop_id, transaction_code);
   `);
+
+  // Idempotent migration for pre-existing databases that were created before
+  // the `recipient_phone` column existed.
+  const cols = db
+    .prepare("PRAGMA table_info(receipt_tokens)")
+    .all()
+    .map((c) => c.name);
+  if (!cols.includes("recipient_phone")) {
+    db.exec("ALTER TABLE receipt_tokens ADD COLUMN recipient_phone TEXT");
+  }
+
   cachedDb = db;
   return cachedDb;
 }
@@ -97,17 +109,18 @@ export function findOrCreateReceiptToken({
   return token;
 }
 
-export function recordSend({ token, recipientEmail }) {
+export function recordSend({ token, recipientEmail, recipientPhone }) {
   const db = getDb();
   const now = new Date().toISOString();
   db.prepare(
     `UPDATE receipt_tokens
         SET recipient_email = COALESCE(?, recipient_email),
+            recipient_phone = COALESCE(?, recipient_phone),
             sent_at = COALESCE(sent_at, ?),
             last_sent_at = ?,
             send_count = COALESCE(send_count, 0) + 1
       WHERE token = ?`,
-  ).run(recipientEmail || null, now, now, token);
+  ).run(recipientEmail || null, recipientPhone || null, now, now, token);
 }
 
 export function getReceiptByToken(token) {
