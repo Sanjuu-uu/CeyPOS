@@ -1,9 +1,17 @@
 [build]
 builder = "NIXPACKS"
-buildCommand = "npm install && npm install --prefix server && npm install --prefix mcp-server && npm run build"
+# package.json declares workspaces ([".", "server", "mcp-server"]), so a
+# single root `npm ci` installs every workspace's dependencies. The
+# previous `npm install --prefix ...` triplet was redundant and was
+# competing with the workspace symlinks.
+buildCommand = "npm ci --include=dev && npm run build"
 
 [build.env]
 NIXPACKS_NODE_VERSION = "20.18.1"
+# Force install of devDependencies even if Railway sets NODE_ENV=production
+# globally — `vite`, `typescript`, and `@vitejs/plugin-react` are devDeps
+# and must be present at build time.
+NPM_CONFIG_PRODUCTION = "false"
 
 [deploy]
 startCommand = "npm run start:railway"

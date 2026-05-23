@@ -1,0 +1,67 @@
+# Build/dev artifacts that must NEVER be copied into the container.
+# Without these entries, `COPY . /app/.` clobbers the freshly-installed
+# Linux node_modules with the macOS one from your laptop, which breaks
+# binaries like vite, better-sqlite3, sqlite3 (exit 127 / Exec format error).
+node_modules
+**/node_modules
+
+# Build output (will be regenerated inside the container).
+dist
+build
+.next
+out
+release
+.cache
+.parcel-cache
+.turbo
+.vite
+
+# OS / editor cruft
+.DS_Store
+Thumbs.db
+.vscode
+.idea
+*.swp
+*.swo
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+*.log
+logs
+
+# Local env files — secrets must live in Railway's variable store, never
+# baked into the image. (Railway already injects them at runtime.)
+.env
+.env.*
+!.env.example
+server/.env
+server/.env.*
+mcp-server/.env
+mcp-server/.env.*
+
+# Local databases — production uses the persistent volume mount.
+database/*.db
+database/*.db-wal
+database/*.db-shm
+
+# Git internals not needed at runtime
+.git
+.gitignore
+.gitattributes
+.github
+
+# Test/CI artifacts
+coverage
+.nyc_output
+
+# Docs and dev-only files
+*.md
+!README.md
+docs
+
+# Misc
+.husky
+.eslintcache
+tsconfig.tsbuildinfo
