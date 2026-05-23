@@ -1,6 +1,11 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
-import { Printer, Download, Receipt as ReceiptIcon } from "lucide-react";
+import {
+  Printer,
+  Download,
+  Receipt as ReceiptIcon,
+  Loader2,
+} from "lucide-react";
 
 interface PublicReceiptItem {
   name?: string;
@@ -40,10 +45,59 @@ const formatDateTime = (iso?: string): string => {
   }).format(d);
 };
 
+const formatInvoiceNumber = (raw?: string): string => {
+  const original = String(raw ?? "");
+  if (/^INV-/i.test(original)) return original.toUpperCase();
+  const cleaned = original.replace(/[^a-zA-Z0-9]/g, "");
+  if (!cleaned) return "INV-00000000";
+  return `INV-${cleaned.slice(-8).toUpperCase().padStart(8, "0")}`;
+};
+
 export const PublicReceiptView: React.FC = () => {
   const { token } = useParams<{ token: string }>();
   const [state, setState] = useState<"loading" | "ok" | "error">("loading");
   const [receipt, setReceipt] = useState<PublicReceipt | null>(null);
+  const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
+  const receiptBodyRef = useRef<HTMLDivElement>(null);
+
+  const handleDownloadPdf = async () => {
+    if (!receiptBodyRef.current || isGeneratingPdf) return;
+    setIsGeneratingPdf(true);
+    try {
+      // Lazy-load html2pdf.js so the ~600KB bundle is only fetched when
+      // the user actually clicks Save as PDF.
+      const html2pdf = (await import("html2pdf.js")).default as (
+        ...args: unknown[]
+      ) => {
+        set: (opts: Record<string, unknown>) => {
+          from: (el: HTMLElement) => { save: () => Promise<void> };
+        };
+      };
+      const invoice = formatInvoiceNumber(receipt?.receiptNumber);
+      await html2pdf()
+        .set({
+          margin: [12, 12, 12, 12],
+          filename: `receipt-${invoice}.pdf`,
+          image: { type: "jpeg", quality: 0.98 },
+          html2canvas: {
+            scale: 2,
+            useCORS: true,
+            backgroundColor: "#ffffff",
+            logging: false,
+          },
+          jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
+          pagebreak: { mode: ["css", "legacy"] },
+        })
+        .from(receiptBodyRef.current)
+        .save();
+    } catch (err) {
+      console.error("PDF generation failed:", err);
+      // Fall back to native print dialog so the customer still has a way out.
+      window.print();
+    } finally {
+      setIsGeneratingPdf(false);
+    }
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -117,14 +171,27 @@ export const PublicReceiptView: React.FC = () => {
             <Printer size={16} /> Print
           </button>
           <button
-            onClick={() => window.print()}
-            className="flex items-center gap-2 bg-gray-900 hover:bg-black text-sm font-semibold text-[#ecff76] px-3 py-2 rounded-lg"
+            onClick={handleDownloadPdf}
+            disabled={isGeneratingPdf}
+            className="flex items-center gap-2 bg-gray-900 hover:bg-black disabled:bg-gray-700 disabled:cursor-wait text-sm font-semibold text-[#ecff76] px-3 py-2 rounded-lg transition-colors"
           >
-            <Download size={16} /> Save as PDF
+            {isGeneratingPdf ? (
+              <>
+                <Loader2 size={16} className="animate-spin" />
+                Generating…
+              </>
+            ) : (
+              <>
+                <Download size={16} /> Save as PDF
+              </>
+            )}
           </button>
         </div>
 
-        <div className="bg-white rounded-xl border border-gray-200 p-6 sm:p-8 shadow-sm print:border-0 print:shadow-none">
+        <div
+          ref={receiptBodyRef}
+          className="bg-white rounded-xl border border-gray-200 p-6 sm:p-8 shadow-sm print:border-0 print:shadow-none"
+        >
           <div className="text-center mb-6">
             <h1 className="text-xl font-semibold text-gray-900">
               {receipt.shop?.name || "Your store"}
