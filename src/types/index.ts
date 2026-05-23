@@ -85,6 +85,9 @@ export interface KeyboardShortcuts {
   confirmPayment: string;
   increaseQuantity: string;
   decreaseQuantity: string;
+  toggleReceiptPrint: string;
+  toggleReceiptSms: string;
+  toggleReceiptEmail: string;
 }
 
 export type ModuleName =

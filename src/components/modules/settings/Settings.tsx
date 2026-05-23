@@ -40,6 +40,9 @@ const KeyboardSettings: React.FC = () => {
     confirmPayment: "Enter",
     increaseQuantity: "+",
     decreaseQuantity: "-",
+    toggleReceiptPrint: "F6",
+    toggleReceiptSms: "F7",
+    toggleReceiptEmail: "F8",
   };
 
   const [shortcuts, setShortcuts] = useState<KeyboardShortcuts>(
@@ -231,6 +234,21 @@ const KeyboardSettings: React.FC = () => {
               id: "decreaseQuantity",
               label: "Decrease Quantity",
               desc: "Remove -1 from last scanned item",
+            },
+            {
+              id: "toggleReceiptPrint",
+              label: "Toggle Print Receipt",
+              desc: "Select / deselect printed receipt",
+            },
+            {
+              id: "toggleReceiptSms",
+              label: "Toggle SMS Receipt",
+              desc: "Select / deselect SMS PDF receipt",
+            },
+            {
+              id: "toggleReceiptEmail",
+              label: "Toggle Email Receipt",
+              desc: "Select / deselect email receipt",
             },
           ].map((item) => {
             const currentShortcut =

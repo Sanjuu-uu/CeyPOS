@@ -271,6 +271,21 @@ const usePOSKeyboardFlow = ({
         window.dispatchEvent(new CustomEvent("pos:remove-customer"));
         return;
       }
+      if (currentComboNorm === normalizeKey(shortcuts.toggleReceiptPrint)) {
+        e.preventDefault();
+        window.dispatchEvent(new CustomEvent("pos:toggle-receipt-print"));
+        return;
+      }
+      if (currentComboNorm === normalizeKey(shortcuts.toggleReceiptSms)) {
+        e.preventDefault();
+        window.dispatchEvent(new CustomEvent("pos:toggle-receipt-sms"));
+        return;
+      }
+      if (currentComboNorm === normalizeKey(shortcuts.toggleReceiptEmail)) {
+        e.preventDefault();
+        window.dispatchEvent(new CustomEvent("pos:toggle-receipt-email"));
+        return;
+      }
 
       if (currentComboNorm === normalizeKey(shortcuts.confirmPayment)) {
         if (isTyping && !isSearchFocused) {

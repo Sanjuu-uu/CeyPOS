@@ -27,12 +27,17 @@ import {
   Wifi,
   WifiOff,
   RefreshCw,
+  Printer,
+  MessageSquare,
+  Mail,
 } from "lucide-react";
 import { useApp } from "../../../context/AppContext";
 import { db, BusinessRules } from "../../../lib/db";
 import { Customer, KeyboardShortcuts } from "../../../types";
 
 type PaymentMethod = "card" | "cash" | "mobile";
+type ReceiptMethod = "print" | "sms" | "email";
+const MAX_RECEIPT_METHODS = 2;
 
 const useCartCalculations = (
   cartTotal: number,
@@ -155,6 +160,9 @@ export const ShoppingCart: React.FC = () => {
   );
   const [selectedPaymentMethod, setSelectedPaymentMethod] =
     useState<PaymentMethod>("cash");
+  const [receiptMethods, setReceiptMethods] = useState<ReceiptMethod[]>([
+    "print",
+  ]);
   const [saving, setSaving] = useState(false);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
 
@@ -280,6 +288,30 @@ export const ShoppingCart: React.FC = () => {
       window.removeEventListener("pos:escape", handleEscape);
     };
   }, [cart.length, viewState, showRegisterModal]);
+
+  useEffect(() => {
+    const toggle = (id: ReceiptMethod) => {
+      setReceiptMethods((prev) =>
+        prev.includes(id)
+          ? prev.filter((m) => m !== id)
+          : prev.length >= MAX_RECEIPT_METHODS
+            ? prev
+            : [...prev, id],
+      );
+    };
+    const handlePrint = () => toggle("print");
+    const handleSms = () => toggle("sms");
+    const handleEmail = () => toggle("email");
+
+    window.addEventListener("pos:toggle-receipt-print", handlePrint);
+    window.addEventListener("pos:toggle-receipt-sms", handleSms);
+    window.addEventListener("pos:toggle-receipt-email", handleEmail);
+    return () => {
+      window.removeEventListener("pos:toggle-receipt-print", handlePrint);
+      window.removeEventListener("pos:toggle-receipt-sms", handleSms);
+      window.removeEventListener("pos:toggle-receipt-email", handleEmail);
+    };
+  }, []);
 
   useEffect(() => {
     const loadedRules = db.businessRules.get();
@@ -498,6 +530,7 @@ export const ShoppingCart: React.FC = () => {
         setRedeemPointsInput("");
         setConvertChangeToPoints(false);
         setSaveChangeAmount("");
+        setReceiptMethods(["print"]);
         setSaving(false);
       }, 2000);
     } catch (error) {
@@ -1133,6 +1166,86 @@ export const ShoppingCart: React.FC = () => {
                   </div>
                 </div>
               )}
+            </div>
+            <div className="bg-white p-3 rounded-lg border border-gray-200">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-bold text-gray-700">
+                  Receipt Delivery
+                </span>
+                <span
+                  className={`text-[10px] font-medium ${receiptMethods.length >= MAX_RECEIPT_METHODS ? "text-amber-600" : "text-gray-400"}`}
+                >
+                  {receiptMethods.length}/{MAX_RECEIPT_METHODS} selected
+                </span>
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                {[
+                  {
+                    id: "print",
+                    icon: Printer,
+                    label: "Print",
+                    shortcut: shortcuts.toggleReceiptPrint,
+                  },
+                  {
+                    id: "sms",
+                    icon: MessageSquare,
+                    label: "SMS PDF",
+                    shortcut: shortcuts.toggleReceiptSms,
+                  },
+                  {
+                    id: "email",
+                    icon: Mail,
+                    label: "Email",
+                    shortcut: shortcuts.toggleReceiptEmail,
+                  },
+                ].map((opt) => {
+                  const id = opt.id as ReceiptMethod;
+                  const isSelected = receiptMethods.includes(id);
+                  const isDisabled =
+                    !isSelected &&
+                    receiptMethods.length >= MAX_RECEIPT_METHODS;
+                  return (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      onClick={() =>
+                        setReceiptMethods((prev) =>
+                          prev.includes(id)
+                            ? prev.filter((m) => m !== id)
+                            : prev.length >= MAX_RECEIPT_METHODS
+                              ? prev
+                              : [...prev, id],
+                        )
+                      }
+                      disabled={isDisabled}
+                      title={`Toggle ${opt.label} [${opt.shortcut}]`}
+                      className={`flex flex-col items-center justify-center py-2 rounded-lg border transition-all ${
+                        isSelected
+                          ? "bg-[#ecff76] text-gray-900 border-[#dcefa8] shadow-md font-bold"
+                          : isDisabled
+                            ? "bg-gray-50 text-gray-300 border-gray-100 cursor-not-allowed"
+                            : "bg-white text-gray-500 border-gray-200 hover:border-gray-300"
+                      }`}
+                    >
+                      <opt.icon size={20} className="mb-1" />
+                      <span className="text-xs">{opt.label}</span>
+                      <kbd
+                        className={`mt-1 text-[9px] font-mono px-1.5 py-0.5 rounded border ${
+                          isSelected
+                            ? "bg-white/70 border-[#dcefa8] text-gray-700"
+                            : "bg-gray-100 border-gray-200 text-gray-500"
+                        }`}
+                      >
+                        {opt.shortcut}
+                      </kbd>
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="text-center text-[10px] text-gray-400 mt-2">
+                Choose up to {MAX_RECEIPT_METHODS} ways to deliver the receipt
+                · keys customizable in Settings
+              </div>
             </div>
             <div className="flex gap-2">
               <button

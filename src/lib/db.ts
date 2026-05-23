@@ -1296,6 +1296,9 @@ export const db = {
         confirmPayment: "Enter",
         increaseQuantity: "+",
         decreaseQuantity: "-",
+        toggleReceiptPrint: "F6",
+        toggleReceiptSms: "F7",
+        toggleReceiptEmail: "F8",
       };
 
       let data = localStorage.getItem(`pos_device_shortcuts_${userId}_v2`);
