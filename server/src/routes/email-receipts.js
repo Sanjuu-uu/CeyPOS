@@ -152,8 +152,14 @@ router.post("/send", async (req, res) => {
       shopAddress: snapshot.shop?.address,
       shopContact: snapshot.shop?.contact,
       customerName: snapshot.customerInfo?.name,
-      receiptNumber: snapshot.receiptNumber.slice(-12) || "—",
+      receiptNumber: snapshot.receiptNumber,
       total: snapshot.total,
+      subtotal: snapshot.subtotal,
+      tax: snapshot.tax,
+      discount: snapshot.discount,
+      paymentMethod: snapshot.paymentMethod,
+      timestamp: snapshot.timestamp,
+      items: snapshot.items,
       currency: snapshot.currency,
       publicReceiptUrl: publicUrl,
     });
@@ -164,6 +170,7 @@ router.post("/send", async (req, res) => {
       subject,
       htmlBody: html,
       textBody: text,
+      replyTo: (process.env.ZEPTOMAIL_REPLY_TO || "").trim() || undefined,
     });
 
     recordHit(tKey);
