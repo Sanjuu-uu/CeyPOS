@@ -1,16 +1,25 @@
 [build]
 builder = "NIXPACKS"
-# package.json declares workspaces ([".", "server", "mcp-server"]), so a
-# single root `npm ci` installs every workspace's dependencies. The
-# previous `npm install --prefix ...` triplet was redundant and was
-# competing with the workspace symlinks.
-buildCommand = "npm ci --include=dev && npm run build"
+# Nixpacks's install phase already runs `npm ci` (which respects
+# workspaces and installs every package). Our build phase only needs to
+# (a) make sure devDependencies are present, then (b) run vite build.
+#
+# Why `npm install --include=dev`, not `npm ci`:
+#   The Nixpacks-generated Dockerfile mounts a cache at
+#   /app/node_modules/.cache during this RUN step. `npm ci` wipes
+#   node_modules wholesale, which fails with EBUSY because .cache is a
+#   bind mount it cannot rmdir. `npm install` is incremental and
+#   ignores mount points it doesn't need to touch.
+#
+# `--include=dev` overrides any NODE_ENV=production that Railway may
+# inject globally, so vite/typescript/@vitejs/plugin-react remain
+# installed at build time.
+buildCommand = "npm install --include=dev --no-audit --no-fund && npm run build"
 
 [build.env]
 NIXPACKS_NODE_VERSION = "20.18.1"
-# Force install of devDependencies even if Railway sets NODE_ENV=production
-# globally — `vite`, `typescript`, and `@vitejs/plugin-react` are devDeps
-# and must be present at build time.
+# Belt-and-suspenders: also force the install phase's `npm ci` to keep
+# devDependencies, in case Railway's global env sets NODE_ENV=production.
 NPM_CONFIG_PRODUCTION = "false"
 
 [deploy]
