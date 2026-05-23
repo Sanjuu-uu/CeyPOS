@@ -155,6 +155,8 @@ router.post("/send", async (req, res) => {
       receiptNumber: snapshot.receiptNumber.slice(-12) || "—",
       total: snapshot.total,
       currency: snapshot.currency,
+      paymentMethod: snapshot.paymentMethod,
+      timestamp: snapshot.timestamp,
       publicReceiptUrl: publicUrl,
     });
 
