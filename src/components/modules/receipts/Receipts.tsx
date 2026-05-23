@@ -2,10 +2,11 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Card } from '../../ui/Card';
 import { Input } from '../../ui/Input';
 import { Button } from '../../ui/Button';
-import { Search, Printer, Mail, Phone, Download, Receipt } from 'lucide-react';
+import { Search, Printer, Mail, Phone, Download, Receipt, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
 import { useApp } from '../../../context/AppContext';
 import { db } from '../../../lib/db';
 import { Sale } from '../../../types';
+import { sendEmailReceipt } from '../../../lib/emailReceipt';
 
 interface SalesUpdatedPayload {
   shopId?: string;
@@ -30,11 +31,19 @@ const isSaleCreatedPayload = (payload: unknown): payload is SaleCreatedPayload =
       typeof (payload as SaleCreatedPayload).shopId === 'string'
   );
 
+type EmailSendState =
+  | { status: 'idle' }
+  | { status: 'sending' }
+  | { status: 'sent'; url?: string }
+  | { status: 'error'; message: string };
+
 export const Receipts: React.FC = () => {
   const { currentShop } = useApp();
   const [searchTerm, setSearchTerm] = useState('');
   const [sales, setSales] = useState<Sale[]>([]);
   const [selectedSaleId, setSelectedSaleId] = useState<string | null>(null);
+  const [emailRecipient, setEmailRecipient] = useState('');
+  const [emailState, setEmailState] = useState<EmailSendState>({ status: 'idle' });
 
   useEffect(() => {
     if (!currentShop) {
@@ -107,6 +116,65 @@ export const Receipts: React.FC = () => {
     () => (selectedSaleId ? sales.find((sale) => sale.id === selectedSaleId) ?? null : null),
     [selectedSaleId, sales]
   );
+
+  useEffect(() => {
+    setEmailRecipient(selectedReceipt?.customerInfo?.email ?? '');
+    setEmailState({ status: 'idle' });
+  }, [selectedReceipt?.id]);
+
+  const isValidEmail = (value: string) =>
+    /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
+
+  const handleSendEmail = async () => {
+    if (!selectedReceipt || !currentShop) return;
+    const recipient = emailRecipient.trim();
+    if (!isValidEmail(recipient)) {
+      setEmailState({ status: 'error', message: 'Enter a valid email address.' });
+      return;
+    }
+    setEmailState({ status: 'sending' });
+    const result = await sendEmailReceipt(
+      currentShop.id,
+      {
+        id: selectedReceipt.id,
+        transactionCode: selectedReceipt.id,
+        customerInfo: {
+          name: selectedReceipt.customerInfo?.name || '',
+          email: recipient,
+          phone: selectedReceipt.customerInfo?.phone || '',
+        },
+        shop: {
+          name: currentShop.name,
+          address: currentShop.address,
+          contact: currentShop.contact,
+        },
+        items: selectedReceipt.items.map((item) => ({
+          name: item.name,
+          quantity: item.quantity,
+          price: item.price,
+        })),
+        subtotal: selectedReceipt.subtotal ?? selectedReceipt.total,
+        tax: selectedReceipt.tax ?? 0,
+        discount: selectedReceipt.discount ?? 0,
+        total: selectedReceipt.total,
+        paymentMethod: selectedReceipt.paymentMethod,
+        currency: currentShop.currency ?? '$',
+        timestamp: selectedReceipt.timestamp,
+        receiptNumber: receiptNumber(selectedReceipt.id),
+        pointsEarned: selectedReceipt.pointsEarned,
+        pointsRedeemed: selectedReceipt.pointsRedeemed,
+      },
+      recipient,
+    );
+    if (result.ok) {
+      setEmailState({ status: 'sent', url: result.url });
+    } else {
+      setEmailState({
+        status: 'error',
+        message: result.message || result.error || 'Failed to send email',
+      });
+    }
+  };
 
   const receiptNumber = (saleId: string) => {
     const parts = saleId.split('_').filter(Boolean);
@@ -296,15 +364,59 @@ export const Receipts: React.FC = () => {
                 <Input
                   placeholder="Email address"
                   leftIcon={<Mail size={16} />}
-                  defaultValue={selectedReceipt.customerInfo?.email || ''}
+                  value={emailRecipient}
+                  onChange={(e) => {
+                    setEmailRecipient(e.target.value);
+                    if (emailState.status !== 'idle') {
+                      setEmailState({ status: 'idle' });
+                    }
+                  }}
                 />
                 <Button
                   variant="primary"
-                  icon={<Mail size={16} />}
+                  icon={
+                    emailState.status === 'sending' ? (
+                      <Loader2 size={16} className="animate-spin" />
+                    ) : (
+                      <Mail size={16} />
+                    )
+                  }
+                  onClick={handleSendEmail}
+                  disabled={
+                    emailState.status === 'sending' ||
+                    !isValidEmail(emailRecipient)
+                  }
                 >
-                  Send
+                  {emailState.status === 'sending' ? 'Sending…' : 'Send'}
                 </Button>
               </div>
+              {emailState.status === 'sent' && (
+                <div className="flex items-start gap-2 text-xs text-green-700 bg-green-50 border border-green-200 rounded-lg px-3 py-2">
+                  <CheckCircle2 size={14} className="mt-0.5 flex-shrink-0" />
+                  <div>
+                    Receipt emailed to <strong>{emailRecipient}</strong>.
+                    {emailState.url && (
+                      <>
+                        {' '}
+                        <a
+                          href={emailState.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="underline decoration-green-400 hover:decoration-green-700"
+                        >
+                          Open link
+                        </a>
+                      </>
+                    )}
+                  </div>
+                </div>
+              )}
+              {emailState.status === 'error' && (
+                <div className="flex items-start gap-2 text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                  <AlertCircle size={14} className="mt-0.5 flex-shrink-0" />
+                  <div>{emailState.message}</div>
+                </div>
+              )}
               <div className="flex space-x-3">
                 <Input
                   placeholder="Phone number"
@@ -314,6 +426,8 @@ export const Receipts: React.FC = () => {
                 <Button
                   variant="primary"
                   icon={<Phone size={16} />}
+                  disabled
+                  title="SMS receipt — not yet implemented"
                 >
                   Send
                 </Button>

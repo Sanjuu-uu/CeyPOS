@@ -34,6 +34,7 @@ import {
 import { useApp } from "../../../context/AppContext";
 import { db, BusinessRules } from "../../../lib/db";
 import { Customer, KeyboardShortcuts } from "../../../types";
+import { sendEmailReceipt } from "../../../lib/emailReceipt";
 
 type PaymentMethod = "card" | "cash" | "mobile";
 type ReceiptMethod = "print" | "sms" | "email";
@@ -163,6 +164,12 @@ export const ShoppingCart: React.FC = () => {
   const [receiptMethods, setReceiptMethods] = useState<ReceiptMethod[]>([
     "print",
   ]);
+  const [emailReceiptStatus, setEmailReceiptStatus] = useState<
+    "idle" | "sending" | "sent" | "error"
+  >("idle");
+  const [emailReceiptError, setEmailReceiptError] = useState<string | null>(
+    null,
+  );
   const [saving, setSaving] = useState(false);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
 
@@ -289,6 +296,16 @@ export const ShoppingCart: React.FC = () => {
     };
   }, [cart.length, viewState, showRegisterModal]);
 
+  const customerEmailRef = useRef<string>("");
+  useEffect(() => {
+    customerEmailRef.current = (customer?.email || "").trim();
+    // If the customer (and their email) is removed, ensure the email pill
+    // is also deselected to keep the UI honest.
+    if (!customerEmailRef.current) {
+      setReceiptMethods((prev) => prev.filter((m) => m !== "email"));
+    }
+  }, [customer?.email]);
+
   useEffect(() => {
     const toggle = (id: ReceiptMethod) => {
       setReceiptMethods((prev) =>
@@ -301,7 +318,11 @@ export const ShoppingCart: React.FC = () => {
     };
     const handlePrint = () => toggle("print");
     const handleSms = () => toggle("sms");
-    const handleEmail = () => toggle("email");
+    const handleEmail = () => {
+      // Email pill is gated on a customer email being present.
+      if (!customerEmailRef.current) return;
+      toggle("email");
+    };
 
     window.addEventListener("pos:toggle-receipt-print", handlePrint);
     window.addEventListener("pos:toggle-receipt-sms", handleSms);
@@ -519,6 +540,68 @@ export const ShoppingCart: React.FC = () => {
 
       // FIX 5: Real-time sync is now managed entirely by `db.ts` internally, eliminating duplicate WebSockets.
 
+      const shouldEmail =
+        receiptMethods.includes("email") &&
+        Boolean(customer?.email) &&
+        Boolean(currentShop?.id);
+
+      if (shouldEmail && customer?.email && currentShop) {
+        setEmailReceiptStatus("sending");
+        setEmailReceiptError(null);
+        sendEmailReceipt(
+          currentShop.id,
+          {
+            id: `sale_${Date.now()}`,
+            transactionCode: undefined,
+            customerInfo: {
+              name: customer.name || "",
+              email: customer.email,
+              phone: customer.phone || "",
+            },
+            shop: {
+              name: currentShop.name,
+              address: currentShop.address,
+              contact: currentShop.contact,
+            },
+            items: cart.map((item) => ({
+              name: item.name,
+              quantity: item.quantity,
+              price: item.price,
+            })),
+            subtotal: cartTotal,
+            tax: taxAmount,
+            discount: discountAmount,
+            total: finalTotal,
+            paymentMethod: selectedPaymentMethod,
+            currency: currencySymbol,
+            timestamp: new Date().toISOString(),
+            receiptNumber: String(Date.now()).slice(-8),
+            pointsEarned: Number(
+              (pointsToEarn + pointsFromChange).toFixed(2),
+            ),
+            pointsRedeemed: actualPointsRedeemed,
+          },
+          customer.email,
+        )
+          .then((result) => {
+            if (result.ok) {
+              setEmailReceiptStatus("sent");
+            } else {
+              setEmailReceiptStatus("error");
+              setEmailReceiptError(result.message || result.error || null);
+            }
+          })
+          .catch((err: unknown) => {
+            setEmailReceiptStatus("error");
+            setEmailReceiptError(
+              err instanceof Error ? err.message : "send_failed",
+            );
+          });
+      } else {
+        setEmailReceiptStatus("idle");
+        setEmailReceiptError(null);
+      }
+
       setViewState("success");
       setTimeout(() => {
         clearCart();
@@ -531,6 +614,8 @@ export const ShoppingCart: React.FC = () => {
         setConvertChangeToPoints(false);
         setSaveChangeAmount("");
         setReceiptMethods(["print"]);
+        setEmailReceiptStatus("idle");
+        setEmailReceiptError(null);
         setSaving(false);
       }, 2000);
     } catch (error) {
@@ -553,6 +638,24 @@ export const ShoppingCart: React.FC = () => {
           Total Paid: {currencySymbol}
           {finalTotal.toFixed(2)}
         </p>
+        {emailReceiptStatus !== "idle" && (
+          <div
+            className={`mb-4 px-4 py-2 rounded-full text-xs font-medium border inline-flex items-center gap-2 ${
+              emailReceiptStatus === "sent"
+                ? "bg-green-50 text-green-700 border-green-200"
+                : emailReceiptStatus === "sending"
+                  ? "bg-blue-50 text-blue-700 border-blue-200"
+                  : "bg-red-50 text-red-700 border-red-200"
+            }`}
+          >
+            <Mail size={14} />
+            {emailReceiptStatus === "sending" && "Sending e-receipt…"}
+            {emailReceiptStatus === "sent" &&
+              `Receipt emailed to ${customer?.email}`}
+            {emailReceiptStatus === "error" &&
+              `Email failed${emailReceiptError ? `: ${emailReceiptError}` : ""}`}
+          </div>
+        )}
         {rules?.loyalty.enabled && customer && (
           <div className="space-y-2 mb-6">
             {(pointsToEarn > 0 || pointsFromChange > 0) && (
@@ -1185,40 +1288,51 @@ export const ShoppingCart: React.FC = () => {
                     icon: Printer,
                     label: "Print",
                     shortcut: shortcuts.toggleReceiptPrint,
+                    blocked: false,
+                    blockedReason: "",
                   },
                   {
                     id: "sms",
                     icon: MessageSquare,
                     label: "SMS PDF",
                     shortcut: shortcuts.toggleReceiptSms,
+                    blocked: !customer?.phone,
+                    blockedReason: "Add customer phone to enable",
                   },
                   {
                     id: "email",
                     icon: Mail,
                     label: "Email",
                     shortcut: shortcuts.toggleReceiptEmail,
+                    blocked: !customer?.email,
+                    blockedReason: "Add customer email to enable",
                   },
                 ].map((opt) => {
                   const id = opt.id as ReceiptMethod;
                   const isSelected = receiptMethods.includes(id);
-                  const isDisabled =
+                  const isCapDisabled =
                     !isSelected &&
                     receiptMethods.length >= MAX_RECEIPT_METHODS;
+                  const isDisabled = opt.blocked || isCapDisabled;
+                  const tooltip = opt.blocked
+                    ? opt.blockedReason
+                    : `Toggle ${opt.label} [${opt.shortcut}]`;
                   return (
                     <button
                       key={opt.id}
                       type="button"
-                      onClick={() =>
+                      onClick={() => {
+                        if (opt.blocked) return;
                         setReceiptMethods((prev) =>
                           prev.includes(id)
                             ? prev.filter((m) => m !== id)
                             : prev.length >= MAX_RECEIPT_METHODS
                               ? prev
                               : [...prev, id],
-                        )
-                      }
+                        );
+                      }}
                       disabled={isDisabled}
-                      title={`Toggle ${opt.label} [${opt.shortcut}]`}
+                      title={tooltip}
                       className={`flex flex-col items-center justify-center py-2 rounded-lg border transition-all ${
                         isSelected
                           ? "bg-[#ecff76] text-gray-900 border-[#dcefa8] shadow-md font-bold"
@@ -1242,6 +1356,11 @@ export const ShoppingCart: React.FC = () => {
                   );
                 })}
               </div>
+              {!customer?.email && receiptMethods.length < MAX_RECEIPT_METHODS && (
+                <div className="text-center text-[10px] text-amber-600 mt-2">
+                  Add a customer with an email to enable e-receipt delivery
+                </div>
+              )}
               <div className="text-center text-[10px] text-gray-400 mt-2">
                 Choose up to {MAX_RECEIPT_METHODS} ways to deliver the receipt
                 · keys customizable in Settings

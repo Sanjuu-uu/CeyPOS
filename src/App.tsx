@@ -19,6 +19,7 @@ import Login from "./pages/login/Login";
 import Register from "./pages/register/Register";
 import AboutUs from "./pages/aboutUs/AboutUs";
 import MobileScan from "./pages/mobilesessions/MobileScan";
+import { PublicReceiptView } from "./components/modules/receipts/PublicReceiptView";
 
 // Get Clerk publishable key from environment
 const clerkPubKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
@@ -547,8 +548,16 @@ function AppRouter() {
     );
   }
 
-  // Show different app based on authentication status
-  return isSignedIn ? <PostAuthApp /> : <PreAuthApp />;
+  // Public routes available regardless of auth state (e.g. e-receipt links).
+  return (
+    <Routes>
+      <Route path="/r/:token" element={<PublicReceiptView />} />
+      <Route
+        path="*"
+        element={isSignedIn ? <PostAuthApp /> : <PreAuthApp />}
+      />
+    </Routes>
+  );
 }
 
 export default App;

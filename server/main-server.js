@@ -48,6 +48,7 @@ import paymentMethodRoutes from "./src/routes/payment-methods.js";
 import businessRulesRoutes from "./src/routes/business-rules.js"; // <--- ADDED
 import mobileSessionRoutes from "./src/routes/mobile-sessions.js";
 import analyticsChatRoutes from "./src/routes/analytics-chat.js";
+import emailReceiptRoutes from "./src/routes/email-receipts.js";
 
 app.get("/api/health", (req, res) => {
   res.json({ status: "ok" });
@@ -174,6 +175,7 @@ app.use("/api/payment-methods", paymentMethodRoutes);
 app.use("/api/business-rules", businessRulesRoutes); // <--- REGISTERED
 app.use("/api/mobile", mobileSessionRoutes);
 app.use("/api/analytics/chats", analyticsChatRoutes);
+app.use("/api/email-receipts", emailReceiptRoutes);
 
 // Serve static files from the dist directory (built frontend)
 const distPath = path.join(process.cwd(), "../dist");
