@@ -36,6 +36,8 @@ import { db, BusinessRules } from "../../../lib/db";
 import { Customer, KeyboardShortcuts } from "../../../types";
 import { sendEmailReceipt } from "../../../lib/emailReceipt";
 import { sendSmsReceipt } from "../../../lib/smsReceipt";
+import { printReceipt } from "../../../lib/receiptPrinter";
+import { getPrinterSettings } from "../../../lib/printerSettings";
 
 type PaymentMethod = "card" | "cash" | "mobile";
 type ReceiptMethod = "print" | "sms" | "email";
@@ -659,6 +661,65 @@ export const ShoppingCart: React.FC = () => {
       } else {
         setSmsReceiptStatus("idle");
         setSmsReceiptError(null);
+      }
+
+      const printerSettings = getPrinterSettings(userId);
+      const shouldPrint =
+        receiptMethods.includes("print") &&
+        printerSettings.autoPrint &&
+        Boolean(sharedSalePayload);
+
+      if (shouldPrint && sharedSalePayload && currentShop) {
+        // Fire-and-forget. printReceipt opens a hidden iframe and calls
+        // window.print(); we don't await the customer choosing a printer.
+        const cashReceivedNum = parseFloat(cashReceived) || 0;
+        printReceipt(
+          {
+            shop: {
+              name: currentShop.name,
+              address: currentShop.address,
+              contact: currentShop.contact,
+            },
+            customer: customer
+              ? {
+                  name: customer.name || "",
+                  email: customer.email || "",
+                  phone: customer.phone || "",
+                }
+              : null,
+            // Include each item's inventory code so the printed receipt
+            // shows "1954: EH NECTO PET 1.5L" rather than just the name.
+            items: cart.map((item) => ({
+              name: item.name,
+              code: String(item.id || ""),
+              quantity: item.quantity,
+              price: item.price,
+            })),
+            subtotal: sharedSalePayload.subtotal,
+            tax: sharedSalePayload.tax,
+            discount: sharedSalePayload.discount,
+            total: sharedSalePayload.total,
+            paymentMethod: sharedSalePayload.paymentMethod,
+            currency: sharedSalePayload.currency,
+            timestamp: sharedSalePayload.timestamp,
+            receiptNumber: sharedSalePayload.receiptNumber,
+            cashier: currentUser?.name || "",
+            pointsEarned: sharedSalePayload.pointsEarned,
+            pointsRedeemed: sharedSalePayload.pointsRedeemed,
+            // Cash tendered / change — only meaningful for cash sales but
+            // safe to pass always; the template hides them unless the
+            // payment method is "cash" AND cashReceived is provided.
+            cashReceived: cashReceivedNum > 0 ? cashReceivedNum : undefined,
+            changeAmount: cashChangeToReturn > 0 ? cashChangeToReturn : 0,
+          },
+          {
+            userId,
+            shopId: currentShop.id,
+            sale: sharedSalePayload,
+          },
+        ).catch((err) => {
+          console.error("Print failed:", err);
+        });
       }
 
       setViewState("success");

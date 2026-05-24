@@ -21,9 +21,18 @@ import {
   RotateCcw,
   Copy,
 } from "lucide-react";
+import { Printer as PrinterIcon } from "lucide-react";
 import { useApp } from "../../../context/AppContext";
 import { db, normalizeKey } from "../../../lib/db";
 import { KeyboardShortcuts } from "../../../types";
+import {
+  getPrinterSettings,
+  savePrinterSettings,
+  resetPrinterSettings,
+  type PrinterSettings as PrinterSettingsType,
+  type PaperWidth,
+} from "../../../lib/printerSettings";
+import { printReceipt } from "../../../lib/receiptPrinter";
 
 // --- ADVANCED KEYBOARD SETTINGS ---
 const KeyboardSettings: React.FC = () => {
@@ -343,6 +352,237 @@ const KeyboardSettings: React.FC = () => {
   );
 };
 
+// --- PRINTER SETTINGS ---
+const PrinterSettingsPanel: React.FC = () => {
+  const { currentUser, currentShop } = useApp();
+  const userId = currentUser?.id || "default";
+
+  const [settings, setSettings] = useState<PrinterSettingsType>(() =>
+    getPrinterSettings(userId),
+  );
+  const [savedFlash, setSavedFlash] = useState(false);
+  const [testStatus, setTestStatus] = useState<
+    "idle" | "printing" | "ok" | "error"
+  >("idle");
+
+  useEffect(() => {
+    setSettings(getPrinterSettings(userId));
+  }, [userId]);
+
+  const update = <K extends keyof PrinterSettingsType>(
+    key: K,
+    value: PrinterSettingsType[K],
+  ) => {
+    setSettings((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const handleSave = () => {
+    savePrinterSettings(userId, settings);
+    setSavedFlash(true);
+    setTimeout(() => setSavedFlash(false), 1500);
+  };
+
+  const handleReset = () => {
+    const fresh = resetPrinterSettings(userId);
+    setSettings(fresh);
+    setSavedFlash(true);
+    setTimeout(() => setSavedFlash(false), 1500);
+  };
+
+  const handleTestPrint = async () => {
+    setTestStatus("printing");
+    // Persist current edits before testing so the test uses what the user sees.
+    savePrinterSettings(userId, settings);
+    const now = new Date().toISOString();
+    const result = await printReceipt(
+      {
+        shop: {
+          name: currentShop?.name || "Your store",
+          address: currentShop?.address || "",
+          contact: currentShop?.contact || "",
+        },
+        customer: { name: "Test Customer" },
+        items: [
+          { name: "Test item A", code: "T001", quantity: 2, price: 250 },
+          {
+            name: "Test item B (long name to check wrap)",
+            code: "T002",
+            quantity: 1,
+            price: 99.5,
+          },
+        ],
+        subtotal: 599.5,
+        tax: 0,
+        discount: 0,
+        total: 599.5,
+        cashReceived: 600,
+        changeAmount: 0.5,
+        paymentMethod: "cash",
+        currency: currentShop?.currency || "$",
+        timestamp: now,
+        receiptNumber: "TEST-0000",
+        cashier: currentUser?.name || "",
+      },
+      { userId },
+    );
+    setTestStatus(result.ok ? "ok" : "error");
+    setTimeout(() => setTestStatus("idle"), 2500);
+  };
+
+  return (
+    <div className="space-y-6 mt-6">
+      <Card
+        title={`Receipt Printer (${currentUser?.name || "this device"})`}
+        className="border border-gray-100"
+      >
+        <p className="text-sm text-gray-500 mb-6">
+          Per-device printer preferences. Settings are saved in this browser
+          only — each cashier terminal can have its own paper size.
+        </p>
+
+        <div className="space-y-5">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Paper width
+            </label>
+            <div className="grid grid-cols-2 gap-3 max-w-md">
+              {(["80mm", "58mm"] as PaperWidth[]).map((width) => (
+                <button
+                  key={width}
+                  type="button"
+                  onClick={() => update("paperWidth", width)}
+                  className={`px-4 py-3 rounded-lg border-2 text-left transition-all ${
+                    settings.paperWidth === width
+                      ? "border-verde-primary bg-verde-50 text-gray-900"
+                      : "border-gray-200 text-gray-600 hover:border-gray-300"
+                  }`}
+                >
+                  <div className="font-semibold">{width}</div>
+                  <div className="text-xs text-gray-500 mt-1">
+                    {width === "80mm"
+                      ? "Epson TM-T20, Star TSP100, Xprinter XP-Q200"
+                      : "Pocket / Bluetooth printers"}
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between p-3 border border-gray-200 rounded-lg max-w-md">
+            <div>
+              <p className="font-medium text-gray-800 text-sm">Print QR code</p>
+              <p className="text-xs text-gray-500">
+                Customer can scan to open the digital receipt
+              </p>
+            </div>
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input
+                type="checkbox"
+                className="sr-only peer"
+                checked={settings.showQrCode}
+                onChange={(e) => update("showQrCode", e.target.checked)}
+              />
+              <div className="w-11 h-6 bg-gray-200 peer-checked:bg-verde-primary rounded-full peer transition-colors after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-5"></div>
+            </label>
+          </div>
+
+          <div className="flex items-center justify-between p-3 border border-gray-200 rounded-lg max-w-md">
+            <div>
+              <p className="font-medium text-gray-800 text-sm">
+                Auto-print at checkout
+              </p>
+              <p className="text-xs text-gray-500">
+                Fire the printer when "Print" pill is selected
+              </p>
+            </div>
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input
+                type="checkbox"
+                className="sr-only peer"
+                checked={settings.autoPrint}
+                onChange={(e) => update("autoPrint", e.target.checked)}
+              />
+              <div className="w-11 h-6 bg-gray-200 peer-checked:bg-verde-primary rounded-full peer transition-colors after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-5"></div>
+            </label>
+          </div>
+
+          <div className="max-w-md">
+            <Input
+              label="Footer text"
+              value={settings.footerText}
+              onChange={(e) => update("footerText", e.target.value)}
+              placeholder="Thank you for shopping with us!"
+            />
+          </div>
+
+          <div className="max-w-md">
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Trailing blank lines ({settings.feedLines})
+            </label>
+            <input
+              type="range"
+              min={0}
+              max={6}
+              step={1}
+              value={settings.feedLines}
+              onChange={(e) => update("feedLines", Number(e.target.value))}
+              className="w-full accent-verde-primary"
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              How much paper is fed below the last line before the cut.
+              Increase if your printer cuts too close to text.
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-6 pt-4 border-t border-gray-100 flex flex-wrap items-center gap-3">
+          <Button variant="primary" icon={<Save size={16} />} onClick={handleSave}>
+            Save Settings
+          </Button>
+          <Button
+            variant="secondary"
+            icon={<PrinterIcon size={16} />}
+            onClick={handleTestPrint}
+            disabled={testStatus === "printing"}
+          >
+            {testStatus === "printing" ? "Opening print…" : "Test print"}
+          </Button>
+          <Button
+            variant="secondary"
+            icon={<RotateCcw size={16} />}
+            onClick={handleReset}
+          >
+            Reset
+          </Button>
+          {savedFlash && (
+            <span className="text-xs font-medium text-green-700 bg-green-50 px-2 py-1 rounded-md border border-green-200 flex items-center gap-1">
+              <CheckCircle2 size={12} /> Saved
+            </span>
+          )}
+          {testStatus === "ok" && (
+            <span className="text-xs font-medium text-green-700 bg-green-50 px-2 py-1 rounded-md border border-green-200 flex items-center gap-1">
+              <CheckCircle2 size={12} /> Print dialog opened
+            </span>
+          )}
+          {testStatus === "error" && (
+            <span className="text-xs font-medium text-red-700 bg-red-50 px-2 py-1 rounded-md border border-red-200 flex items-center gap-1">
+              <AlertCircle size={12} /> Print failed — check console
+            </span>
+          )}
+        </div>
+
+        <div className="mt-6 text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded-lg p-3 leading-relaxed">
+          <strong className="text-gray-700">Production tip:</strong> for
+          silent printing (no dialog) on a cashier terminal, launch Chrome
+          with <code className="bg-white px-1 rounded">--kiosk-printing</code>
+          {" "}and set the thermal printer as the system default. The browser
+          will then send each job straight to the printer.
+        </div>
+      </Card>
+    </div>
+  );
+};
+
 // --- MAIN SETTINGS COMPONENT ---
 export const Settings: React.FC = () => {
   const { currentShop, currentUser } = useApp();
@@ -354,6 +594,7 @@ export const Settings: React.FC = () => {
     | "appearance"
     | "backup"
     | "keybindings"
+    | "printer"
   >("general");
   const [showPassword, setShowPassword] = useState(false);
 
@@ -456,6 +697,11 @@ export const Settings: React.FC = () => {
               icon: <Keyboard size={16} />,
             },
             {
+              id: "printer",
+              label: "Printer",
+              icon: <PrinterIcon size={16} />,
+            },
+            {
               id: "notifications",
               label: "Notifications",
               icon: <Bell size={16} />,
@@ -489,6 +735,7 @@ export const Settings: React.FC = () => {
       </div>
 
       {activeTab === "keybindings" && <KeyboardSettings />}
+      {activeTab === "printer" && <PrinterSettingsPanel />}
 
       {/* General Settings Tab */}
       {activeTab === "general" && (

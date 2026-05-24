@@ -8,6 +8,7 @@ import { db } from '../../../lib/db';
 import { Sale } from '../../../types';
 import { sendEmailReceipt } from '../../../lib/emailReceipt';
 import { sendSmsReceipt } from '../../../lib/smsReceipt';
+import { printReceipt } from '../../../lib/receiptPrinter';
 
 interface SalesUpdatedPayload {
   shopId?: string;
@@ -39,7 +40,7 @@ type EmailSendState =
   | { status: 'error'; message: string };
 
 export const Receipts: React.FC = () => {
-  const { currentShop } = useApp();
+  const { currentShop, currentUser } = useApp();
   const [searchTerm, setSearchTerm] = useState('');
   const [sales, setSales] = useState<Sale[]>([]);
   const [selectedSaleId, setSelectedSaleId] = useState<string | null>(null);
@@ -47,6 +48,7 @@ export const Receipts: React.FC = () => {
   const [emailState, setEmailState] = useState<EmailSendState>({ status: 'idle' });
   const [smsRecipient, setSmsRecipient] = useState('');
   const [smsState, setSmsState] = useState<EmailSendState>({ status: 'idle' });
+  const [isPrinting, setIsPrinting] = useState(false);
 
   useEffect(() => {
     if (!currentShop) {
@@ -181,6 +183,76 @@ export const Receipts: React.FC = () => {
         status: 'error',
         message: result.message || result.error || 'Failed to send email',
       });
+    }
+  };
+
+  const handlePrint = async () => {
+    if (!selectedReceipt || !currentShop || isPrinting) return;
+    setIsPrinting(true);
+    try {
+      const saleForMint = {
+        id: selectedReceipt.id,
+        transactionCode: selectedReceipt.id,
+        customerInfo: selectedReceipt.customerInfo,
+        shop: {
+          name: currentShop.name,
+          address: currentShop.address,
+          contact: currentShop.contact,
+        },
+        items: selectedReceipt.items.map((item) => ({
+          name: item.name,
+          quantity: item.quantity,
+          price: item.price,
+        })),
+        subtotal: selectedReceipt.subtotal ?? selectedReceipt.total,
+        tax: selectedReceipt.tax ?? 0,
+        discount: selectedReceipt.discount ?? 0,
+        total: selectedReceipt.total,
+        paymentMethod: selectedReceipt.paymentMethod,
+        currency: currentShop.currency ?? '$',
+        timestamp: selectedReceipt.timestamp,
+        receiptNumber: selectedReceipt.id,
+      };
+      await printReceipt(
+        {
+          shop: {
+            name: currentShop.name,
+            address: currentShop.address,
+            contact: currentShop.contact,
+          },
+          customer: selectedReceipt.customerInfo
+            ? {
+                name: selectedReceipt.customerInfo.name,
+                email: selectedReceipt.customerInfo.email,
+                phone: selectedReceipt.customerInfo.phone,
+              }
+            : null,
+          items: selectedReceipt.items.map((item) => ({
+            name: item.name,
+            code: String(item.id || ''),
+            quantity: item.quantity,
+            price: item.price,
+          })),
+          subtotal: saleForMint.subtotal,
+          tax: saleForMint.tax,
+          discount: saleForMint.discount,
+          total: saleForMint.total,
+          paymentMethod: saleForMint.paymentMethod,
+          currency: saleForMint.currency,
+          timestamp: saleForMint.timestamp,
+          receiptNumber: selectedReceipt.id,
+          cashier: currentUser?.name || '',
+          pointsEarned: selectedReceipt.pointsEarned,
+          pointsRedeemed: selectedReceipt.pointsRedeemed,
+        },
+        {
+          userId: currentUser?.id || 'default',
+          shopId: currentShop.id,
+          sale: saleForMint,
+        },
+      );
+    } finally {
+      setIsPrinting(false);
     }
   };
 
@@ -342,10 +414,23 @@ export const Receipts: React.FC = () => {
             className="border border-gray-100"
             actions={
               <div className="flex space-x-2">
-                <button className="p-2 rounded-lg hover:bg-gray-100 text-gray-500 hover:text-gray-700">
-                  <Printer size={18} />
+                <button
+                  onClick={handlePrint}
+                  disabled={isPrinting}
+                  title="Print receipt"
+                  className="p-2 rounded-lg hover:bg-gray-100 text-gray-500 hover:text-gray-700 disabled:opacity-50 disabled:cursor-wait"
+                >
+                  {isPrinting ? (
+                    <Loader2 size={18} className="animate-spin" />
+                  ) : (
+                    <Printer size={18} />
+                  )}
                 </button>
-                <button className="p-2 rounded-lg hover:bg-gray-100 text-gray-500 hover:text-gray-700">
+                <button
+                  className="p-2 rounded-lg hover:bg-gray-100 text-gray-500 hover:text-gray-700"
+                  title="Download (coming soon)"
+                  disabled
+                >
                   <Download size={18} />
                 </button>
               </div>
