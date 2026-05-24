@@ -531,7 +531,12 @@ export const ShoppingCart: React.FC = () => {
       return;
     setSaving(true);
     try {
-      await db.sales.create({
+      // Capture the created sale so we can reuse its server-issued id as
+      // the canonical receipt number across the receipts list, the email,
+      // the SMS, and the public /r/<token> page. Previously we generated a
+      // random `String(Date.now()).slice(-8)` here, which made the email's
+      // INV-XXXXXXXX disagree with the #N shown on the Receipts page.
+      const createdSale = await db.sales.create({
         shopId: currentShop.id,
         customerInfo: customer
           ? {
@@ -554,10 +559,17 @@ export const ShoppingCart: React.FC = () => {
 
       // FIX 5: Real-time sync is now managed entirely by `db.ts` internally, eliminating duplicate WebSockets.
 
+      const canonicalSaleId =
+        createdSale?.id || `sale_${Date.now()}`;
+      const canonicalTimestamp =
+        createdSale?.timestamp || new Date().toISOString();
+
       const sharedSalePayload = currentShop
         ? {
-            id: `sale_${Date.now()}`,
-            transactionCode: undefined as string | undefined,
+            id: canonicalSaleId,
+            // transactionCode keys the receipt-token store; using the sale
+            // id keeps email + SMS sharing the same /r/<token> URL.
+            transactionCode: canonicalSaleId,
             customerInfo: customer
               ? {
                   name: customer.name || "",
@@ -581,8 +593,11 @@ export const ShoppingCart: React.FC = () => {
             total: finalTotal,
             paymentMethod: selectedPaymentMethod,
             currency: currencySymbol,
-            timestamp: new Date().toISOString(),
-            receiptNumber: String(Date.now()).slice(-8),
+            timestamp: canonicalTimestamp,
+            // Use the canonical sale id directly — the server's invoice
+            // formatter will turn "8" into "INV-00000008", matching what
+            // the Receipts page derives from sale.id.
+            receiptNumber: canonicalSaleId,
             pointsEarned: Number(
               (pointsToEarn + pointsFromChange).toFixed(2),
             ),

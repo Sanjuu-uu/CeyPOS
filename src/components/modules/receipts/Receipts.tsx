@@ -235,9 +235,21 @@ export const Receipts: React.FC = () => {
     }
   };
 
+  // Canonical raw id (used for keys, lookups, anything programmatic).
   const receiptNumber = (saleId: string) => {
     const parts = saleId.split('_').filter(Boolean);
     return parts.length ? parts[parts.length - 1] : saleId;
+  };
+
+  // Human-facing invoice label. Must match the server-side formatter in
+  // server/src/services/receipt-snapshot.js so the receipts list, the
+  // email's "Invoice No" row, and the SMS body all show identical text.
+  const formatInvoiceLabel = (saleId: string) => {
+    const raw = receiptNumber(saleId);
+    if (/^INV-/i.test(raw)) return raw.toUpperCase();
+    const cleaned = raw.replace(/[^a-zA-Z0-9]/g, '');
+    if (!cleaned) return 'INV-00000000';
+    return `INV-${cleaned.slice(-8).toUpperCase().padStart(8, '0')}`;
   };
   
   // Filter sales based on search term
@@ -296,8 +308,8 @@ export const Receipts: React.FC = () => {
                   onClick={() => setSelectedSaleId(sale.id)}
                 >
                   <div className="flex justify-between mb-1">
-                    <span className="font-medium text-gray-800">
-                      #{receiptNumber(sale.id)}
+                    <span className="font-medium text-gray-800 font-mono text-xs">
+                      {formatInvoiceLabel(sale.id)}
                     </span>
                     <span className="text-sm text-gray-500">
                       ${sale.total.toFixed(2)}
@@ -353,7 +365,9 @@ export const Receipts: React.FC = () => {
                 </p>
                 <div className="border-b-2 border-dashed border-gray-200 my-4"></div>
                 <div className="flex justify-between text-sm text-gray-600">
-                  <span>Receipt #: {receiptNumber(selectedReceipt.id)}</span>
+                  <span className="font-mono">
+                    {formatInvoiceLabel(selectedReceipt.id)}
+                  </span>
                   <span>{formatDate(selectedReceipt.timestamp)}</span>
                 </div>
               </div>
