@@ -24,8 +24,9 @@ function sanitizeShopIdentifier(value = "") {
 
 function candidateDatabaseFilenames(shopId) {
   const base = String(shopId).replace(/\.db$/i, "");
-  const primary = `${base}.db`;
-  const legacy = `shop_${base}.db`;
+  const stripped = base.startsWith("shop_") ? base.slice("shop_".length) : base;
+  const primary = `${stripped}.db`;
+  const legacy = `shop_${stripped}.db`;
   return [primary, legacy];
 }
 
@@ -274,6 +275,28 @@ function initializeShopDatabaseSchema(db) {
 
   CREATE INDEX IF NOT EXISTS idx_analytics_messages_shop
     ON analytics_messages (shop_id);
+
+  CREATE TABLE IF NOT EXISTS receipt_tokens (
+    token TEXT PRIMARY KEY,
+    shop_id TEXT NOT NULL,
+    transaction_code TEXT,
+    receipt_id TEXT,
+    recipient_email TEXT,
+    recipient_phone TEXT,
+    snapshot_json TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    sent_at DATETIME,
+    last_sent_at DATETIME,
+    send_count INTEGER DEFAULT 0,
+    view_count INTEGER DEFAULT 0,
+    last_viewed_at DATETIME
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_receipt_tokens_shop
+    ON receipt_tokens (shop_id);
+
+  CREATE INDEX IF NOT EXISTS idx_receipt_tokens_txcode
+    ON receipt_tokens (shop_id, transaction_code);
   `;
 
   db.exec(ddl);
@@ -282,6 +305,18 @@ function initializeShopDatabaseSchema(db) {
     const info = db.prepare("PRAGMA table_info(customers)").all();
     if (!info.some((column) => column.name === "points_balance")) {
       db.exec("ALTER TABLE customers ADD COLUMN points_balance INTEGER DEFAULT 0");
+    }
+  } catch (error) {
+    // ignore if migration already applied
+  }
+
+  try {
+    const cols = db
+      .prepare("PRAGMA table_info(receipt_tokens)")
+      .all()
+      .map((c) => c.name);
+    if (cols.length && !cols.includes("recipient_phone")) {
+      db.exec("ALTER TABLE receipt_tokens ADD COLUMN recipient_phone TEXT");
     }
   } catch (error) {
     // ignore if migration already applied
@@ -394,6 +429,30 @@ function replaceShopPaymentMethods(db, shopId, methods = []) {
   txn(Array.isArray(methods) ? methods : []);
 }
 
+function ensureAllShopDatabasesSchema() {
+  ensureShopDatabaseDirectory();
+  if (!fs.existsSync(SHOP_DATABASE_DIRECTORY)) return [];
+  const initialized = [];
+  for (const fileName of fs.readdirSync(SHOP_DATABASE_DIRECTORY)) {
+    if (!fileName.endsWith(".db")) continue;
+    if (fileName === "receipt-tokens.db") continue;
+    const fullPath = path.join(SHOP_DATABASE_DIRECTORY, fileName);
+    try {
+      const db = new Database(fullPath, { fileMustExist: true });
+      db.pragma("journal_mode = WAL");
+      initializeShopDatabaseSchema(db);
+      db.close();
+      initialized.push(fileName);
+    } catch (err) {
+      console.warn(
+        `ensureAllShopDatabasesSchema: failed for ${fileName}:`,
+        err?.message || err,
+      );
+    }
+  }
+  return initialized;
+}
+
 function insertInventoryRows(db, rows) {
   const insert = db.prepare(`
     INSERT INTO inventory (
@@ -430,6 +489,7 @@ export {
   openShopDatabaseIfExists,
   createShopDatabase,
   initializeShopDatabaseSchema,
+  ensureAllShopDatabasesSchema,
   upsertShopMetadata,
   upsertShopOperatingHours,
   replaceShopPaymentMethods,

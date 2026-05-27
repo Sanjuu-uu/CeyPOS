@@ -1,70 +1,59 @@
-// Global receipt-token store. Lives next to per-shop databases so it benefits
-// from the same persistent volume in production, and stays isolated from
-// tenant data. Snapshots are self-contained so public viewing never touches
-// shop DBs.
+// Receipt-token store. Tokens now live inside each shop's database so a
+// deployment ships a single SQLite file per tenant. Public lookups by token
+// alone (no shopId in the URL) walk all shop DBs in the configured directory.
 
 import path from "path";
 import fs from "fs";
 import crypto from "crypto";
 import Database from "better-sqlite3";
+import {
+  SHOP_DATABASE_DIRECTORY,
+  openShopDatabase,
+  openShopDatabaseIfExists,
+} from "../utils/shop-database.js";
 
-const TOKEN_DB_DIRECTORY =
-  process.env.RAILWAY_VOLUME_MOUNT_PATH ||
-  (process.env.NODE_ENV === "production" && fs.existsSync("/data")
-    ? "/data"
-    : null) ||
-  path.resolve(process.cwd(), "../database");
-
-const TOKEN_DB_FILE = path.join(TOKEN_DB_DIRECTORY, "receipt-tokens.db");
-
-let cachedDb = null;
-
-function getDb() {
-  if (cachedDb) return cachedDb;
-  if (!fs.existsSync(TOKEN_DB_DIRECTORY)) {
-    fs.mkdirSync(TOKEN_DB_DIRECTORY, { recursive: true });
-  }
-  const db = new Database(TOKEN_DB_FILE);
-  db.pragma("journal_mode = WAL");
-  db.pragma("busy_timeout = 5000");
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS receipt_tokens (
-      token TEXT PRIMARY KEY,
-      shop_id TEXT NOT NULL,
-      transaction_code TEXT,
-      receipt_id TEXT,
-      recipient_email TEXT,
-      recipient_phone TEXT,
-      snapshot_json TEXT NOT NULL,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      sent_at DATETIME,
-      last_sent_at DATETIME,
-      send_count INTEGER DEFAULT 0,
-      view_count INTEGER DEFAULT 0,
-      last_viewed_at DATETIME
+function listShopDatabaseFiles() {
+  if (!fs.existsSync(SHOP_DATABASE_DIRECTORY)) return [];
+  return fs
+    .readdirSync(SHOP_DATABASE_DIRECTORY)
+    .filter(
+      (name) =>
+        name.endsWith(".db") &&
+        !name.endsWith("-wal") &&
+        !name.endsWith("-shm") &&
+        name !== "receipt-tokens.db",
     );
-    CREATE INDEX IF NOT EXISTS idx_receipt_tokens_shop
-      ON receipt_tokens(shop_id);
-    CREATE INDEX IF NOT EXISTS idx_receipt_tokens_txcode
-      ON receipt_tokens(shop_id, transaction_code);
-  `);
+}
 
-  // Idempotent migration for pre-existing databases that were created before
-  // the `recipient_phone` column existed.
-  const cols = db
-    .prepare("PRAGMA table_info(receipt_tokens)")
-    .all()
-    .map((c) => c.name);
-  if (!cols.includes("recipient_phone")) {
-    db.exec("ALTER TABLE receipt_tokens ADD COLUMN recipient_phone TEXT");
+function shopIdFromFilename(fileName) {
+  // Mirror the convention used by shop-database.js: stored file is `${shopId}.db`
+  // (optionally with a `shop_` legacy prefix).
+  let base = fileName.replace(/\.db$/i, "");
+  if (base.startsWith("shop_")) base = base.slice("shop_".length);
+  return base;
+}
+
+function normalizeShopId(shopId) {
+  const base = String(shopId || "").replace(/\.db$/i, "");
+  return base.startsWith("shop_") ? base.slice("shop_".length) : base;
+}
+
+function withTokenDb(token, callback) {
+  for (const fileName of listShopDatabaseFiles()) {
+    const shopId = shopIdFromFilename(fileName);
+    const db = openShopDatabaseIfExists(shopId);
+    if (!db) continue;
+    const row = db
+      .prepare("SELECT 1 FROM receipt_tokens WHERE token = ? LIMIT 1")
+      .get(token);
+    if (row) {
+      return callback(db);
+    }
   }
-
-  cachedDb = db;
-  return cachedDb;
+  return undefined;
 }
 
 function generateToken() {
-  // 24 random bytes → 32 char base64url. Sufficiently unguessable.
   return crypto.randomBytes(24).toString("base64url");
 }
 
@@ -74,16 +63,15 @@ export function findOrCreateReceiptToken({
   receiptId,
   snapshot,
 }) {
-  const db = getDb();
+  const normalizedShopId = normalizeShopId(shopId);
+  const db = openShopDatabase(normalizedShopId);
   if (transactionCode) {
     const existing = db
       .prepare(
         "SELECT token FROM receipt_tokens WHERE shop_id = ? AND transaction_code = ?",
       )
-      .get(shopId, transactionCode);
+      .get(normalizedShopId, transactionCode);
     if (existing) {
-      // Refresh snapshot so future views show the latest data (e.g. customer
-      // email updated, points adjustments).
       db.prepare(
         `UPDATE receipt_tokens
             SET snapshot_json = ?,
@@ -101,7 +89,7 @@ export function findOrCreateReceiptToken({
      VALUES (?, ?, ?, ?, ?)`,
   ).run(
     token,
-    shopId,
+    normalizedShopId,
     transactionCode || null,
     receiptId || null,
     JSON.stringify(snapshot),
@@ -110,40 +98,147 @@ export function findOrCreateReceiptToken({
 }
 
 export function recordSend({ token, recipientEmail, recipientPhone }) {
-  const db = getDb();
   const now = new Date().toISOString();
-  db.prepare(
-    `UPDATE receipt_tokens
-        SET recipient_email = COALESCE(?, recipient_email),
-            recipient_phone = COALESCE(?, recipient_phone),
-            sent_at = COALESCE(sent_at, ?),
-            last_sent_at = ?,
-            send_count = COALESCE(send_count, 0) + 1
-      WHERE token = ?`,
-  ).run(recipientEmail || null, recipientPhone || null, now, now, token);
+  withTokenDb(token, (db) => {
+    db.prepare(
+      `UPDATE receipt_tokens
+          SET recipient_email = COALESCE(?, recipient_email),
+              recipient_phone = COALESCE(?, recipient_phone),
+              sent_at = COALESCE(sent_at, ?),
+              last_sent_at = ?,
+              send_count = COALESCE(send_count, 0) + 1
+        WHERE token = ?`,
+    ).run(recipientEmail || null, recipientPhone || null, now, now, token);
+  });
 }
 
 export function getReceiptByToken(token) {
-  const db = getDb();
-  const row = db
-    .prepare("SELECT * FROM receipt_tokens WHERE token = ?")
-    .get(token);
-  if (!row) return null;
-  let snapshot = null;
-  try {
-    snapshot = JSON.parse(row.snapshot_json);
-  } catch {
-    snapshot = null;
-  }
-  return { ...row, snapshot };
+  return (
+    withTokenDb(token, (db) => {
+      const row = db
+        .prepare("SELECT * FROM receipt_tokens WHERE token = ?")
+        .get(token);
+      if (!row) return null;
+      let snapshot = null;
+      try {
+        snapshot = JSON.parse(row.snapshot_json);
+      } catch {
+        snapshot = null;
+      }
+      return { ...row, snapshot };
+    }) || null
+  );
 }
 
 export function recordView({ token }) {
-  const db = getDb();
-  db.prepare(
-    `UPDATE receipt_tokens
-        SET view_count = COALESCE(view_count, 0) + 1,
-            last_viewed_at = ?
-      WHERE token = ?`,
-  ).run(new Date().toISOString(), token);
+  const now = new Date().toISOString();
+  withTokenDb(token, (db) => {
+    db.prepare(
+      `UPDATE receipt_tokens
+          SET view_count = COALESCE(view_count, 0) + 1,
+              last_viewed_at = ?
+        WHERE token = ?`,
+    ).run(now, token);
+  });
+}
+
+export function migrateLegacyReceiptTokensDb() {
+  const legacyPath = path.join(SHOP_DATABASE_DIRECTORY, "receipt-tokens.db");
+  if (!fs.existsSync(legacyPath)) return { migrated: 0, skipped: 0 };
+
+  let legacy;
+  try {
+    legacy = new Database(legacyPath, { readonly: true, fileMustExist: true });
+  } catch (err) {
+    console.warn(
+      "receipt-tokens migration: cannot open legacy DB:",
+      err?.message || err,
+    );
+    return { migrated: 0, skipped: 0 };
+  }
+
+  let rows;
+  try {
+    rows = legacy.prepare("SELECT * FROM receipt_tokens").all();
+  } catch {
+    legacy.close();
+    return { migrated: 0, skipped: 0 };
+  }
+
+  let migrated = 0;
+  let skipped = 0;
+  for (const row of rows) {
+    if (!row.shop_id) {
+      skipped += 1;
+      continue;
+    }
+    let shopDb;
+    try {
+      shopDb = openShopDatabaseIfExists(row.shop_id);
+    } catch {
+      shopDb = null;
+    }
+    if (!shopDb) {
+      skipped += 1;
+      continue;
+    }
+    try {
+      shopDb
+        .prepare(
+          `INSERT OR IGNORE INTO receipt_tokens (
+             token, shop_id, transaction_code, receipt_id,
+             recipient_email, recipient_phone, snapshot_json,
+             created_at, sent_at, last_sent_at,
+             send_count, view_count, last_viewed_at
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          row.token,
+          row.shop_id,
+          row.transaction_code ?? null,
+          row.receipt_id ?? null,
+          row.recipient_email ?? null,
+          row.recipient_phone ?? null,
+          row.snapshot_json,
+          row.created_at ?? null,
+          row.sent_at ?? null,
+          row.last_sent_at ?? null,
+          row.send_count ?? 0,
+          row.view_count ?? 0,
+          row.last_viewed_at ?? null,
+        );
+      migrated += 1;
+    } catch (err) {
+      console.warn(
+        "receipt-tokens migration: insert failed for token",
+        row.token,
+        err?.message || err,
+      );
+      skipped += 1;
+    }
+  }
+
+  legacy.close();
+
+  try {
+    const archivedPath = `${legacyPath}.migrated`;
+    fs.renameSync(legacyPath, archivedPath);
+    for (const ext of ["-wal", "-shm"]) {
+      const sidecar = `${legacyPath}${ext}`;
+      if (fs.existsSync(sidecar)) {
+        try {
+          fs.unlinkSync(sidecar);
+        } catch {
+          // best-effort cleanup
+        }
+      }
+    }
+  } catch (err) {
+    console.warn(
+      "receipt-tokens migration: could not rename legacy DB:",
+      err?.message || err,
+    );
+  }
+
+  return { migrated, skipped };
 }

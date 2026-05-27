@@ -51,6 +51,31 @@ import analyticsChatRoutes from "./src/routes/analytics-chat.js";
 import emailReceiptRoutes from "./src/routes/email-receipts.js";
 import smsReceiptRoutes from "./src/routes/sms-receipts.js";
 import receiptRoutes from "./src/routes/receipts.js";
+import { ensureAllShopDatabasesSchema } from "./src/utils/shop-database.js";
+import { migrateLegacyReceiptTokensDb } from "./src/services/receipt-tokens.js";
+
+try {
+  const initialized = ensureAllShopDatabasesSchema();
+  if (initialized.length) {
+    console.log(
+      `shop-database: ensured schema on ${initialized.length} DB(s):`,
+      initialized.join(", "),
+    );
+  }
+} catch (err) {
+  console.warn("shop-database schema bootstrap failed:", err?.message || err);
+}
+
+try {
+  const result = migrateLegacyReceiptTokensDb();
+  if (result.migrated || result.skipped) {
+    console.log(
+      `receipt-tokens: migrated ${result.migrated} row(s), skipped ${result.skipped}`,
+    );
+  }
+} catch (err) {
+  console.warn("receipt-tokens migration failed:", err?.message || err);
+}
 
 app.get("/api/health", (req, res) => {
   res.json({ status: "ok" });
