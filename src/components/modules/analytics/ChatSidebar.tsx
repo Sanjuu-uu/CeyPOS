@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Bot,
   Check,
   ChevronLeft,
   ChevronRight,
@@ -17,6 +18,7 @@ import {
   Send,
   Square,
   Trash2,
+  Zap,
   X,
 } from 'lucide-react';
 import { ChatVisualization, type VisualizationData } from './ChatVisualization';
@@ -39,6 +41,23 @@ interface Message {
   status: 'sending' | 'streaming' | 'sent' | 'error';
   attachments?: Attachment[];
   visualizations?: VisualizationData[];
+  metadata?: MessageMetadata;
+}
+
+type ChatMode = 'lite' | 'agent';
+
+interface AgentStep {
+  id: string;
+  type: string;
+  title: string;
+  detail?: string;
+  status: 'running' | 'done' | 'error';
+  at?: string;
+}
+
+interface MessageMetadata {
+  mode?: ChatMode;
+  agentSteps?: AgentStep[];
 }
 
 interface Conversation {
@@ -73,6 +92,9 @@ type AnalyticsResponse = {
   answer?: string;
   visualizations?: VisualizationData[];
   visualizationConfig?: VisualizationConfig;
+  mode?: ChatMode;
+  agentSteps?: AgentStep[];
+  step?: AgentStep;
   conversation?: {
     title?: string;
     updatedAt?: string;
@@ -176,6 +198,32 @@ const MarkdownMessage: React.FC<{ text: string }> = ({ text }) => {
   );
 };
 
+const AgentSteps: React.FC<{ steps: AgentStep[] }> = ({ steps }) => {
+  if (!steps.length) return null;
+
+  return (
+    <div className="mb-3 space-y-1.5 rounded-md border border-gray-200 bg-gray-50 px-3 py-2">
+      {steps.map((step) => (
+        <div key={step.id} className="flex gap-2 text-[12px] leading-5 text-gray-700">
+          <span
+            className={`mt-1 h-2 w-2 shrink-0 rounded-full ${
+              step.status === 'error'
+                ? 'bg-rose-500'
+                : step.status === 'done'
+                  ? 'bg-emerald-500'
+                  : 'animate-pulse bg-gray-500'
+            }`}
+          />
+          <div className="min-w-0">
+            <p className="font-medium text-gray-900">{step.title}</p>
+            {step.detail && <p className="break-words text-gray-500 [overflow-wrap:anywhere]">{step.detail}</p>}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+};
+
 export const ChatSidebar: React.FC<ChatSidebarProps> = ({ isOpen, onToggle }) => {
   const { activeShopId, currentUser, currentShop } = useApp();
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
@@ -185,6 +233,7 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({ isOpen, onToggle }) =>
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [config, setConfig] = useState<VisualizationConfig | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [chatMode, setChatMode] = useState<ChatMode>('lite');
   const [isListening, setIsListening] = useState(false);
   const [showRecent, setShowRecent] = useState(false);
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
@@ -355,6 +404,31 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({ isOpen, onToggle }) =>
             ? { ...message, message: `${message.message}${delta}`, status: 'streaming' }
             : message,
         ),
+      }));
+    },
+    [activeConversationId, updateActiveConversation],
+  );
+
+  const appendAgentStep = useCallback(
+    (messageId: string, step: AgentStep, conversationIdOverride?: string) => {
+      const targetId = conversationIdOverride ?? activeConversationId;
+      if (!targetId || targetId !== activeConversationId) return;
+      updateActiveConversation((conversation) => ({
+        ...conversation,
+        updatedAt: new Date(),
+        messages: conversation.messages.map((message) => {
+          if (message.id !== messageId) return message;
+          const metadata = message.metadata ?? {};
+          const previousSteps = metadata.agentSteps ?? [];
+          return {
+            ...message,
+            metadata: {
+              ...metadata,
+              mode: 'agent',
+              agentSteps: [...previousSteps.filter((item) => item.id !== step.id), step],
+            },
+          };
+        }),
       }));
     },
     [activeConversationId, updateActiveConversation],
@@ -595,6 +669,7 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({ isOpen, onToggle }) =>
         userEmail,
         attachments: sentAttachments.map(({ name, size, type, preview }) => ({ name, size, type, preview })),
         history: historyPayload,
+        mode: chatMode,
       }),
       signal: abortRef.current?.signal,
     }
@@ -628,6 +703,10 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({ isOpen, onToggle }) =>
         appendToMessage(aiMessageId, payload.delta, conversationId);
       }
 
+      if (eventName === 'step' && payload.step) {
+        appendAgentStep(aiMessageId, payload.step, conversationId);
+      }
+
       if (eventName === 'done') {
         if (payload.visualizationConfig) {
           setConfig(payload.visualizationConfig);
@@ -637,6 +716,10 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({ isOpen, onToggle }) =>
           {
           message: payload.answer || 'Sorry, I could not generate a response.',
           visualizations: Array.isArray(payload.visualizations) ? payload.visualizations : [],
+          metadata: {
+            mode: payload.mode ?? chatMode,
+            agentSteps: Array.isArray(payload.agentSteps) ? payload.agentSteps : [],
+          },
           status: 'sent',
           },
           conversationId,
@@ -719,6 +802,7 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({ isOpen, onToggle }) =>
       timestamp: new Date(),
       status: 'sent',
       attachments: sentAttachments,
+      metadata: { mode: chatMode },
     }, conversationId);
     appendMessage({
       id: aiMessageId,
@@ -727,6 +811,7 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({ isOpen, onToggle }) =>
       timestamp: new Date(),
       status: 'streaming',
       visualizations: [],
+      metadata: { mode: chatMode, agentSteps: [] },
     }, conversationId);
 
     setChatInput('');
@@ -848,6 +933,30 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({ isOpen, onToggle }) =>
                 </button>
               </div>
             </div>
+            <div className="grid grid-cols-2 rounded-md border border-gray-200 bg-gray-50 p-1">
+              <button
+                type="button"
+                onClick={() => setChatMode('lite')}
+                className={`flex items-center justify-center gap-1.5 rounded px-2 py-1.5 text-xs font-semibold ${
+                  chatMode === 'lite' ? 'bg-white text-gray-950 shadow-sm' : 'text-gray-600 hover:text-gray-950'
+                }`}
+                title="Lite mode"
+              >
+                <Zap className="h-3.5 w-3.5" />
+                Lite
+              </button>
+              <button
+                type="button"
+                onClick={() => setChatMode('agent')}
+                className={`flex items-center justify-center gap-1.5 rounded px-2 py-1.5 text-xs font-semibold ${
+                  chatMode === 'agent' ? 'bg-white text-gray-950 shadow-sm' : 'text-gray-600 hover:text-gray-950'
+                }`}
+                title="Agent mode"
+              >
+                <Bot className="h-3.5 w-3.5" />
+                Agent
+              </button>
+            </div>
 
           </header>
 
@@ -920,7 +1029,8 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({ isOpen, onToggle }) =>
             <div className="space-y-3">
               {activeConversation?.messages.map((message) => {
                 const isUser = message.sender === 'user';
-                const isEmptyStreaming = message.status === 'streaming' && !message.message;
+                const hasAgentSteps = !isUser && Boolean(message.metadata?.agentSteps?.length);
+                const isEmptyStreaming = message.status === 'streaming' && !message.message && !hasAgentSteps;
                 return (
                   <div key={message.id} className={`group flex ${isUser ? 'justify-end' : 'justify-start'}`}>
                     <div className={`max-w-[92%] ${isUser ? 'items-end' : 'items-start'} flex flex-col gap-1`}>
@@ -945,7 +1055,19 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({ isOpen, onToggle }) =>
                             </span>
                           </div>
                         ) : (
-                          <MarkdownMessage text={message.message} />
+                          <>
+                            {hasAgentSteps && (
+                              <AgentSteps steps={message.metadata?.agentSteps ?? []} />
+                            )}
+                            {message.message ? (
+                              <MarkdownMessage text={message.message} />
+                            ) : (
+                              <div className="flex items-center gap-2 text-sm text-gray-600">
+                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                Working
+                              </div>
+                            )}
+                          </>
                         )}
 
                         {message.attachments && message.attachments.length > 0 && (
@@ -1090,7 +1212,7 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({ isOpen, onToggle }) =>
               {isLoading && (
                 <span className="flex items-center gap-1">
                   <Loader2 className="h-3 w-3 animate-spin" />
-                  Streaming
+                  {chatMode === 'agent' ? 'Agent working' : 'Streaming'}
                 </span>
               )}
             </div>

@@ -250,6 +250,7 @@ function initializeShopDatabaseSchema(db) {
   CREATE TABLE IF NOT EXISTS analytics_conversations (
     id TEXT PRIMARY KEY,
     shop_id TEXT NOT NULL,
+    user_email TEXT,
     title TEXT NOT NULL,
     created_at DATETIME NOT NULL,
     updated_at DATETIME NOT NULL
@@ -264,6 +265,7 @@ function initializeShopDatabaseSchema(db) {
     status TEXT NOT NULL,
     attachments TEXT,
     visualizations TEXT,
+    metadata TEXT,
     created_at DATETIME NOT NULL
   );
 
@@ -317,6 +319,30 @@ function initializeShopDatabaseSchema(db) {
       .map((c) => c.name);
     if (cols.length && !cols.includes("recipient_phone")) {
       db.exec("ALTER TABLE receipt_tokens ADD COLUMN recipient_phone TEXT");
+    }
+  } catch (error) {
+    // ignore if migration already applied
+  }
+
+  try {
+    const cols = db
+      .prepare("PRAGMA table_info(analytics_messages)")
+      .all()
+      .map((c) => c.name);
+    if (cols.length && !cols.includes("metadata")) {
+      db.exec("ALTER TABLE analytics_messages ADD COLUMN metadata TEXT");
+    }
+  } catch (error) {
+    // ignore if migration already applied
+  }
+
+  try {
+    const cols = db
+      .prepare("PRAGMA table_info(analytics_conversations)")
+      .all()
+      .map((c) => c.name);
+    if (cols.length && !cols.includes("user_email")) {
+      db.exec("ALTER TABLE analytics_conversations ADD COLUMN user_email TEXT");
     }
   } catch (error) {
     // ignore if migration already applied

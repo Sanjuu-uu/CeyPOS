@@ -4,6 +4,7 @@ import {
   sanitizeShopIdentifier,
   shopDatabaseExists,
 } from './shop-database-paths.js';
+import { applyReadLimit, validateReadOnlySql } from './sql-safety.js';
 
 type QueryRow = Record<string, unknown>;
 
@@ -23,11 +24,11 @@ function normalizeShopId(shopId: string): string {
 }
 
 function sanitizeSqlQuery(rawQuery: string): string {
-  const query = rawQuery?.trim();
-  if (!query) {
-    throw new Error('SQL query must be a non-empty string.');
+  const validation = validateReadOnlySql(rawQuery);
+  if (!validation.ok) {
+    throw new Error(validation.error);
   }
-  return query;
+  return applyReadLimit(validation.sql, 100);
 }
 
 export async function queryShopDatabase(shopId: string, rawQuery: string): Promise<QueryRow[]> {

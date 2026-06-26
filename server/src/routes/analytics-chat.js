@@ -6,7 +6,11 @@ import { processUserQuestion } from "../../../mcp-server/mcp.js";
 const router = express.Router();
 
 const MAX_RECENT_CHATS = 6;
-const HISTORY_MESSAGE_LIMIT = 4;
+const LITE_HISTORY_MESSAGE_LIMIT = 4;
+const AGENT_HISTORY_MESSAGE_LIMIT = 10;
+
+const normalizeChatMode = (mode) => (mode === "agent" ? "agent" : "lite");
+const normalizeEmail = (email) => String(email || "").trim().toLowerCase();
 
 const toIso = (value = Date.now()) => new Date(value).toISOString();
 
@@ -63,7 +67,7 @@ const normalizeHistoryEntries = (history = []) => {
 };
 
 const ensureAuthorized = (db, shopId, userEmail) => {
-  const email = String(userEmail || "").trim().toLowerCase();
+  const email = normalizeEmail(userEmail);
   if (!email) {
     return { ok: false, error: "userEmail is required" };
   }
@@ -87,6 +91,7 @@ const mapMessageRow = (row) => ({
   status: row.status,
   attachments: safeJsonParse(row.attachments, []),
   visualizations: safeJsonParse(row.visualizations, []),
+  metadata: safeJsonParse(row.metadata, {}),
 });
 
 const mapConversationRow = (row) => ({
@@ -96,17 +101,69 @@ const mapConversationRow = (row) => ({
   updatedAt: new Date(row.updated_at),
 });
 
-const trimRecentConversations = (db, shopId) => {
+const trimRecentConversations = (db, shopId, userEmail) => {
   const overflow = db
     .prepare(
-      "SELECT id FROM analytics_conversations WHERE shop_id = ? ORDER BY updated_at DESC LIMIT -1 OFFSET ?"
+      `SELECT id FROM analytics_conversations
+       WHERE shop_id = ? ${conversationUserClause}
+       ORDER BY updated_at DESC LIMIT -1 OFFSET ?`
     )
-    .all(shopId, MAX_RECENT_CHATS);
+    .all(shopId, normalizeEmail(userEmail), MAX_RECENT_CHATS);
   if (!overflow.length) return;
   const ids = overflow.map((row) => row.id);
   const placeholders = ids.map(() => "?").join(",");
   db.prepare(`DELETE FROM analytics_messages WHERE conversation_id IN (${placeholders})`).run(...ids);
   db.prepare(`DELETE FROM analytics_conversations WHERE id IN (${placeholders})`).run(...ids);
+};
+
+const conversationUserClause = "AND (user_email IS NULL OR lower(user_email) = lower(?))";
+
+const compactHistoryForMode = (rows, mode) => {
+  const limit = mode === "agent" ? AGENT_HISTORY_MESSAGE_LIMIT : LITE_HISTORY_MESSAGE_LIMIT;
+  return rows
+    .slice(-limit)
+    .map((entry) => ({
+      sender: entry.sender === "user" ? "user" : "ai",
+      message: String(entry.message || "").slice(0, mode === "agent" ? 1800 : 900),
+    }));
+};
+
+const getRecentConversationContext = (db, shopId, userEmail, activeConversationId, mode) => {
+  const limit = mode === "agent" ? 4 : 2;
+  const rows = db
+    .prepare(
+      `SELECT
+          c.title,
+          (
+            SELECT message FROM analytics_messages m
+            WHERE m.conversation_id = c.id
+            ORDER BY m.created_at DESC LIMIT 1
+          ) AS last_message
+        FROM analytics_conversations c
+        WHERE c.shop_id = ?
+          AND c.id <> ?
+          AND (c.user_email IS NULL OR lower(c.user_email) = lower(?))
+        ORDER BY c.updated_at DESC
+        LIMIT ?`
+    )
+    .all(shopId, activeConversationId, normalizeEmail(userEmail), limit);
+
+  if (!rows.length) return [];
+
+  const summary = rows
+    .map((row, index) => {
+      const title = String(row.title || "Untitled chat").slice(0, 80);
+      const lastMessage = String(row.last_message || "").replace(/\s+/g, " ").slice(0, 220);
+      return `${index + 1}. ${title}${lastMessage ? `: ${lastMessage}` : ""}`;
+    })
+    .join("\n");
+
+  return [
+    {
+      sender: "ai",
+      message: `Compact context from recent same-user chats for continuity only. Verify live shop facts with tools before using them:\n${summary}`,
+    },
+  ];
 };
 
 router.get("/", (req, res) => {
@@ -144,10 +201,11 @@ router.get("/", (req, res) => {
             ) AS question_count
           FROM analytics_conversations c
           WHERE c.shop_id = ?
+            AND (c.user_email IS NULL OR lower(c.user_email) = lower(?))
           ORDER BY c.updated_at DESC
           LIMIT ?`
       )
-      .all(shopId, MAX_RECENT_CHATS);
+      .all(shopId, normalizeEmail(userEmail), MAX_RECENT_CHATS);
 
     const conversations = rows.map((row) => ({
       ...mapConversationRow(row),
@@ -188,16 +246,17 @@ router.post("/", (req, res) => {
       created_at: now,
       attachments: "[]",
       visualizations: "[]",
+      metadata: JSON.stringify({ mode: "lite", agentSteps: [] }),
     };
 
     db.prepare(
-      `INSERT INTO analytics_conversations (id, shop_id, title, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?)`
-    ).run(conversationId, shopId, "New analytics chat", now, now);
+      `INSERT INTO analytics_conversations (id, shop_id, user_email, title, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?)`
+    ).run(conversationId, shopId, normalizeEmail(userEmail), "New analytics chat", now, now);
 
     db.prepare(
-      `INSERT INTO analytics_messages (id, conversation_id, shop_id, sender, message, status, attachments, visualizations, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO analytics_messages (id, conversation_id, shop_id, sender, message, status, attachments, visualizations, metadata, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(
       welcomeMessage.id,
       conversationId,
@@ -207,10 +266,11 @@ router.post("/", (req, res) => {
       welcomeMessage.status,
       welcomeMessage.attachments,
       welcomeMessage.visualizations,
+      welcomeMessage.metadata,
       welcomeMessage.created_at
     );
 
-    trimRecentConversations(db, shopId);
+    trimRecentConversations(db, shopId, userEmail);
 
     return res.json({
       conversation: {
@@ -246,9 +306,10 @@ router.get("/:conversationId", (req, res) => {
 
     const convo = db
       .prepare(
-        "SELECT id, title, created_at, updated_at FROM analytics_conversations WHERE id = ? AND shop_id = ?"
+        `SELECT id, title, created_at, updated_at FROM analytics_conversations
+         WHERE id = ? AND shop_id = ? ${conversationUserClause}`
       )
-      .get(conversationId, shopId);
+      .get(conversationId, shopId, normalizeEmail(userEmail));
 
     if (!convo) {
       return res.status(404).json({ error: "Conversation not found" });
@@ -290,10 +351,23 @@ router.delete("/:conversationId", (req, res) => {
       return res.status(403).json({ error: auth.error });
     }
 
+    const conversation = db
+      .prepare(
+        `SELECT id FROM analytics_conversations
+         WHERE id = ? AND shop_id = ? ${conversationUserClause}`
+      )
+      .get(conversationId, shopId, normalizeEmail(userEmail));
+
+    if (!conversation) {
+      return res.status(404).json({ error: "Conversation not found" });
+    }
+
     db.prepare("DELETE FROM analytics_messages WHERE conversation_id = ? AND shop_id = ?")
       .run(conversationId, shopId);
-    db.prepare("DELETE FROM analytics_conversations WHERE id = ? AND shop_id = ?")
-      .run(conversationId, shopId);
+    db.prepare(
+      `DELETE FROM analytics_conversations
+       WHERE id = ? AND shop_id = ? ${conversationUserClause}`
+    ).run(conversationId, shopId, normalizeEmail(userEmail));
 
     return res.json({ ok: true });
   } finally {
@@ -309,6 +383,7 @@ router.post("/:conversationId/messages/stream", async (req, res) => {
 
   const { conversationId } = req.params;
   const { shopId, userEmail, question, attachments, history } = req.body || {};
+  const mode = normalizeChatMode(req.body?.mode);
   if (!shopId || !conversationId || !question) {
     res.write(`event: error\n`);
     res.write(`data: ${JSON.stringify({ error: "shopId, conversationId, and question are required" })}\n\n`);
@@ -335,9 +410,10 @@ router.post("/:conversationId/messages/stream", async (req, res) => {
 
     const convo = db
       .prepare(
-        "SELECT id, title, created_at, updated_at FROM analytics_conversations WHERE id = ? AND shop_id = ?"
+        `SELECT id, title, created_at, updated_at FROM analytics_conversations
+         WHERE id = ? AND shop_id = ? ${conversationUserClause}`
       )
-      .get(conversationId, shopId);
+      .get(conversationId, shopId, normalizeEmail(userEmail));
 
     if (!convo) {
       res.write(`event: error\n`);
@@ -350,12 +426,24 @@ router.post("/:conversationId/messages/stream", async (req, res) => {
       .prepare(
         "SELECT sender, message FROM analytics_messages WHERE conversation_id = ? AND shop_id = ? ORDER BY created_at DESC LIMIT ?"
       )
-      .all(conversationId, shopId, HISTORY_MESSAGE_LIMIT)
+      .all(
+        conversationId,
+        shopId,
+        mode === "agent" ? AGENT_HISTORY_MESSAGE_LIMIT : LITE_HISTORY_MESSAGE_LIMIT
+      )
       .reverse();
 
     const historyPayload = historyRows.length
-      ? historyRows
-      : normalizeHistoryEntries(history).slice(-HISTORY_MESSAGE_LIMIT);
+      ? compactHistoryForMode(historyRows, mode)
+      : compactHistoryForMode(normalizeHistoryEntries(history), mode);
+    const recentContext = getRecentConversationContext(
+      db,
+      shopId,
+      userEmail,
+      conversationId,
+      mode
+    );
+    const aiContextPayload = [...recentContext, ...historyPayload];
 
     const now = toIso();
     const userMessageId = randomUUID();
@@ -364,8 +452,8 @@ router.post("/:conversationId/messages/stream", async (req, res) => {
     const safeAttachments = Array.isArray(attachments) ? attachments.slice(0, 5) : [];
 
     db.prepare(
-      `INSERT INTO analytics_messages (id, conversation_id, shop_id, sender, message, status, attachments, visualizations, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO analytics_messages (id, conversation_id, shop_id, sender, message, status, attachments, visualizations, metadata, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(
       userMessageId,
       conversationId,
@@ -375,6 +463,7 @@ router.post("/:conversationId/messages/stream", async (req, res) => {
       "sent",
       JSON.stringify(safeAttachments),
       JSON.stringify([]),
+      JSON.stringify({ mode }),
       now
     );
 
@@ -384,16 +473,35 @@ router.post("/:conversationId/messages/stream", async (req, res) => {
     }
 
     db.prepare(
-      "UPDATE analytics_conversations SET title = ?, updated_at = ? WHERE id = ? AND shop_id = ?"
-    ).run(title, now, conversationId, shopId);
+      `UPDATE analytics_conversations
+       SET title = ?, updated_at = ?
+       WHERE id = ? AND shop_id = ? ${conversationUserClause}`
+    ).run(title, now, conversationId, shopId, normalizeEmail(userEmail));
 
     res.write(`event: status\n`);
-    res.write(`data: ${JSON.stringify({ status: "thinking" })}\n\n`);
+    res.write(`data: ${JSON.stringify({ status: "thinking", mode })}\n\n`);
+
+    const agentSteps = [];
+    const pushStep = (step) => {
+      if (!step || res.destroyed) return;
+      const safeStep = {
+        id: String(step.id || randomUUID()),
+        type: String(step.type || "step").slice(0, 40),
+        title: String(step.title || "Working").slice(0, 140),
+        detail: String(step.detail || "").slice(0, 500),
+        status: ["running", "done", "error"].includes(step.status) ? step.status : "running",
+        at: step.at || toIso(),
+      };
+      agentSteps.push(safeStep);
+      res.write(`event: step\n`);
+      res.write(`data: ${JSON.stringify({ step: safeStep })}\n\n`);
+    };
 
     const result = await processUserQuestion(
       buildAnalyticsQuestion(cleanQuestion, safeAttachments),
       shopId,
-      historyPayload
+      aiContextPayload,
+      { mode, onStep: mode === "agent" ? pushStep : undefined }
     );
 
     const answer = result?.answer || "Sorry, I could not generate a response.";
@@ -408,8 +516,8 @@ router.post("/:conversationId/messages/stream", async (req, res) => {
     const aiMessageId = randomUUID();
     const aiNow = toIso();
     db.prepare(
-      `INSERT INTO analytics_messages (id, conversation_id, shop_id, sender, message, status, attachments, visualizations, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO analytics_messages (id, conversation_id, shop_id, sender, message, status, attachments, visualizations, metadata, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(
       aiMessageId,
       conversationId,
@@ -419,17 +527,22 @@ router.post("/:conversationId/messages/stream", async (req, res) => {
       "sent",
       JSON.stringify([]),
       JSON.stringify(result?.visualizations ?? []),
+      JSON.stringify({ mode, agentSteps }),
       aiNow
     );
 
     db.prepare(
-      "UPDATE analytics_conversations SET updated_at = ? WHERE id = ? AND shop_id = ?"
-    ).run(aiNow, conversationId, shopId);
+      `UPDATE analytics_conversations
+       SET updated_at = ?
+       WHERE id = ? AND shop_id = ? ${conversationUserClause}`
+    ).run(aiNow, conversationId, shopId, normalizeEmail(userEmail));
 
     res.write(`event: done\n`);
     res.write(
       `data: ${JSON.stringify({
         ...result,
+        mode,
+        agentSteps,
         conversation: {
           id: conversationId,
           title,
