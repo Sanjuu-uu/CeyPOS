@@ -97,6 +97,7 @@ const mapMessageRow = (row) => ({
 const mapConversationRow = (row) => ({
   id: row.id,
   title: row.title,
+  mode: normalizeChatMode(row.mode),
   createdAt: new Date(row.created_at),
   updatedAt: new Date(row.updated_at),
 });
@@ -190,9 +191,21 @@ router.get("/", (req, res) => {
             c.title,
             c.created_at,
             c.updated_at,
+            COALESCE(
+              c.mode,
+              (
+                SELECT json_extract(m.metadata, '$.mode')
+                FROM analytics_messages m
+                WHERE m.conversation_id = c.id AND m.sender = 'user'
+                ORDER BY m.created_at ASC
+                LIMIT 1
+              ),
+              'lite'
+            ) AS mode,
             (
               SELECT message FROM analytics_messages m
               WHERE m.conversation_id = c.id
+                AND trim(m.message) <> ''
               ORDER BY m.created_at DESC LIMIT 1
             ) AS last_message,
             (
@@ -220,7 +233,8 @@ router.get("/", (req, res) => {
 });
 
 router.post("/", (req, res) => {
-  const { shopId, userEmail } = req.body || {};
+  const { shopId, userEmail, mode: requestedMode } = req.body || {};
+  const mode = normalizeChatMode(requestedMode);
   if (!shopId) {
     return res.status(400).json({ error: "shopId is required" });
   }
@@ -239,9 +253,9 @@ router.post("/", (req, res) => {
     const conversationId = randomUUID();
 
     db.prepare(
-      `INSERT INTO analytics_conversations (id, shop_id, user_email, title, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?)`
-    ).run(conversationId, shopId, normalizeEmail(userEmail), "New analytics chat", now, now);
+      `INSERT INTO analytics_conversations (id, shop_id, user_email, title, mode, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`
+    ).run(conversationId, shopId, normalizeEmail(userEmail), "New analytics chat", mode, now, now);
 
     trimRecentConversations(db, shopId, userEmail);
 
@@ -249,6 +263,7 @@ router.post("/", (req, res) => {
       conversation: {
         id: conversationId,
         title: "New analytics chat",
+        mode,
         createdAt: new Date(now),
         updatedAt: new Date(now),
         messages: [],
@@ -279,7 +294,23 @@ router.get("/:conversationId", (req, res) => {
 
     const convo = db
       .prepare(
-        `SELECT id, title, created_at, updated_at FROM analytics_conversations
+        `SELECT
+            id,
+            title,
+            created_at,
+            updated_at,
+            COALESCE(
+              mode,
+              (
+                SELECT json_extract(m.metadata, '$.mode')
+                FROM analytics_messages m
+                WHERE m.conversation_id = analytics_conversations.id AND m.sender = 'user'
+                ORDER BY m.created_at ASC
+                LIMIT 1
+              ),
+              'lite'
+            ) AS mode
+         FROM analytics_conversations
          WHERE id = ? AND shop_id = ? ${conversationUserClause}`
       )
       .get(conversationId, shopId, normalizeEmail(userEmail));
@@ -447,9 +478,9 @@ router.post("/:conversationId/messages/stream", async (req, res) => {
 
     db.prepare(
       `UPDATE analytics_conversations
-       SET title = ?, updated_at = ?
+       SET title = ?, mode = ?, updated_at = ?
        WHERE id = ? AND shop_id = ? ${conversationUserClause}`
-    ).run(title, now, conversationId, shopId, normalizeEmail(userEmail));
+    ).run(title, mode, now, conversationId, shopId, normalizeEmail(userEmail));
 
     res.write(`event: status\n`);
     res.write(`data: ${JSON.stringify({ status: "thinking", mode })}\n\n`);
@@ -462,6 +493,7 @@ router.post("/:conversationId/messages/stream", async (req, res) => {
         type: String(step.type || "step").slice(0, 40),
         title: String(step.title || "Working").slice(0, 140),
         detail: String(step.detail || "").slice(0, 500),
+        domain: step.domain ? String(step.domain).slice(0, 40) : undefined,
         status: ["running", "done", "error"].includes(step.status) ? step.status : "running",
         at: step.at || toIso(),
       };

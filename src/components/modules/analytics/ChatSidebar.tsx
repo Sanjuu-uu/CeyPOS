@@ -1,32 +1,31 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Bot,
   Check,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
+  AlertCircle,
   Clipboard,
   Code2,
-  Database,
   FileText,
   History,
   Loader2,
   Mic,
   MoreHorizontal,
-  PanelRightClose,
   PanelRightOpen,
   Paperclip,
   Plus,
   Send,
   Sparkles,
   Square,
+  Terminal,
   Trash2,
-  Wrench,
-  Zap,
   X,
 } from 'lucide-react';
 import { ChatVisualization, type VisualizationData } from './ChatVisualization';
 import { useApp } from '../../../context/AppContext';
 import { API_BASE } from '../../../lib/api';
+import { humanizeAgentStep, sanitizeUserFacingText } from '../../../lib/humanizeAgentStep';
 
 interface Attachment {
   id: string;
@@ -54,6 +53,7 @@ interface AgentStep {
   type: string;
   title: string;
   detail?: string;
+  domain?: string;
   status: 'running' | 'done' | 'error';
   at?: string;
 }
@@ -75,6 +75,7 @@ interface MessageMetadata {
 interface Conversation {
   id: string;
   title: string;
+  mode?: ChatMode;
   createdAt: Date;
   updatedAt: Date;
   messages: Message[];
@@ -83,6 +84,7 @@ interface Conversation {
 interface ConversationSummary {
   id: string;
   title: string;
+  mode?: ChatMode;
   updatedAt: Date;
   lastMessage: string;
   questionCount: number;
@@ -128,18 +130,38 @@ type SpeechRecognitionLike = {
 
 type SpeechRecognitionConstructor = new () => SpeechRecognitionLike;
 
-const ACCENT = '#ecff76';
 const MAX_ATTACHMENT_BYTES = 2 * 1024 * 1024;
 const WELCOME_MESSAGE_PREFIX = 'Hi, I can analyze live shop sales';
 
-const PROMPT_SUGGESTIONS = [
-  'Show today revenue and order count',
-  'Find slow moving inventory',
-  'Compare sales by payment method',
-  'Which products need restocking?',
-];
+const MODE_START_CONTENT: Record<ChatMode, { title: string; prompts: string[] }> = {
+  lite: {
+    title: 'Ask CeyPOS Analytics',
+    prompts: [
+      'Show today revenue and order count',
+      'What was my best selling product this week?',
+      'Summarize yesterday sales',
+      'How many unique customers ordered this month?',
+    ],
+  },
+  agent: {
+    title: 'CeyPOS Agent',
+    prompts: [
+      'Find slow moving inventory and suggest restocks',
+      'Compare sales by payment method this month',
+      'Which products need restocking?',
+      'Analyze customer purchase patterns and trends',
+    ],
+  },
+};
 
-const CONTEXT_CHIPS = ['Live SQLite', 'Sales', 'Inventory', 'Customers'];
+const inferConversationMode = (conversation: Conversation | ConversationSummary): ChatMode => {
+  if (conversation.mode === 'agent') return 'agent';
+  if ('messages' in conversation && conversation.messages?.length) {
+    const userMessage = conversation.messages.find((message) => message.sender === 'user');
+    if (userMessage?.metadata?.mode === 'agent') return 'agent';
+  }
+  return 'lite';
+};
 
 const createId = () => {
   if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
@@ -196,7 +218,7 @@ const MarkdownMessage: React.FC<{ text: string }> = ({ text }) => {
         if (index % 2 === 1) {
           const lines = block.replace(/^\w+\n/, '').trim();
           return (
-            <pre key={index} className="overflow-x-auto rounded-md border border-gray-900 bg-gray-950 p-3 text-xs text-white">
+            <pre key={index} className="overflow-x-auto whitespace-pre-wrap break-all rounded-md border border-gray-900 bg-gray-950 p-3 text-xs text-white">
               <code>{lines}</code>
             </pre>
           );
@@ -223,79 +245,163 @@ const MarkdownMessage: React.FC<{ text: string }> = ({ text }) => {
   );
 };
 
-const AgentSteps: React.FC<{ steps: AgentStep[] }> = ({ steps }) => {
-  if (!steps.length) return null;
+const formatElapsed = (seconds: number) => {
+  if (seconds < 60) return `${seconds}s`;
+  const mins = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  return secs > 0 ? `${mins}m ${secs}s` : `${mins}m`;
+};
+
+const getVisibleAgentSteps = (steps: AgentStep[]) =>
+  steps.filter((step) => step.type === 'tool');
+
+const CodexStepLine: React.FC<{ step: AgentStep; isLive: boolean }> = ({ step, isLive }) => {
+  const Icon = step.status === 'error' ? AlertCircle : Terminal;
+  const isRunning = step.status === 'running';
+  const humanized = humanizeAgentStep(step);
 
   return (
-    <div className="mb-3 space-y-2 rounded-md border border-gray-200 bg-gray-50 px-3 py-2">
-      <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-gray-500">
-        <Wrench className="h-3.5 w-3.5" />
-        Agent progress
-      </div>
-      {steps.map((step) => (
-        <div key={step.id} className="flex gap-2 text-[12px] leading-5 text-gray-700">
+    <div
+      className={`chat-step-enter flex min-w-0 items-start gap-2 py-0.5 text-[13px] leading-5 ${
+        isRunning && isLive ? 'chat-step-running' : ''
+      }`}
+    >
+      <Icon
+        className={`mt-0.5 h-3.5 w-3.5 shrink-0 ${
+          step.status === 'error'
+            ? 'text-rose-500'
+            : isRunning && isLive
+              ? 'text-gray-600'
+              : 'text-gray-400'
+        }`}
+      />
+      <div className="min-w-0 flex-1">
+        <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+          <span className="inline-flex max-w-full items-center rounded-md bg-gray-100 px-1.5 py-0.5 text-[11px] font-medium text-gray-700">
+            {humanized.domain}
+          </span>
           <span
-            className={`mt-1 h-2 w-2 shrink-0 rounded-full ${
-              step.status === 'error'
-                ? 'bg-rose-500'
-                : step.status === 'done'
-                  ? 'bg-emerald-500'
-                  : 'animate-pulse bg-gray-500'
+            className={`break-words [overflow-wrap:anywhere] ${
+              isRunning && isLive
+                ? 'text-gray-600'
+                : step.status === 'error'
+                  ? 'text-rose-600'
+                  : 'text-gray-400'
             }`}
-          />
-          <div className="min-w-0">
-            <p className="font-medium text-gray-900">{step.title}</p>
-            {step.detail && <p className="break-words text-gray-500 [overflow-wrap:anywhere]">{step.detail}</p>}
-          </div>
+          >
+            {humanized.message}
+          </span>
         </div>
-      ))}
+      </div>
     </div>
   );
 };
 
-const StartSurface: React.FC<{
-  shopLabel: string | null;
-  onPickPrompt: (prompt: string) => void;
-}> = ({ shopLabel, onPickPrompt }) => (
-  <div className="mx-auto flex min-h-full w-full max-w-md flex-col justify-center py-8">
-    <div className="mb-5 flex items-center gap-3">
-      <div className="flex h-9 w-9 items-center justify-center rounded-md border border-gray-200 bg-white text-gray-800 shadow-sm">
-        <Sparkles className="h-4 w-4" />
-      </div>
-      <div className="min-w-0">
-        <h3 className="text-sm font-semibold text-gray-950">Ask CeyPOS Analytics</h3>
-        <p className="truncate text-xs text-gray-500">
-          {shopLabel ? `Workspace context: ${shopLabel}` : 'Select a shop to use live context'}
-        </p>
-      </div>
-    </div>
+const CodexAgentTimeline: React.FC<{
+  steps: AgentStep[];
+  isLive: boolean;
+  isExpanded: boolean;
+  onToggle: () => void;
+}> = ({ steps, isLive, isExpanded, onToggle }) => {
+  const visibleSteps = getVisibleAgentSteps(steps);
+  if (!visibleSteps.length) return null;
 
-    <div className="mb-4 flex flex-wrap gap-1.5">
-      {CONTEXT_CHIPS.map((chip) => (
-        <span
-          key={chip}
-          className="inline-flex items-center gap-1 rounded-md border border-gray-200 bg-white px-2 py-1 text-[11px] font-medium text-gray-600"
-        >
-          <Database className="h-3 w-3" />
-          {chip}
-        </span>
-      ))}
-    </div>
+  if (isLive || isExpanded) {
+    return (
+      <div className="w-full space-y-1">
+        {!isLive && (
+          <button
+            type="button"
+            onClick={onToggle}
+            className="inline-flex items-center gap-1.5 rounded-md px-1 py-1 text-[12px] font-medium text-gray-500 transition hover:bg-gray-100 hover:text-gray-700"
+          >
+            <ChevronDown className="h-3.5 w-3.5 rotate-180" />
+            Hide {visibleSteps.length} steps
+          </button>
+        )}
+        <div className="space-y-0.5">
+          {visibleSteps.map((step) => (
+            <CodexStepLine key={step.id} step={step} isLive={isLive} />
+          ))}
+        </div>
+      </div>
+    );
+  }
 
-    <div className="grid gap-2">
-      {PROMPT_SUGGESTIONS.map((prompt) => (
-        <button
-          key={prompt}
-          type="button"
-          onClick={() => onPickPrompt(prompt)}
-          className="rounded-md border border-gray-200 bg-white px-3 py-2 text-left text-[13px] leading-5 text-gray-800 shadow-sm transition hover:border-gray-400 hover:bg-gray-50"
-        >
-          {prompt}
-        </button>
-      ))}
-    </div>
+  const latestStep = visibleSteps[visibleSteps.length - 1];
+  const latestLabel = latestStep ? humanizeAgentStep(latestStep).message : `${visibleSteps.length} steps`;
+
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      className="inline-flex max-w-full items-center gap-1.5 rounded-md border border-gray-200 bg-white px-2.5 py-1.5 text-left text-[12px] text-gray-600 transition hover:border-gray-300 hover:bg-gray-50"
+    >
+      <ChevronDown className="h-3.5 w-3.5 shrink-0" />
+      <span className="truncate">
+        Show {visibleSteps.length} steps · {latestLabel}
+      </span>
+    </button>
+  );
+};
+
+const WorkingStatus: React.FC<{ elapsedSeconds: number }> = ({ elapsedSeconds }) => (
+  <div className="space-y-2">
+    <p className="text-[13px] text-gray-500">
+      Working for{' '}
+      <span className={elapsedSeconds < 2 ? 'chat-working-shimmer font-medium' : 'font-medium text-gray-600'}>
+        {formatElapsed(elapsedSeconds)}
+      </span>
+    </p>
+    <div className="h-px w-full bg-gray-200" />
   </div>
 );
+
+const ThinkingIndicator: React.FC = () => (
+  <div className="flex items-center gap-2 py-1 text-[13px] text-gray-500">
+    <Loader2 className="h-3.5 w-3.5 animate-spin text-gray-400" />
+    <span className="chat-working-shimmer">Thinking</span>
+  </div>
+);
+
+const StartSurface: React.FC<{
+  mode: ChatMode;
+  onPickPrompt: (prompt: string) => void;
+}> = ({ mode, onPickPrompt }) => {
+  const content = MODE_START_CONTENT[mode];
+
+  return (
+    <div className="mx-auto flex min-h-full w-full max-w-md flex-col items-center justify-center py-8 text-center">
+      <div className="mb-6 flex flex-col items-center gap-3">
+        <div className="flex h-10 w-10 items-center justify-center rounded-md border border-gray-200 bg-white text-gray-800 shadow-sm">
+          <Sparkles className="h-4 w-4" />
+        </div>
+        <h3 className="px-2 text-sm font-semibold text-gray-950">{content.title}</h3>
+      </div>
+
+      <div className="grid w-full gap-2">
+        {content.prompts.map((prompt) => (
+          <button
+            key={prompt}
+            type="button"
+            onClick={() => onPickPrompt(prompt)}
+            className="rounded-md border border-gray-200 bg-white px-3 py-2 text-left text-[13px] leading-5 text-gray-800 shadow-sm transition hover:border-gray-400 hover:bg-gray-50"
+          >
+            {prompt}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+const getConversationPreview = (conversation: Conversation | ConversationSummary) => {
+  if ('messages' in conversation && conversation.messages?.length) {
+    const last = [...conversation.messages].reverse().find((message) => message.message.trim());
+    if (last?.message) return last.message.trim();
+  }
+  return conversation.lastMessage?.trim() ?? '';
+};
 
 const normalizeMessage = (message: Message): Message => ({
   ...message,
@@ -307,6 +413,7 @@ const normalizeConversation = (conversation: Conversation): Conversation => ({
   createdAt: new Date(conversation.createdAt),
   updatedAt: new Date(conversation.updatedAt),
   messages: conversation.messages.map(normalizeMessage),
+  mode: inferConversationMode(conversation),
 });
 
 const normalizeSummary = (conversation: ConversationSummary): ConversationSummary => ({
@@ -314,10 +421,11 @@ const normalizeSummary = (conversation: ConversationSummary): ConversationSummar
   updatedAt: new Date(conversation.updatedAt),
   questionCount: Number(conversation.questionCount ?? 0),
   lastMessage: conversation.lastMessage ?? '',
+  mode: inferConversationMode(conversation),
 });
 
 export const ChatSidebar: React.FC<ChatSidebarProps> = ({ isOpen, onToggle }) => {
-  const { activeShopId, currentUser, currentShop } = useApp();
+  const { activeShopId, currentUser } = useApp();
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [activeConversationId, setActiveConversationId] = useState<string>('');
   const [activeConversation, setActiveConversation] = useState<Conversation | null>(null);
@@ -330,11 +438,17 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({ isOpen, onToggle }) =>
   const [showRecent, setShowRecent] = useState(false);
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
   const [autoScroll, setAutoScroll] = useState(true);
+  const [workingElapsed, setWorkingElapsed] = useState(0);
+  const [isThinking, setIsThinking] = useState(false);
+  const [showModeDropdown, setShowModeDropdown] = useState(false);
+  const [expandedStepMessageIds, setExpandedStepMessageIds] = useState<Set<string>>(new Set());
   const scrollAreaRef = useRef<HTMLDivElement | null>(null);
   const endRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const streamStartRef = useRef<number | null>(null);
+  const modeDropdownRef = useRef<HTMLDivElement | null>(null);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const userEmail = currentUser?.email ?? '';
 
@@ -342,12 +456,6 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({ isOpen, onToggle }) =>
     if (!activeShopId) return null;
     return String(activeShopId).replace(/^shop_/, '').replace(/\.db$/i, '');
   }, [activeShopId]);
-
-  const shopLabel = useMemo(() => {
-    const name = currentShop?.name?.trim();
-    if (name) return name;
-    return normalizedShopId ?? null;
-  }, [currentShop?.name, normalizedShopId]);
 
   const requestRecentChats = useCallback(async () => {
     const response = await fetch(
@@ -377,11 +485,11 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({ isOpen, onToggle }) =>
     return normalizeConversation(data.conversation);
   }, [normalizedShopId, userEmail]);
 
-  const requestNewChat = useCallback(async () => {
+  const requestNewChat = useCallback(async (mode: ChatMode = 'lite') => {
     const response = await fetch(`${API_BASE}/api/analytics/chats`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ shopId: normalizedShopId, userEmail }),
+      body: JSON.stringify({ shopId: normalizedShopId, userEmail, mode }),
     });
     if (!response.ok) {
       throw new Error('Failed to create chat');
@@ -408,6 +516,42 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({ isOpen, onToggle }) =>
     return [...conversations].sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime());
   }, [conversations]);
 
+  const liteConversations = useMemo(
+    () => filteredConversations.filter((conversation) => inferConversationMode(conversation) === 'lite'),
+    [filteredConversations],
+  );
+
+  const agentConversations = useMemo(
+    () => filteredConversations.filter((conversation) => inferConversationMode(conversation) === 'agent'),
+    [filteredConversations],
+  );
+
+  const syncConversationPreview = useCallback(
+    (conversationId: string, preview: string, updatedAt = new Date()) => {
+      const trimmedPreview = preview.trim();
+      if (!conversationId || !trimmedPreview) return;
+      setConversations((prev) =>
+        prev.map((conversation) =>
+          conversation.id === conversationId
+            ? { ...conversation, lastMessage: trimmedPreview, updatedAt }
+            : conversation,
+        ),
+      );
+    },
+    [],
+  );
+
+  const toggleStepExpand = useCallback((messageId: string) => {
+    setExpandedStepMessageIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(messageId)) {
+        next.delete(messageId);
+      } else {
+        next.add(messageId);
+      }
+      return next;
+    });
+  }, []);
   const updateActiveConversation = useCallback(
     (updater: (conversation: Conversation) => Conversation) => {
       setActiveConversation((prev) => (prev ? updater(prev) : prev));
@@ -439,15 +583,16 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({ isOpen, onToggle }) =>
               conversation.title === 'New analytics chat' && message.sender === 'user'
                 ? message.message.slice(0, 56)
                 : conversation.title,
-            lastMessage: message.message,
+            lastMessage: message.message.trim() ? message.message : conversation.lastMessage,
             questionCount:
               message.sender === 'user' ? conversation.questionCount + 1 : conversation.questionCount,
             updatedAt: new Date(),
+            mode: conversation.mode ?? chatMode,
           };
         }),
       );
     },
-    [activeConversationId, updateActiveConversation],
+    [activeConversationId, updateActiveConversation, chatMode],
   );
 
   const updateMessage = useCallback(
@@ -461,8 +606,12 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({ isOpen, onToggle }) =>
           message.id === messageId ? { ...message, ...patch } : message,
         ),
       }));
+
+      if (patch.message?.trim()) {
+        syncConversationPreview(targetId, patch.message);
+      }
     },
-    [activeConversationId, updateActiveConversation],
+    [activeConversationId, syncConversationPreview, updateActiveConversation],
   );
 
   const appendToMessage = useCallback(
@@ -514,7 +663,7 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({ isOpen, onToggle }) =>
   }, []);
 
   const buildSummaryFromConversation = (conversation: Conversation): ConversationSummary => {
-    const lastMessage = conversation.messages[conversation.messages.length - 1]?.message ?? '';
+    const lastMessage = getConversationPreview(conversation);
     const questionCount = conversation.messages.filter((message) => message.sender === 'user').length;
     return {
       id: conversation.id,
@@ -522,6 +671,7 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({ isOpen, onToggle }) =>
       updatedAt: conversation.updatedAt,
       lastMessage,
       questionCount,
+      mode: inferConversationMode(conversation),
     };
   };
 
@@ -541,8 +691,9 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({ isOpen, onToggle }) =>
         if (cancelled) return;
 
         if (!recent.length) {
-          const conversation = await requestNewChat();
+          const conversation = await requestNewChat('lite');
           if (cancelled) return;
+          setChatMode('lite');
           setConversations([buildSummaryFromConversation(conversation)]);
           setActiveConversation(conversation);
           setActiveConversationId(conversation.id);
@@ -551,9 +702,10 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({ isOpen, onToggle }) =>
         }
 
         setConversations(recent);
-        const first = recent[0];
-        const conversation = await requestConversation(first.id);
+        const preferred = recent.find((conversation) => inferConversationMode(conversation) === 'lite') ?? recent[0];
+        const conversation = await requestConversation(preferred.id);
         if (cancelled) return;
+        setChatMode(inferConversationMode(conversation));
         setActiveConversation(conversation);
         setActiveConversationId(conversation.id);
         setShowRecent(false);
@@ -570,9 +722,54 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({ isOpen, onToggle }) =>
   }, [normalizedShopId, requestConversation, requestNewChat, requestRecentChats, userEmail]);
 
   useEffect(() => {
+    if (!showRecent || !normalizedShopId || !userEmail) return;
+    let cancelled = false;
+    requestRecentChats()
+      .then((recent) => {
+        if (!cancelled) setConversations(recent);
+      })
+      .catch((error) => {
+        console.warn('Failed to refresh recent chats', error);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [showRecent, normalizedShopId, requestRecentChats, userEmail]);
+
+  useEffect(() => {
+    if (!showModeDropdown) return;
+    const handleClickOutside = (event: MouseEvent) => {
+      if (modeDropdownRef.current && !modeDropdownRef.current.contains(event.target as Node)) {
+        setShowModeDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showModeDropdown]);
+
+  useEffect(() => {
     if (!autoScroll) return;
     endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
-  }, [activeConversation?.messages, autoScroll, isLoading]);
+  }, [activeConversation?.messages, autoScroll, isLoading, workingElapsed]);
+
+  useEffect(() => {
+    if (!isLoading) {
+      streamStartRef.current = null;
+      setWorkingElapsed(0);
+      setIsThinking(false);
+      return;
+    }
+
+    streamStartRef.current = Date.now();
+    setWorkingElapsed(0);
+    const interval = window.setInterval(() => {
+      if (streamStartRef.current) {
+        setWorkingElapsed(Math.floor((Date.now() - streamStartRef.current) / 1000));
+      }
+    }, 1000);
+
+    return () => window.clearInterval(interval);
+  }, [isLoading]);
 
   useEffect(() => {
     const textarea = inputRef.current;
@@ -597,7 +794,7 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({ isOpen, onToggle }) =>
 
   const handleStartNewChat = () => {
     if (!normalizedShopId || !userEmail) return;
-    requestNewChat()
+    requestNewChat(chatMode)
       .then((conversation) => {
         const summary = buildSummaryFromConversation(conversation);
         setConversations((prev) => [summary, ...prev.filter((item) => item.id !== summary.id)].slice(0, 6));
@@ -615,10 +812,40 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({ isOpen, onToggle }) =>
       });
   };
 
+  const handleChangeChatMode = (nextMode: ChatMode) => {
+    setShowModeDropdown(false);
+    if (nextMode === chatMode || !normalizedShopId || !userEmail) return;
+
+    if (isLoading) {
+      abortRef.current?.abort();
+      setIsLoading(false);
+    }
+
+    setChatMode(nextMode);
+    requestNewChat(nextMode)
+      .then((conversation) => {
+        const summary = buildSummaryFromConversation(conversation);
+        setConversations((prev) => [summary, ...prev.filter((item) => item.id !== summary.id)].slice(0, 6));
+        setActiveConversation(conversation);
+        setActiveConversationId(conversation.id);
+        setShowRecent(false);
+        setChatInput('');
+        setAttachments([]);
+        setConfig(null);
+        setAutoScroll(true);
+        focusInput();
+      })
+      .catch((error) => {
+        console.warn('Failed to start chat for mode', error);
+      });
+  };
+
   const handleOpenConversation = (conversationId: string) => {
     if (!normalizedShopId || !userEmail) return;
     requestConversation(conversationId)
       .then((conversation) => {
+        const mode = inferConversationMode(conversation);
+        setChatMode(mode);
         setActiveConversation(conversation);
         setActiveConversationId(conversationId);
         setShowRecent(false);
@@ -773,10 +1000,16 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({ isOpen, onToggle }) =>
       const payload = JSON.parse(dataText) as AnalyticsResponse & { delta?: string };
 
       if (eventName === 'chunk' && payload.delta) {
+        setIsThinking(false);
         appendToMessage(aiMessageId, payload.delta, conversationId);
       }
 
+      if (eventName === 'status') {
+        setIsThinking(true);
+      }
+
       if (eventName === 'step' && payload.step) {
+        setIsThinking(false);
         appendAgentStep(aiMessageId, payload.step, conversationId);
       }
 
@@ -797,6 +1030,16 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({ isOpen, onToggle }) =>
           status: 'sent',
           },
           conversationId,
+        );
+        setExpandedStepMessageIds((prev) => {
+          const next = new Set(prev);
+          next.delete(aiMessageId);
+          return next;
+        });
+        syncConversationPreview(
+          conversationId,
+          payload.answer || 'Sorry, I could not generate a response.',
+          payload.conversation?.updatedAt ? new Date(payload.conversation.updatedAt) : new Date(),
         );
         if (payload.conversation && conversationId) {
           const conversationMeta = payload.conversation;
@@ -850,7 +1093,7 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({ isOpen, onToggle }) =>
     let conversationId = activeConversationId;
     if (!conversationId) {
       try {
-        const conversation = await requestNewChat();
+        const conversation = await requestNewChat(chatMode);
         const summary = buildSummaryFromConversation(conversation);
         setConversations((prev) => [summary, ...prev.filter((item) => item.id !== summary.id)].slice(0, 6));
         setActiveConversation(conversation);
@@ -941,8 +1184,8 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({ isOpen, onToggle }) =>
 
   return (
     <aside
-      className={`relative flex h-full shrink-0 flex-col border-l border-gray-200 bg-white shadow-sm transition-[width] duration-300 ${
-        isOpen ? 'w-full md:w-[340px] xl:w-[380px]' : 'w-[52px]'
+      className={`relative flex h-full min-w-0 shrink-0 flex-col border-l border-gray-200 bg-white shadow-sm transition-[width] duration-300 ${
+        isOpen ? 'w-full md:w-[440px] lg:w-[480px] xl:w-[520px]' : 'w-[52px]'
       }`}
     >
       <button
@@ -993,26 +1236,50 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({ isOpen, onToggle }) =>
       ) : (
         <>
           <header className="border-b border-gray-200 bg-white px-4 py-3">
-            <div className="mb-3 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <div>
-                  <p className="text-sm font-semibold text-gray-950">AI Analytics</p>
-                  <p className="text-xs text-gray-500">{currentUser?.email ?? 'Shop assistant'}</p>
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex min-w-0 items-center gap-2">
+                {showRecent ? (
+                  <button
+                    type="button"
+                    onClick={() => setShowRecent(false)}
+                    className="rounded-md p-1.5 text-gray-600 hover:bg-gray-100"
+                    title="Back to chat"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </button>
+                ) : null}
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-semibold text-gray-950">
+                    {showRecent ? 'Recent chats' : activeConversation?.title ?? 'AI Analytics'}
+                  </p>
+                  <p className="truncate text-xs text-gray-500">
+                    {showRecent ? 'Lite and agent chats for this shop' : (currentUser?.email ?? 'Shop assistant')}
+                  </p>
                 </div>
               </div>
-              <div className="flex items-center gap-1">
-                <button type="button" onClick={() => setShowRecent((value) => !value)} className="rounded-md p-2 text-gray-600 hover:bg-gray-100" title="Preview recent chats">
-                  <History className="h-4 w-4" />
-                </button>
-                <button type="button" onClick={handleStartNewChat} className="rounded-md bg-[var(--verde-naturale--primary)] p-2 text-gray-950 hover:brightness-95" title="New chat">
-                  <Plus className="h-4 w-4" />
-                </button>
-                <button type="button" onClick={onToggle} className="rounded-md p-2 text-gray-600 hover:bg-gray-100" title="Collapse">
-                  <PanelRightClose className="h-4 w-4" />
-                </button>
+              <div className="flex shrink-0 items-center gap-0.5">
+                {!showRecent && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => setShowRecent(true)}
+                      className="rounded-md p-2 text-gray-600 hover:bg-gray-100"
+                      title="Recent chats"
+                    >
+                      <History className="h-4 w-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleStartNewChat}
+                      className="rounded-md p-2 text-gray-600 hover:bg-gray-100"
+                      title="New chat"
+                    >
+                      <Plus className="h-4 w-4" />
+                    </button>
+                  </>
+                )}
               </div>
             </div>
-
           </header>
 
           {config && !config.configured && (
@@ -1023,124 +1290,177 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({ isOpen, onToggle }) =>
 
           {showRecent ? (
             <div className="flex-1 overflow-y-auto bg-gray-50/70 px-4 py-5">
-              <div className="mb-4 flex items-center justify-between">
-                <div>
-                  <h3 className="text-sm font-semibold text-gray-950">Recent chats</h3>
-                  <p className="text-xs text-gray-500">Stored for this user and shop.</p>
-                </div>
+              <div className="mb-5">
+                <h3 className="text-sm font-semibold text-gray-950">Recent chats</h3>
+                <p className="text-xs text-gray-500">Grouped by chat mode for this shop.</p>
               </div>
 
-              <div className="space-y-2">
-                {filteredConversations.map((conversation) => {
-                  const lastMessage = conversation.lastMessage;
-                  return (
-                    <div
-                      key={conversation.id}
-                      role="button"
-                      tabIndex={0}
-                      onClick={() => handleOpenConversation(conversation.id)}
-                      onKeyDown={(event) => {
-                        if (event.key === 'Enter' || event.key === ' ') {
-                          event.preventDefault();
-                          handleOpenConversation(conversation.id);
-                        }
-                      }}
-                      className={`w-full rounded-md border px-3 py-2 text-left transition ${
-                        conversation.id === activeConversation?.id
-                          ? 'border-gray-300 bg-[var(--verde-naturale--primary)]'
-                          : 'border-gray-200 bg-white hover:border-gray-400'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="min-w-0">
-                          <p className="truncate text-[13px] font-semibold leading-5 text-gray-950">{conversation.title}</p>
+              {([
+                { key: 'lite' as const, label: 'Lite mode', items: liteConversations },
+                { key: 'agent' as const, label: 'Agent mode', items: agentConversations },
+              ]).map((section) => (
+                <div key={section.key} className="mb-6 last:mb-0">
+                  <div className="mb-2">
+                    <h4 className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+                      {section.label}
+                    </h4>
+                  </div>
+
+                  {section.items.length === 0 ? (
+                    <p className="rounded-md border border-dashed border-gray-200 bg-white px-3 py-4 text-center text-xs text-gray-500">
+                      No {section.key} chats yet.
+                    </p>
+                  ) : (
+                    <div className="space-y-2">
+                      {section.items.map((conversation) => {
+                        const preview = getConversationPreview(conversation);
+                        const previewText = preview ? sanitizeUserFacingText(preview) : '';
+                        const isActive = conversation.id === activeConversation?.id;
+                        return (
+                          <div
+                            key={conversation.id}
+                            role="button"
+                            tabIndex={0}
+                            onClick={() => handleOpenConversation(conversation.id)}
+                            onKeyDown={(event) => {
+                              if (event.key === 'Enter' || event.key === ' ') {
+                                event.preventDefault();
+                                handleOpenConversation(conversation.id);
+                              }
+                            }}
+                            className={`w-full rounded-md border px-3 py-2 text-left transition ${
+                              isActive
+                                ? 'border-gray-300 bg-gray-100'
+                                : 'border-gray-200 bg-white hover:border-gray-400 hover:bg-gray-50'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="min-w-0">
+                                <p className="truncate text-[13px] font-semibold leading-5 text-gray-950">
+                                  {conversation.title}
+                                </p>
                           <p className="mt-0.5 line-clamp-1 text-[12px] leading-5 text-gray-600">
-                            {lastMessage || 'No messages yet'}
+                            {previewText || 'No messages yet'}
                           </p>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            handleDeleteConversation(conversation.id, { preferRecent: true });
-                          }}
-                          className="rounded p-1 text-gray-500 hover:bg-rose-50 hover:text-rose-600"
-                          title="Delete chat"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
-                      </div>
-                      <div className="mt-1.5 flex items-center justify-between text-[10px] font-medium uppercase tracking-wide text-gray-500">
-                        <span>{formatConversationTime(conversation.updatedAt)}</span>
-                      </div>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  handleDeleteConversation(conversation.id, { preferRecent: true });
+                                }}
+                                className="rounded p-1 text-gray-500 hover:bg-rose-50 hover:text-rose-600"
+                                title="Delete chat"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </button>
+                            </div>
+                            <div className="mt-1.5 flex items-center justify-between text-[10px] font-medium uppercase tracking-wide text-gray-500">
+                              <span>{formatConversationTime(conversation.updatedAt)}</span>
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
-                  );
-                })}
-              </div>
+                  )}
+                </div>
+              ))}
             </div>
           ) : (
             <>
-          <div ref={scrollAreaRef} onScroll={handleScroll} className="flex-1 overflow-y-auto bg-gray-50/70 px-4 py-5">
+          <div ref={scrollAreaRef} onScroll={handleScroll} className="min-w-0 flex-1 overflow-x-hidden overflow-y-auto bg-gray-50/70 px-4 py-5">
             <div className="space-y-3">
               {!(activeConversation?.messages ?? []).some((message) => message.sender === 'user') && (
-                <StartSurface shopLabel={shopLabel} onPickPrompt={handlePickPrompt} />
+                <StartSurface mode={chatMode} onPickPrompt={handlePickPrompt} />
               )}
               {activeConversation?.messages.map((message) => {
                 if (isWelcomeMessage(message)) return null;
                 const isUser = message.sender === 'user';
-                const hasAgentSteps = !isUser && Boolean(message.metadata?.agentSteps?.length);
-                const isEmptyStreaming = message.status === 'streaming' && !message.message && !hasAgentSteps;
-                return (
-                  <div key={message.id} className={`group flex ${isUser ? 'justify-end' : 'justify-start'}`}>
-                    <div className={`max-w-[92%] ${isUser ? 'items-end' : 'items-start'} flex flex-col gap-1`}>
-                      <div
-                        className={`rounded-lg transition break-words [overflow-wrap:anywhere] ${
-                          isEmptyStreaming
-                            ? 'border-0 bg-transparent px-1 py-1 shadow-none'
-                            : `border border-gray-200 px-4 py-3 shadow-sm ${
-                                isUser
-                                  ? 'bg-[var(--verde-naturale--primary)] text-gray-950'
-                                  : 'bg-white text-gray-950'
-                              } ${message.status === 'error' ? 'bg-rose-50' : ''}`
-                        }`}
-                        style={isUser && !isEmptyStreaming ? { backgroundColor: ACCENT } : undefined}
-                      >
-                        {isEmptyStreaming ? (
-                          <div className="flex items-center gap-2 text-sm text-gray-600">
-                            <span className="flex gap-1">
-                              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-gray-500" />
-                              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-gray-500 [animation-delay:120ms]" />
-                              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-gray-500 [animation-delay:240ms]" />
-                            </span>
-                          </div>
-                        ) : (
-                          <>
-                            {hasAgentSteps && (
-                              <AgentSteps steps={message.metadata?.agentSteps ?? []} />
-                            )}
-                            {message.message ? (
-                              <MarkdownMessage text={message.message} />
-                            ) : (
-                              <div className="flex items-center gap-2 text-sm text-gray-600">
-                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                Working
-                              </div>
-                            )}
-                          </>
-                        )}
+                const isAgentMessage = !isUser && message.metadata?.mode === 'agent';
+                const agentSteps = message.metadata?.agentSteps ?? [];
+                const hasAgentSteps = !isUser && agentSteps.length > 0;
+                const isStreaming = message.status === 'streaming';
+                const isLiveAgentStream = isStreaming && isAgentMessage && isLoading;
+                const showWorkingStatus = isLiveAgentStream && (workingElapsed > 0 || isThinking || hasAgentSteps);
+                const showThinkingOnly =
+                  isStreaming && !message.message && !hasAgentSteps && (isThinking || chatMode === 'agent');
 
-                        {message.attachments && message.attachments.length > 0 && (
-                          <div className="mt-3 grid gap-2">
-                            {message.attachments.map((attachment) => (
-                              <div key={attachment.id} className="flex min-w-0 items-center gap-2 rounded-md border border-gray-900/20 bg-white/60 px-2 py-1.5 text-xs">
-                                <FileText className="h-3.5 w-3.5" />
-                                <span className="truncate">{attachment.name}</span>
-                                <span className="ml-auto text-gray-500">{formatBytes(attachment.size)}</span>
-                              </div>
-                            ))}
-                          </div>
-                        )}
+                if (isUser) {
+                  return (
+                    <div key={message.id} className="group flex justify-end">
+                      <div className="flex max-w-[92%] flex-col items-end gap-1.5">
+                        <div
+                          className="rounded-2xl border border-gray-200/80 bg-gray-100 px-4 py-3 text-sm leading-6 text-gray-950 shadow-sm break-words [overflow-wrap:anywhere]"
+                          style={{ backgroundColor: '#f3f4f6' }}
+                        >
+                          <MarkdownMessage text={sanitizeUserFacingText(message.message)} />
+                          {message.attachments && message.attachments.length > 0 && (
+                            <div className="mt-3 grid gap-2">
+                              {message.attachments.map((attachment) => (
+                                <div
+                                  key={attachment.id}
+                                  className="flex min-w-0 items-center gap-2 rounded-md border border-gray-300/60 bg-white/80 px-2 py-1.5 text-xs"
+                                >
+                                  <FileText className="h-3.5 w-3.5" />
+                                  <span className="truncate">{attachment.name}</span>
+                                  <span className="ml-auto text-gray-500">{formatBytes(attachment.size)}</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-1 text-[11px] text-gray-500 opacity-100 transition md:opacity-0 md:group-hover:opacity-100">
+                          <span>
+                            {message.timestamp.toLocaleTimeString([], {
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            })}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => handleCopy(message)}
+                            className="rounded p-1 hover:bg-gray-200"
+                            title="Copy message"
+                          >
+                            {copiedMessageId === message.id ? (
+                              <Check className="h-3.5 w-3.5" />
+                            ) : (
+                              <Clipboard className="h-3.5 w-3.5" />
+                            )}
+                          </button>
+                        </div>
                       </div>
+                    </div>
+                  );
+                }
+
+                return (
+                  <div key={message.id} className="group flex justify-start">
+                    <div className="flex w-full max-w-full flex-col items-start gap-2">
+                      {showWorkingStatus && <WorkingStatus elapsedSeconds={workingElapsed} />}
+
+                      {hasAgentSteps && (
+                        <CodexAgentTimeline
+                          steps={agentSteps}
+                          isLive={isLiveAgentStream}
+                          isExpanded={expandedStepMessageIds.has(message.id)}
+                          onToggle={() => toggleStepExpand(message.id)}
+                        />
+                      )}
+
+                      {showThinkingOnly && <ThinkingIndicator />}
+
+                      {message.message ? (
+                        <div
+                          className={`w-full text-sm leading-6 text-gray-950 break-words [overflow-wrap:anywhere] ${
+                            message.status === 'error' ? 'rounded-lg border border-rose-200 bg-rose-50 px-3 py-2' : ''
+                          }`}
+                        >
+                          <MarkdownMessage text={sanitizeUserFacingText(message.message)} />
+                        </div>
+                      ) : isStreaming && !hasAgentSteps && !showThinkingOnly ? (
+                        <ThinkingIndicator />
+                      ) : null}
 
                       {message.visualizations && message.visualizations.length > 0 && (
                         <div className="w-full space-y-2">
@@ -1150,22 +1470,31 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({ isOpen, onToggle }) =>
                         </div>
                       )}
 
-                      <div className="flex items-center gap-1 text-[11px] text-gray-500 opacity-100 transition md:opacity-0 md:group-hover:opacity-100">
-                        <span>
-                          {message.timestamp.toLocaleTimeString([], {
-                            hour: '2-digit',
-                            minute: '2-digit',
-                          })}
-                        </span>
-                        <button type="button" onClick={() => handleCopy(message)} className="rounded p-1 hover:bg-gray-200" title="Copy message">
-                          {copiedMessageId === message.id ? <Check className="h-3.5 w-3.5" /> : <Clipboard className="h-3.5 w-3.5" />}
-                        </button>
-                        {!isUser && (
+                      {!isStreaming && (
+                        <div className="flex items-center gap-1 text-[11px] text-gray-500 opacity-100 transition md:opacity-0 md:group-hover:opacity-100">
+                          <span>
+                            {message.timestamp.toLocaleTimeString([], {
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            })}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => handleCopy(message)}
+                            className="rounded p-1 hover:bg-gray-200"
+                            title="Copy message"
+                          >
+                            {copiedMessageId === message.id ? (
+                              <Check className="h-3.5 w-3.5" />
+                            ) : (
+                              <Clipboard className="h-3.5 w-3.5" />
+                            )}
+                          </button>
                           <button type="button" className="rounded p-1 hover:bg-gray-200" title="More actions">
                             <MoreHorizontal className="h-3.5 w-3.5" />
                           </button>
-                        )}
-                      </div>
+                        </div>
+                      )}
                     </div>
                   </div>
                 );
@@ -1188,9 +1517,9 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({ isOpen, onToggle }) =>
             </button>
           )}
 
-          <footer className="border-t border-gray-200 bg-white p-4">
+          <footer className="border-t border-gray-200 bg-white p-3">
             {attachments.length > 0 && (
-              <div className="mb-3 flex flex-wrap gap-2">
+              <div className="mb-2 flex flex-wrap gap-2">
                 {attachments.map((attachment) => (
                   <span key={attachment.id} className="inline-flex max-w-full items-center gap-2 rounded-md border border-gray-200 bg-gray-50 px-2.5 py-1.5 text-xs text-gray-700">
                     <FileText className="h-3.5 w-3.5" />
@@ -1208,86 +1537,118 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({ isOpen, onToggle }) =>
               </div>
             )}
 
-            <div className="rounded-md border border-gray-300 bg-white shadow-sm focus-within:border-gray-500">
+            <div className="rounded-2xl border border-gray-300 bg-white shadow-sm focus-within:border-gray-400">
               <textarea
                 ref={inputRef}
-                placeholder={chatMode === 'agent' ? 'Ask Agent to analyze, calculate, and use tools' : 'Ask a quick analytics question'}
+                placeholder={
+                  chatMode === 'agent'
+                    ? isLoading
+                      ? 'Ask for follow-up changes'
+                      : 'Ask Agent to analyze, calculate, and use tools'
+                    : 'Ask a quick analytics question'
+                }
                 value={chatInput}
                 onChange={(event) => setChatInput(event.target.value)}
                 onKeyDown={handleKeyDown}
                 rows={1}
-                className="max-h-40 min-h-[54px] w-full resize-none border-0 bg-transparent px-3 py-3 text-sm text-gray-950 outline-none placeholder:text-gray-400 disabled:opacity-70"
+                className="max-h-40 min-h-[52px] w-full resize-none rounded-t-2xl border-0 bg-transparent px-3.5 py-3 text-sm text-gray-950 outline-none placeholder:text-gray-400 disabled:opacity-70"
               />
               <div className="flex flex-wrap items-center justify-between gap-2 border-t border-gray-100 px-2 py-2">
                 <div className="flex min-w-0 flex-wrap items-center gap-1">
                   <input ref={fileInputRef} type="file" multiple className="hidden" onChange={handleFilesSelected} />
-                  <div className="mr-1 inline-flex rounded-md border border-gray-200 bg-gray-50 p-0.5">
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="inline-flex h-8 w-8 items-center justify-center rounded-full text-gray-600 hover:bg-gray-100"
+                    title="Add context"
+                  >
+                    <Plus className="h-4 w-4" />
+                  </button>
+                  <div className="relative" ref={modeDropdownRef}>
                     <button
                       type="button"
-                      onClick={() => setChatMode('lite')}
-                      className={`inline-flex h-7 items-center gap-1 rounded px-2 text-[12px] font-medium ${
-                        chatMode === 'lite' ? 'bg-white text-gray-950 shadow-sm' : 'text-gray-600 hover:text-gray-950'
-                      }`}
-                      title="Lite mode"
+                      onClick={() => setShowModeDropdown((value) => !value)}
+                      className="inline-flex h-8 items-center gap-1.5 rounded-full border border-gray-200 bg-gray-50 px-2.5 text-[12px] font-medium text-gray-700 hover:bg-gray-100"
+                      title="Select chat mode"
                     >
-                      <Zap className="h-3.5 w-3.5" />
-                      Lite
+                      {chatMode === 'agent' ? 'Agent' : 'Lite'}
+                      <ChevronDown className={`h-3 w-3 transition ${showModeDropdown ? 'rotate-180' : ''}`} />
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => setChatMode('agent')}
-                      className={`inline-flex h-7 items-center gap-1 rounded px-2 text-[12px] font-medium ${
-                        chatMode === 'agent' ? 'bg-white text-gray-950 shadow-sm' : 'text-gray-600 hover:text-gray-950'
-                      }`}
-                      title="Agent mode"
-                    >
-                      <Bot className="h-3.5 w-3.5" />
-                      Agent
-                    </button>
+                    {showModeDropdown && (
+                      <div className="absolute bottom-full left-0 z-20 mb-1 min-w-[148px] overflow-hidden rounded-lg border border-gray-200 bg-white py-1 shadow-lg">
+                        <button
+                          type="button"
+                          onClick={() => handleChangeChatMode('lite')}
+                          className={`flex w-full items-center gap-2 px-3 py-2 text-left text-[12px] hover:bg-gray-50 ${
+                            chatMode === 'lite' ? 'font-medium text-gray-950' : 'text-gray-600'
+                          }`}
+                        >
+                          Lite
+                          {chatMode === 'lite' && <Check className="ml-auto h-3.5 w-3.5 text-gray-700" />}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleChangeChatMode('agent')}
+                          className={`flex w-full items-center gap-2 px-3 py-2 text-left text-[12px] hover:bg-gray-50 ${
+                            chatMode === 'agent' ? 'font-medium text-gray-950' : 'text-gray-600'
+                          }`}
+                        >
+                          Agent
+                          {chatMode === 'agent' && <Check className="ml-auto h-3.5 w-3.5 text-gray-700" />}
+                        </button>
+                      </div>
+                    )}
                   </div>
                   <button
                     type="button"
                     onClick={() => fileInputRef.current?.click()}
-                    className="inline-flex h-8 items-center gap-1.5 rounded-md px-2 text-[12px] font-medium text-gray-600 hover:bg-gray-100"
-                    title="Add context"
+                    className="inline-flex h-8 items-center gap-1 rounded-full px-2 text-[12px] font-medium text-gray-600 hover:bg-gray-100"
+                    title="Attach files"
                   >
-                    <Paperclip className="h-4 w-4" />
+                    <Paperclip className="h-3.5 w-3.5" />
                     Context
                   </button>
                   <button
                     type="button"
                     onClick={handleToggleVoice}
-                    className={`h-8 rounded-md p-2 ${isListening ? 'bg-[var(--verde-naturale--primary)] text-gray-950' : 'text-gray-600 hover:bg-gray-100'}`}
+                    className={`inline-flex h-8 w-8 items-center justify-center rounded-full ${
+                      isListening ? 'bg-[var(--verde-naturale--primary)] text-gray-950' : 'text-gray-600 hover:bg-gray-100'
+                    }`}
                     title="Voice typing"
                   >
                     <Mic className="h-4 w-4" />
                   </button>
-                  <button type="button" className="h-8 rounded-md p-2 text-gray-600 hover:bg-gray-100" title="Insert code block">
+                  <button type="button" className="inline-flex h-8 w-8 items-center justify-center rounded-full text-gray-600 hover:bg-gray-100" title="Insert code block">
                     <Code2 className="h-4 w-4" />
                   </button>
                 </div>
 
                 <div className="flex items-center gap-2">
-                  {activeConversation && activeConversation.messages.length > 1 && (
+                  {activeConversation && activeConversation.messages.length > 1 && !isLoading && (
                     <button
                       type="button"
                       onClick={() => handleDeleteConversation(activeConversation.id)}
-                      className="rounded-md p-2 text-gray-500 hover:bg-rose-50 hover:text-rose-600"
+                      className="inline-flex h-8 w-8 items-center justify-center rounded-full text-gray-500 hover:bg-rose-50 hover:text-rose-600"
                       title="Delete current chat"
                     >
                       <Trash2 className="h-4 w-4" />
                     </button>
                   )}
                   {isLoading ? (
-                    <button type="button" onClick={handleStop} className="rounded-md bg-gray-950 p-2 text-white" title="Stop response">
-                      <Square className="h-4 w-4" />
+                    <button
+                      type="button"
+                      onClick={handleStop}
+                      className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-gray-900 text-white shadow-sm transition hover:bg-gray-800"
+                      title="Stop response"
+                    >
+                      <Square className="h-3.5 w-3.5 fill-current" />
                     </button>
                   ) : (
                     <button
                       type="button"
                       onClick={handleSendMessage}
                       disabled={!chatInput.trim() || !normalizedShopId}
-                      className="rounded-md bg-[var(--verde-naturale--primary)] p-2 text-gray-950 transition hover:brightness-95 disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-400"
+                      className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-[var(--verde-naturale--primary)] text-gray-950 transition hover:brightness-95 disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-400"
                       title="Send message"
                     >
                       <Send className="h-4 w-4" />
@@ -1296,18 +1657,22 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({ isOpen, onToggle }) =>
                 </div>
               </div>
             </div>
-            <div className="mt-2 flex items-center justify-between text-[11px] text-gray-500">
-              <span className="inline-flex min-w-0 items-center gap-1">
-                <Database className="h-3 w-3 shrink-0" />
-                <span className="truncate">{shopLabel ? shopLabel : 'No active shop selected'}</span>
-              </span>
-              {isLoading && (
-                <span className="flex items-center gap-1">
-                  <Loader2 className="h-3 w-3 animate-spin" />
-                  {chatMode === 'agent' ? 'Agent working' : 'Streaming'}
+            {isLoading && (
+              <div className="mt-2 flex items-center justify-end text-[11px] text-gray-500">
+                <span className="flex items-center gap-1 text-gray-600">
+                  {chatMode === 'agent' ? (
+                    <>
+                      Working for <span className="font-medium">{formatElapsed(workingElapsed)}</span>
+                    </>
+                  ) : (
+                    <>
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                      Streaming
+                    </>
+                  )}
                 </span>
-              )}
-            </div>
+              </div>
+            )}
           </footer>
             </>
           )}

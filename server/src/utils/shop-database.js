@@ -252,6 +252,7 @@ function initializeShopDatabaseSchema(db) {
     shop_id TEXT NOT NULL,
     user_email TEXT,
     title TEXT NOT NULL,
+    mode TEXT NOT NULL DEFAULT 'lite',
     created_at DATETIME NOT NULL,
     updated_at DATETIME NOT NULL
   );
@@ -343,6 +344,9 @@ function initializeShopDatabaseSchema(db) {
       .map((c) => c.name);
     if (cols.length && !cols.includes("user_email")) {
       db.exec("ALTER TABLE analytics_conversations ADD COLUMN user_email TEXT");
+    }
+    if (cols.length && !cols.includes("mode")) {
+      db.exec("ALTER TABLE analytics_conversations ADD COLUMN mode TEXT NOT NULL DEFAULT 'lite'");
     }
   } catch (error) {
     // ignore if migration already applied

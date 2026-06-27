@@ -59,3 +59,56 @@ body {
 .component-description {
   @apply text-sm text-gray-500 leading-relaxed;
 }
+
+/* Codex-style chat step animations */
+@keyframes codex-step-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes codex-pulse-soft {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@keyframes codex-shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.chat-step-enter {
+  animation: codex-step-in 0.28s ease-out forwards;
+}
+
+.chat-step-running {
+  animation: codex-pulse-soft 1.6s ease-in-out infinite;
+}
+
+.chat-working-shimmer {
+  background: linear-gradient(
+    90deg,
+    var(--gray-400) 0%,
+    var(--gray-600) 50%,
+    var(--gray-400) 100%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: codex-shimmer 2.2s linear infinite;
+}
