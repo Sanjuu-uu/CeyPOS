@@ -5,6 +5,7 @@ import {
   shopDatabaseExists,
 } from './shop-database-paths.js';
 import { applyReadLimit, validateReadOnlySql } from './sql-safety.js';
+import { applySearchFallback, normalizeToolResult } from './search-fallback.js';
 
 type QueryRow = Record<string, unknown>;
 
@@ -53,6 +54,49 @@ export async function queryShopDatabase(shopId: string, rawQuery: string): Promi
       });
     });
   });
+}
+
+export async function queryShopDatabaseWithSearch(
+  shopId: string,
+  rawQuery: string,
+  toolName: string,
+): Promise<QueryRow[] | { rows: QueryRow[]; meta: Record<string, unknown> }> {
+  const rows = await queryShopDatabase(shopId, rawQuery);
+  return applySearchFallback(toolName, rawQuery, rows, 80, (sql) => queryShopDatabase(shopId, sql));
+}
+
+export function compactSearchQueryResult(
+  result: QueryRow[] | { rows: QueryRow[]; meta?: Record<string, unknown> | null },
+) {
+  const normalized = normalizeToolResult(result);
+  const payload = compactResult(normalized.rows ?? []);
+  if (normalized.meta) {
+    return { ...payload, matchInfo: normalized.meta };
+  }
+  return payload;
+}
+
+function compactResult(result: QueryRow[]) {
+  const rows = result.slice(0, 25).map((row) =>
+    Object.fromEntries(
+      Object.entries(row)
+        .slice(0, 16)
+        .map(([key, value]) => [key, compactValue(value)]),
+    ),
+  );
+  return {
+    rowCount: result.length,
+    returnedRows: rows.length,
+    truncated: result.length > rows.length,
+    rows,
+  };
+}
+
+function compactValue(value: unknown) {
+  if (value === null || value === undefined) return value;
+  if (typeof value === 'number' || typeof value === 'boolean') return value;
+  const text = String(value);
+  return text.length > 180 ? `${text.slice(0, 180)}...` : text;
 }
 
 export async function getShopSchema(shopId: string): Promise<Array<{ name: string; sql: string }>> {

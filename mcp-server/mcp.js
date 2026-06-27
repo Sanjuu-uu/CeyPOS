@@ -18,10 +18,12 @@ import {
   sanitizeUserFacingText,
 } from './humanize-agent-step.js';
 import {
-  buildSearchFallbackQuery,
+  applySearchFallback,
   normalizeToolResult,
-  shouldTrySearchFallback,
-  wrapFallbackResult,
+  rankRowsByTokens,
+  tokenizeSearchText,
+  buildRankedSearchQuery,
+  SEARCH_ENTITIES,
 } from './search-fallback.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -175,6 +177,8 @@ Schema summary:
 For shop-specific facts, use focused read-only SQL tools unless compact context already provides the exact answer.
 Use the exact column names above. Do not invent columns such as product_name, sale_date, total_revenue, total_orders, or total_transactions.
 For restocking, inventory.restock_suggestion is a suggested quantity, not a boolean flag; use restock_suggestion > 0.
+For product/customer lookup, prefer flexible LIKE '%term%' across name, category, sku, barcode_id, inventory_code (inventory) or name, email, phone (customers). Avoid exact = unless the value is copied verbatim.
+If a lookup returns zero rows, closest-match search runs automatically — still start with flexible LIKE patterns.
 Prefer aggregate SQL and narrow columns. Never request broad SELECT * unless the user asks for raw rows.
 Tool results are compact samples; if rowCount is larger than shown, state that your answer uses the returned summary/sample.
 For charts, use KPI, bar, line, or pie tools only after fetching the needed data.
@@ -780,29 +784,20 @@ function isGreetingOnly(question) {
   return /^(hi|hello|hey|yo|good morning|good afternoon|good evening|thanks|thank you)$/.test(normalized);
 }
 
-function tokenizeQuestion(question) {
-  const stopWords = new Set([
-    'a', 'an', 'and', 'are', 'about', 'available', 'can', 'cost', 'do', 'does',
-    'for', 'have', 'how', 'i', 'in', 'is', 'item', 'me', 'much', 'of', 'on',
-    'please', 'price', 'product', 'qty', 'quantity', 'show', 'stock', 'tell',
-    'the', 'there', 'this', 'to', 'unit', 'we', 'what', 'whats', 'you',
-  ]);
-  return String(question || '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, ' ')
-    .split(/\s+/)
-    .map((token) => {
-      const clean = token.trim();
-      return /^[a-z]{4,}s$/.test(clean) ? clean.slice(0, -1) : clean;
-    })
-    .filter((token) => token.length >= 2 && !stopWords.has(token))
-    .slice(0, 8);
-}
-
 function hasProductLookupIntent(question) {
-  return /\b(price|cost|how much|stock|available|availability|do we have|qty|quantity)\b/i.test(
-    String(question || ''),
-  );
+  const text = String(question || '');
+  if (
+    /\b(price|cost|how much|stock|available|availability|do we have|do you have|do we sell|qty|quantity)\b/i.test(
+      text,
+    )
+  ) {
+    return true;
+  }
+  if (/\b(find|search for|lookup|look up|show me)\b/i.test(text)) {
+    const tokens = tokenizeSearchText(text, { maxTokens: 4 });
+    return tokens.length > 0;
+  }
+  return false;
 }
 
 function parseQuantity(text) {
@@ -875,46 +870,28 @@ function hasMultiStepIntent(text) {
 }
 
 async function findInventoryMatches(shopId, question) {
-  const tokens = tokenizeQuestion(question);
+  const tokens = tokenizeSearchText(question, { maxTokens: 8 });
   if (!tokens.length) return [];
 
-  const clauses = tokens.map(() => '(lower(name) LIKE ? OR lower(category) LIKE ?)');
-  const params = tokens.flatMap((token) => [`%${token}%`, `%${token}%`]);
-  const andQuery = `
-    SELECT item_id, name, category, price, stock, (SELECT currency FROM shop_meta LIMIT 1) AS currency
-    FROM inventory
-    WHERE ${clauses.join(' AND ')}
-    ORDER BY name
-    LIMIT 8`;
-  let rows = await runSqlQuery(shopId, andQuery.replace(/\?/g, () => {
-    const value = params.shift();
-    return `'${String(value).replace(/'/g, "''")}'`;
-  }));
+  const inventorySelect =
+    'item_id, name, category, sku, inventory_code, barcode_id, price, stock, (SELECT currency FROM shop_meta LIMIT 1) AS currency';
+  const modes = tokens.length >= 2 ? ['and', 'or'] : ['or'];
+  let rows = [];
 
-  if (!rows.length) {
-    const orClauses = tokens.map((token) => {
-      const value = `%${String(token).replace(/'/g, "''")}%`;
-      return `(lower(name) LIKE '${value}' OR lower(category) LIKE '${value}')`;
-    });
-    rows = await runSqlQuery(
-      shopId,
-      `SELECT item_id, name, category, price, stock, (SELECT currency FROM shop_meta LIMIT 1) AS currency
-       FROM inventory
-       WHERE ${orClauses.join(' OR ')}
-       ORDER BY name
-       LIMIT 12`,
+  for (const mode of modes) {
+    const sql = buildRankedSearchQuery(
+      'query_inventory',
+      tokens,
+      12,
+      mode,
+      inventorySelect,
     );
+    if (!sql) continue;
+    rows = await runSqlQuery(shopId, sql);
+    if (rows.length) break;
   }
 
-  return rows
-    .map((row) => {
-      const haystack = `${row.name || ''} ${row.category || ''}`.toLowerCase();
-      const score = tokens.reduce((sum, token) => sum + (haystack.includes(token) ? 1 : 0), 0);
-      return { ...row, score };
-    })
-    .filter((row) => row.score > 0)
-    .sort((a, b) => b.score - a.score || String(a.name).localeCompare(String(b.name)))
-    .slice(0, 5);
+  return rankRowsByTokens(rows, tokens, SEARCH_ENTITIES.query_inventory.columns, 5);
 }
 
 async function tryBuildLocalAnswer(question, shopId, mode, session) {
@@ -2029,28 +2006,11 @@ async function executeTool(name, args, shopId, options = {}) {
         return { error: validation.error };
       }
       const rowLimit = options.rowLimit;
-      let rows = await runSqlQuery(
-        effectiveShopId,
-        applyReadLimit(validation.sql, rowLimit),
+      const limitedSql = applyReadLimit(validation.sql, rowLimit);
+      const rows = await runSqlQuery(effectiveShopId, limitedSql);
+      return applySearchFallback(name, args.query, rows, rowLimit, (sql) =>
+        runSqlQuery(effectiveShopId, sql),
       );
-
-      if (shouldTrySearchFallback(name, args.query, rows)) {
-        const fallback = buildSearchFallbackQuery(name, args.query, rowLimit);
-        if (fallback?.sql) {
-          const fallbackValidation = validateReadOnlySql(fallback.sql);
-          if (fallbackValidation.ok) {
-            const fallbackRows = await runSqlQuery(
-              effectiveShopId,
-              applyReadLimit(fallbackValidation.sql, rowLimit),
-            );
-            if (fallbackRows.length > 0) {
-              return wrapFallbackResult(fallbackRows, fallback.term);
-            }
-          }
-        }
-      }
-
-      return rows;
     } catch (error) {
       return { error: error.message };
     }

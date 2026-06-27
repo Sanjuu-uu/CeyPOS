@@ -3,38 +3,16 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod';
 import {
   queryShopDatabase,
+  queryShopDatabaseWithSearch,
   getShopSchema,
   getShopSampleData,
+  compactSearchQueryResult,
 } from './shop-database-reader.js';
 
 type QueryResult = Array<Record<string, unknown>>;
 
-const compactValue = (value: unknown) => {
-  if (value === null || value === undefined) return value;
-  if (typeof value === 'number' || typeof value === 'boolean') return value;
-  const text = String(value);
-  return text.length > 180 ? `${text.slice(0, 180)}...` : text;
-};
-
-const compactResult = (result: QueryResult | Record<string, unknown>) => {
-  if (!Array.isArray(result)) return result;
-  const rows = result.slice(0, 25).map((row) =>
-    Object.fromEntries(
-      Object.entries(row)
-        .slice(0, 16)
-        .map(([key, value]) => [key, compactValue(value)]),
-    ),
-  );
-  return {
-    rowCount: result.length,
-    returnedRows: rows.length,
-    truncated: result.length > rows.length,
-    rows,
-  };
-};
-
 const toSuccessContent = (result: QueryResult | Record<string, unknown>) => ({
-  content: [{ type: 'text' as const, text: JSON.stringify(compactResult(result), null, 2) }],
+  content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }],
 });
 
 const toErrorContent = (error: unknown) => {
@@ -94,8 +72,8 @@ server.registerTool(
   },
   async ({ shopId, query }) => {
     try {
-      const result = await queryShopDatabase(shopId, query);
-      return toSuccessContent(result);
+      const result = await queryShopDatabaseWithSearch(shopId, query, 'query_inventory');
+      return toSuccessContent(compactSearchQueryResult(result));
     } catch (error) {
       return toErrorContent(error);
     }
@@ -112,7 +90,7 @@ server.registerTool(
   async ({ shopId, query }) => {
     try {
       const result = await queryShopDatabase(shopId, query);
-      return toSuccessContent(result);
+      return toSuccessContent(compactSearchQueryResult(result));
     } catch (error) {
       return toErrorContent(error);
     }
@@ -128,8 +106,8 @@ server.registerTool(
   },
   async ({ shopId, query }) => {
     try {
-      const result = await queryShopDatabase(shopId, query);
-      return toSuccessContent(result);
+      const result = await queryShopDatabaseWithSearch(shopId, query, 'query_customers');
+      return toSuccessContent(compactSearchQueryResult(result));
     } catch (error) {
       return toErrorContent(error);
     }
@@ -163,7 +141,7 @@ server.registerTool(
   async ({ shopId, table, limit = 5 }) => {
     try {
       const result = await getShopSampleData(shopId, table, limit);
-      return toSuccessContent(result);
+      return toSuccessContent(compactSearchQueryResult(result));
     } catch (error) {
       return toErrorContent(error);
     }
