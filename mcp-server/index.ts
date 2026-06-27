@@ -9,8 +9,32 @@ import {
 
 type QueryResult = Array<Record<string, unknown>>;
 
+const compactValue = (value: unknown) => {
+  if (value === null || value === undefined) return value;
+  if (typeof value === 'number' || typeof value === 'boolean') return value;
+  const text = String(value);
+  return text.length > 180 ? `${text.slice(0, 180)}...` : text;
+};
+
+const compactResult = (result: QueryResult | Record<string, unknown>) => {
+  if (!Array.isArray(result)) return result;
+  const rows = result.slice(0, 25).map((row) =>
+    Object.fromEntries(
+      Object.entries(row)
+        .slice(0, 16)
+        .map(([key, value]) => [key, compactValue(value)]),
+    ),
+  );
+  return {
+    rowCount: result.length,
+    returnedRows: rows.length,
+    truncated: result.length > rows.length,
+    rows,
+  };
+};
+
 const toSuccessContent = (result: QueryResult | Record<string, unknown>) => ({
-  content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }],
+  content: [{ type: 'text' as const, text: JSON.stringify(compactResult(result), null, 2) }],
 });
 
 const toErrorContent = (error: unknown) => {
@@ -18,7 +42,7 @@ const toErrorContent = (error: unknown) => {
   return {
     content: [{ type: 'text' as const, text: `Error: ${message}` }],
     isError: true,
-  } as const;
+  };
 };
 
 const inventoryQuerySchema = z

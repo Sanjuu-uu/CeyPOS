@@ -10,7 +10,7 @@ import {
 } from "../types";
 import clientIo from "socket.io-client";
 
-const API_BASE = import.meta.env.VITE_API_BASE || "";
+const API_BASE = (import.meta.env.VITE_API_BASE || "").replace(/\/+$/, "");
 
 type SocketEmitCallback = (response: unknown) => void;
 

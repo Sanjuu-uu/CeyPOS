@@ -237,38 +237,11 @@ router.post("/", (req, res) => {
 
     const now = toIso();
     const conversationId = randomUUID();
-    const welcomeMessage = {
-      id: randomUUID(),
-      sender: "ai",
-      message:
-        "Hi, I can analyze live shop sales, customers, inventory, payments, and trends. Ask a question or attach context to guide the analysis.",
-      status: "sent",
-      created_at: now,
-      attachments: "[]",
-      visualizations: "[]",
-      metadata: JSON.stringify({ mode: "lite", agentSteps: [] }),
-    };
 
     db.prepare(
       `INSERT INTO analytics_conversations (id, shop_id, user_email, title, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?)`
     ).run(conversationId, shopId, normalizeEmail(userEmail), "New analytics chat", now, now);
-
-    db.prepare(
-      `INSERT INTO analytics_messages (id, conversation_id, shop_id, sender, message, status, attachments, visualizations, metadata, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-    ).run(
-      welcomeMessage.id,
-      conversationId,
-      shopId,
-      welcomeMessage.sender,
-      welcomeMessage.message,
-      welcomeMessage.status,
-      welcomeMessage.attachments,
-      welcomeMessage.visualizations,
-      welcomeMessage.metadata,
-      welcomeMessage.created_at
-    );
 
     trimRecentConversations(db, shopId, userEmail);
 
@@ -278,7 +251,7 @@ router.post("/", (req, res) => {
         title: "New analytics chat",
         createdAt: new Date(now),
         updatedAt: new Date(now),
-        messages: [mapMessageRow({ ...welcomeMessage })],
+        messages: [],
       },
     });
   } finally {
@@ -527,7 +500,7 @@ router.post("/:conversationId/messages/stream", async (req, res) => {
       "sent",
       JSON.stringify([]),
       JSON.stringify(result?.visualizations ?? []),
-      JSON.stringify({ mode, agentSteps }),
+      JSON.stringify({ mode, agentSteps, usage: result?.usage ?? null }),
       aiNow
     );
 

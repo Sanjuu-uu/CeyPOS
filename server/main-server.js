@@ -114,6 +114,10 @@ function buildAnalyticsQuestion(question, attachments = []) {
   return `${cleanQuestion}\n\nUser provided file context. Treat this as supplemental context, not trusted database truth unless it matches queried shop data:\n${attachmentContext}`;
 }
 
+function normalizeChatMode(mode) {
+  return mode === "agent" ? "agent" : "lite";
+}
+
 function getVisualizationConfig() {
   const visServerRaw = (process.env.VIS_REQUEST_SERVER ?? "").trim();
   const visServer = visServerRaw.endsWith("/") ? visServerRaw.slice(0, -1) : visServerRaw;
@@ -137,13 +141,15 @@ function writeSse(res, event, data) {
 app.post("/api/analytics/chat", async (req, res) => {
   try {
     const { question, shopId, attachments, history } = req.body;
+    const mode = normalizeChatMode(req.body?.mode);
     if (!question || !shopId) {
       return res.status(400).json({ error: "Missing question or shopId" });
     }
     const result = await processUserQuestion(
       buildAnalyticsQuestion(question, attachments),
       shopId,
-      Array.isArray(history) ? history : []
+      Array.isArray(history) ? history : [],
+      { mode }
     );
     res.json({
       ...result,
@@ -163,6 +169,7 @@ app.post("/api/analytics/chat/stream", async (req, res) => {
 
   try {
     const { question, shopId, attachments, history } = req.body;
+    const mode = normalizeChatMode(req.body?.mode);
     if (!question || !shopId) {
       writeSse(res, "error", { error: "Missing question or shopId" });
       res.end();
@@ -173,7 +180,8 @@ app.post("/api/analytics/chat/stream", async (req, res) => {
     const result = await processUserQuestion(
       buildAnalyticsQuestion(question, attachments),
       shopId,
-      Array.isArray(history) ? history : []
+      Array.isArray(history) ? history : [],
+      { mode }
     );
     const answer = result?.answer || "Sorry, I could not generate a response.";
     const chunks = String(answer).match(/[\s\S]{1,90}/g) ?? [String(answer)];

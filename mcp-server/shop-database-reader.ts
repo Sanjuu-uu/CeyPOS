@@ -28,7 +28,7 @@ function sanitizeSqlQuery(rawQuery: string): string {
   if (!validation.ok) {
     throw new Error(validation.error);
   }
-  return applyReadLimit(validation.sql, 100);
+  return applyReadLimit(validation.sql, 80);
 }
 
 export async function queryShopDatabase(shopId: string, rawQuery: string): Promise<QueryRow[]> {
@@ -77,7 +77,7 @@ export async function getShopSampleData(
     throw new Error('Invalid table name requested.');
   }
 
-  const safeLimit = Number.isFinite(limit) ? Math.max(1, Math.min(Math.trunc(limit), 100)) : 5;
+  const safeLimit = Number.isFinite(limit) ? Math.max(1, Math.min(Math.trunc(limit), 25)) : 5;
   const query = `SELECT * FROM ${tableName} LIMIT ${safeLimit}`;
   return queryShopDatabase(shopId, query);
 }

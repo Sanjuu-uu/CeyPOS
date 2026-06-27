@@ -1,9 +1,21 @@
 import path from 'path';
 import fs from 'fs';
+import { fileURLToPath } from 'url';
 
-const SHOP_DATABASE_DIRECTORY =
-  process.env.RAILWAY_VOLUME_MOUNT_PATH ||
-  path.resolve(process.cwd(), '../database');
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+const SHOP_DATABASE_DIRECTORY = process.env.RAILWAY_VOLUME_MOUNT_PATH
+  ? path.resolve(process.env.RAILWAY_VOLUME_MOUNT_PATH)
+  : path.resolve(__dirname, '../database');
+
+const SHOP_DATABASE_DIRECTORIES = Array.from(
+  new Set([
+    SHOP_DATABASE_DIRECTORY,
+    path.resolve(process.cwd(), '../database'),
+    path.resolve(process.cwd(), 'database'),
+  ]),
+);
 
 function ensureShopDatabaseDirectory() {
   if (!fs.existsSync(SHOP_DATABASE_DIRECTORY)) {
@@ -27,10 +39,12 @@ function candidateShopDatabaseFilenames(shopId) {
 
 function resolveExistingShopDatabasePath(shopId) {
   ensureShopDatabaseDirectory();
-  for (const fileName of candidateShopDatabaseFilenames(shopId)) {
-    const fullPath = path.join(SHOP_DATABASE_DIRECTORY, fileName);
-    if (fs.existsSync(fullPath)) {
-      return fullPath;
+  for (const directory of SHOP_DATABASE_DIRECTORIES) {
+    for (const fileName of candidateShopDatabaseFilenames(shopId)) {
+      const fullPath = path.join(directory, fileName);
+      if (fs.existsSync(fullPath)) {
+        return fullPath;
+      }
     }
   }
   return null;
@@ -52,6 +66,7 @@ function shopDatabaseExists(shopId) {
 
 export {
   SHOP_DATABASE_DIRECTORY,
+  SHOP_DATABASE_DIRECTORIES,
   ensureShopDatabaseDirectory,
   sanitizeShopIdentifier,
   candidateShopDatabaseFilenames,

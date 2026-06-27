@@ -43,11 +43,6 @@ function validateReadOnlySql(query) {
   return { ok: true, sql: withoutTrailingSemicolon };
 }
 
-function hasTopLevelLimit(sql) {
-  const normalized = stripSqlComments(sql).toLowerCase();
-  return /\blimit\s+\d+\b/i.test(normalized);
-}
-
 function applyReadLimit(sql, requestedLimit = DEFAULT_ROW_LIMIT) {
   const normalized = stripSqlComments(sql).toLowerCase();
   if (normalized.startsWith("pragma ")) {
@@ -60,8 +55,14 @@ function applyReadLimit(sql, requestedLimit = DEFAULT_ROW_LIMIT) {
     MAX_ROW_LIMIT,
   );
 
-  if (hasTopLevelLimit(sql)) {
-    return sql;
+  const limitPattern = /\blimit\s+(\d+)\b/i;
+  const existingLimit = sql.match(limitPattern);
+  if (existingLimit) {
+    const currentLimit = Number.parseInt(existingLimit[1], 10);
+    if (Number.isFinite(currentLimit) && currentLimit <= safeLimit) {
+      return sql;
+    }
+    return sql.replace(limitPattern, `LIMIT ${safeLimit}`);
   }
 
   return `${sql} LIMIT ${safeLimit}`;

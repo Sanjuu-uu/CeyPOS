@@ -6,6 +6,7 @@ import {
   ChevronRight,
   Clipboard,
   Code2,
+  Database,
   FileText,
   History,
   Loader2,
@@ -16,8 +17,10 @@ import {
   Paperclip,
   Plus,
   Send,
+  Sparkles,
   Square,
   Trash2,
+  Wrench,
   Zap,
   X,
 } from 'lucide-react';
@@ -58,6 +61,15 @@ interface AgentStep {
 interface MessageMetadata {
   mode?: ChatMode;
   agentSteps?: AgentStep[];
+  usage?: {
+    promptTokens?: number;
+    candidateTokens?: number;
+    thoughtsTokens?: number;
+    outputTokens?: number;
+    totalTokens?: number;
+    estimatedCostUsd?: number;
+    estimatedQuestionsPerUsd?: number | null;
+  } | null;
 }
 
 interface Conversation {
@@ -95,6 +107,7 @@ type AnalyticsResponse = {
   mode?: ChatMode;
   agentSteps?: AgentStep[];
   step?: AgentStep;
+  usage?: MessageMetadata['usage'];
   conversation?: {
     title?: string;
     updatedAt?: string;
@@ -117,6 +130,16 @@ type SpeechRecognitionConstructor = new () => SpeechRecognitionLike;
 
 const ACCENT = '#ecff76';
 const MAX_ATTACHMENT_BYTES = 2 * 1024 * 1024;
+const WELCOME_MESSAGE_PREFIX = 'Hi, I can analyze live shop sales';
+
+const PROMPT_SUGGESTIONS = [
+  'Show today revenue and order count',
+  'Find slow moving inventory',
+  'Compare sales by payment method',
+  'Which products need restocking?',
+];
+
+const CONTEXT_CHIPS = ['Live SQLite', 'Sales', 'Inventory', 'Customers'];
 
 const createId = () => {
   if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
@@ -135,6 +158,8 @@ const formatBytes = (bytes: number) => {
 const formatConversationTime = (date: Date) =>
   date.toLocaleDateString([], { month: 'short', day: 'numeric' });
 
+const isWelcomeMessage = (message: Message) =>
+  message.sender === 'ai' && message.message.startsWith(WELCOME_MESSAGE_PREFIX);
 
 const getSpeechRecognitionConstructor = (): SpeechRecognitionConstructor | null => {
   if (typeof window === 'undefined') return null;
@@ -202,7 +227,11 @@ const AgentSteps: React.FC<{ steps: AgentStep[] }> = ({ steps }) => {
   if (!steps.length) return null;
 
   return (
-    <div className="mb-3 space-y-1.5 rounded-md border border-gray-200 bg-gray-50 px-3 py-2">
+    <div className="mb-3 space-y-2 rounded-md border border-gray-200 bg-gray-50 px-3 py-2">
+      <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+        <Wrench className="h-3.5 w-3.5" />
+        Agent progress
+      </div>
       {steps.map((step) => (
         <div key={step.id} className="flex gap-2 text-[12px] leading-5 text-gray-700">
           <span
@@ -223,6 +252,69 @@ const AgentSteps: React.FC<{ steps: AgentStep[] }> = ({ steps }) => {
     </div>
   );
 };
+
+const StartSurface: React.FC<{
+  shopLabel: string | null;
+  onPickPrompt: (prompt: string) => void;
+}> = ({ shopLabel, onPickPrompt }) => (
+  <div className="mx-auto flex min-h-full w-full max-w-md flex-col justify-center py-8">
+    <div className="mb-5 flex items-center gap-3">
+      <div className="flex h-9 w-9 items-center justify-center rounded-md border border-gray-200 bg-white text-gray-800 shadow-sm">
+        <Sparkles className="h-4 w-4" />
+      </div>
+      <div className="min-w-0">
+        <h3 className="text-sm font-semibold text-gray-950">Ask CeyPOS Analytics</h3>
+        <p className="truncate text-xs text-gray-500">
+          {shopLabel ? `Workspace context: ${shopLabel}` : 'Select a shop to use live context'}
+        </p>
+      </div>
+    </div>
+
+    <div className="mb-4 flex flex-wrap gap-1.5">
+      {CONTEXT_CHIPS.map((chip) => (
+        <span
+          key={chip}
+          className="inline-flex items-center gap-1 rounded-md border border-gray-200 bg-white px-2 py-1 text-[11px] font-medium text-gray-600"
+        >
+          <Database className="h-3 w-3" />
+          {chip}
+        </span>
+      ))}
+    </div>
+
+    <div className="grid gap-2">
+      {PROMPT_SUGGESTIONS.map((prompt) => (
+        <button
+          key={prompt}
+          type="button"
+          onClick={() => onPickPrompt(prompt)}
+          className="rounded-md border border-gray-200 bg-white px-3 py-2 text-left text-[13px] leading-5 text-gray-800 shadow-sm transition hover:border-gray-400 hover:bg-gray-50"
+        >
+          {prompt}
+        </button>
+      ))}
+    </div>
+  </div>
+);
+
+const normalizeMessage = (message: Message): Message => ({
+  ...message,
+  timestamp: new Date(message.timestamp),
+});
+
+const normalizeConversation = (conversation: Conversation): Conversation => ({
+  ...conversation,
+  createdAt: new Date(conversation.createdAt),
+  updatedAt: new Date(conversation.updatedAt),
+  messages: conversation.messages.map(normalizeMessage),
+});
+
+const normalizeSummary = (conversation: ConversationSummary): ConversationSummary => ({
+  ...conversation,
+  updatedAt: new Date(conversation.updatedAt),
+  questionCount: Number(conversation.questionCount ?? 0),
+  lastMessage: conversation.lastMessage ?? '',
+});
 
 export const ChatSidebar: React.FC<ChatSidebarProps> = ({ isOpen, onToggle }) => {
   const { activeShopId, currentUser, currentShop } = useApp();
@@ -256,25 +348,6 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({ isOpen, onToggle }) =>
     if (name) return name;
     return normalizedShopId ?? null;
   }, [currentShop?.name, normalizedShopId]);
-
-  const normalizeMessage = (message: Message) => ({
-    ...message,
-    timestamp: new Date(message.timestamp),
-  });
-
-  const normalizeConversation = (conversation: Conversation) => ({
-    ...conversation,
-    createdAt: new Date(conversation.createdAt),
-    updatedAt: new Date(conversation.updatedAt),
-    messages: conversation.messages.map(normalizeMessage),
-  });
-
-  const normalizeSummary = (conversation: ConversationSummary) => ({
-    ...conversation,
-    updatedAt: new Date(conversation.updatedAt),
-    questionCount: Number(conversation.questionCount ?? 0),
-    lastMessage: conversation.lastMessage ?? '',
-  });
 
   const requestRecentChats = useCallback(async () => {
     const response = await fetch(
@@ -719,6 +792,7 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({ isOpen, onToggle }) =>
           metadata: {
             mode: payload.mode ?? chatMode,
             agentSteps: Array.isArray(payload.agentSteps) ? payload.agentSteps : [],
+            usage: payload.usage ?? null,
           },
           status: 'sent',
           },
@@ -860,6 +934,11 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({ isOpen, onToggle }) =>
     }
   };
 
+  const handlePickPrompt = (prompt: string) => {
+    setChatInput(prompt);
+    focusInput();
+  };
+
   return (
     <aside
       className={`relative flex h-full shrink-0 flex-col border-l border-gray-200 bg-white shadow-sm transition-[width] duration-300 ${
@@ -933,30 +1012,6 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({ isOpen, onToggle }) =>
                 </button>
               </div>
             </div>
-            <div className="grid grid-cols-2 rounded-md border border-gray-200 bg-gray-50 p-1">
-              <button
-                type="button"
-                onClick={() => setChatMode('lite')}
-                className={`flex items-center justify-center gap-1.5 rounded px-2 py-1.5 text-xs font-semibold ${
-                  chatMode === 'lite' ? 'bg-white text-gray-950 shadow-sm' : 'text-gray-600 hover:text-gray-950'
-                }`}
-                title="Lite mode"
-              >
-                <Zap className="h-3.5 w-3.5" />
-                Lite
-              </button>
-              <button
-                type="button"
-                onClick={() => setChatMode('agent')}
-                className={`flex items-center justify-center gap-1.5 rounded px-2 py-1.5 text-xs font-semibold ${
-                  chatMode === 'agent' ? 'bg-white text-gray-950 shadow-sm' : 'text-gray-600 hover:text-gray-950'
-                }`}
-                title="Agent mode"
-              >
-                <Bot className="h-3.5 w-3.5" />
-                Agent
-              </button>
-            </div>
 
           </header>
 
@@ -1027,7 +1082,11 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({ isOpen, onToggle }) =>
             <>
           <div ref={scrollAreaRef} onScroll={handleScroll} className="flex-1 overflow-y-auto bg-gray-50/70 px-4 py-5">
             <div className="space-y-3">
+              {!(activeConversation?.messages ?? []).some((message) => message.sender === 'user') && (
+                <StartSurface shopLabel={shopLabel} onPickPrompt={handlePickPrompt} />
+              )}
               {activeConversation?.messages.map((message) => {
+                if (isWelcomeMessage(message)) return null;
                 const isUser = message.sender === 'user';
                 const hasAgentSteps = !isUser && Boolean(message.metadata?.agentSteps?.length);
                 const isEmptyStreaming = message.status === 'streaming' && !message.message && !hasAgentSteps;
@@ -1149,31 +1208,61 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({ isOpen, onToggle }) =>
               </div>
             )}
 
-            <div className="rounded-lg border border-gray-200 bg-white p-2 shadow-sm focus-within:ring-2 focus-within:ring-[var(--verde-naturale--primary)]">
+            <div className="rounded-md border border-gray-300 bg-white shadow-sm focus-within:border-gray-500">
               <textarea
                 ref={inputRef}
-                placeholder="Ask a follow-up question"
+                placeholder={chatMode === 'agent' ? 'Ask Agent to analyze, calculate, and use tools' : 'Ask a quick analytics question'}
                 value={chatInput}
                 onChange={(event) => setChatInput(event.target.value)}
                 onKeyDown={handleKeyDown}
                 rows={1}
-                className="max-h-40 min-h-[48px] w-full resize-none border-0 bg-transparent px-2 py-2 text-sm text-gray-950 outline-none placeholder:text-gray-400 disabled:opacity-70"
+                className="max-h-40 min-h-[54px] w-full resize-none border-0 bg-transparent px-3 py-3 text-sm text-gray-950 outline-none placeholder:text-gray-400 disabled:opacity-70"
               />
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-1">
+              <div className="flex flex-wrap items-center justify-between gap-2 border-t border-gray-100 px-2 py-2">
+                <div className="flex min-w-0 flex-wrap items-center gap-1">
                   <input ref={fileInputRef} type="file" multiple className="hidden" onChange={handleFilesSelected} />
-                  <button type="button" onClick={() => fileInputRef.current?.click()} className="rounded-md p-2 text-gray-600 hover:bg-gray-100" title="Attach files">
+                  <div className="mr-1 inline-flex rounded-md border border-gray-200 bg-gray-50 p-0.5">
+                    <button
+                      type="button"
+                      onClick={() => setChatMode('lite')}
+                      className={`inline-flex h-7 items-center gap-1 rounded px-2 text-[12px] font-medium ${
+                        chatMode === 'lite' ? 'bg-white text-gray-950 shadow-sm' : 'text-gray-600 hover:text-gray-950'
+                      }`}
+                      title="Lite mode"
+                    >
+                      <Zap className="h-3.5 w-3.5" />
+                      Lite
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setChatMode('agent')}
+                      className={`inline-flex h-7 items-center gap-1 rounded px-2 text-[12px] font-medium ${
+                        chatMode === 'agent' ? 'bg-white text-gray-950 shadow-sm' : 'text-gray-600 hover:text-gray-950'
+                      }`}
+                      title="Agent mode"
+                    >
+                      <Bot className="h-3.5 w-3.5" />
+                      Agent
+                    </button>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="inline-flex h-8 items-center gap-1.5 rounded-md px-2 text-[12px] font-medium text-gray-600 hover:bg-gray-100"
+                    title="Add context"
+                  >
                     <Paperclip className="h-4 w-4" />
+                    Context
                   </button>
                   <button
                     type="button"
                     onClick={handleToggleVoice}
-                    className={`rounded-md p-2 ${isListening ? 'bg-[var(--verde-naturale--primary)] text-gray-950' : 'text-gray-600 hover:bg-gray-100'}`}
+                    className={`h-8 rounded-md p-2 ${isListening ? 'bg-[var(--verde-naturale--primary)] text-gray-950' : 'text-gray-600 hover:bg-gray-100'}`}
                     title="Voice typing"
                   >
                     <Mic className="h-4 w-4" />
                   </button>
-                  <button type="button" className="rounded-md p-2 text-gray-600 hover:bg-gray-100" title="Code block helper">
+                  <button type="button" className="h-8 rounded-md p-2 text-gray-600 hover:bg-gray-100" title="Insert code block">
                     <Code2 className="h-4 w-4" />
                   </button>
                 </div>
@@ -1208,7 +1297,10 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({ isOpen, onToggle }) =>
               </div>
             </div>
             <div className="mt-2 flex items-center justify-between text-[11px] text-gray-500">
-              <span>{shopLabel ? `Shop: ${shopLabel}` : 'No active shop selected'}</span>
+              <span className="inline-flex min-w-0 items-center gap-1">
+                <Database className="h-3 w-3 shrink-0" />
+                <span className="truncate">{shopLabel ? shopLabel : 'No active shop selected'}</span>
+              </span>
               {isLoading && (
                 <span className="flex items-center gap-1">
                   <Loader2 className="h-3 w-3 animate-spin" />
