@@ -9,6 +9,7 @@ import React, {
   useRef,
 } from 'react';
 import { useClerk, useUser } from '@clerk/clerk-react';
+import { authFetch } from '../lib/api';
 
 // Define the complete shop form data interface
 export interface ShopFormData {
@@ -388,7 +389,7 @@ export const ShopWizardProvider: React.FC<ShopWizardProviderProps> = ({
           userEmail: ownerEmail,
         };
 
-        const response = await fetch('/api/shop/setup', {
+        const response = await authFetch('/api/shop/setup', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),

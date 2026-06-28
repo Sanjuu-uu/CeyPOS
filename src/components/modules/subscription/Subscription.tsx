@@ -133,7 +133,7 @@ export const Subscription: React.FC = () => {
               You are currently on the <span className="font-medium capitalize">{currentShopTier}</span> tier.
             </p>
             <p className="text-gray-500 text-xs mt-2">
-              Register terminals: {registerLimit} · Team members: {teamLimit} · Pro team seats: {proTeamSeats}
+              Register terminals: {registerLimit} · Employees: {teamLimit} · Pro team seats: {proTeamSeats}
             </p>
           </div>
           <div className="flex gap-3 w-full sm:w-auto">

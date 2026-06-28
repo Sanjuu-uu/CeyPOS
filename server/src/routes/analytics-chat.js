@@ -2,6 +2,9 @@ import express from "express";
 import { randomUUID } from "crypto";
 import { openShopDatabase, shopDatabaseExists } from "../utils/shop-database.js";
 import { processUserQuestion } from "../../../mcp-server/mcp.js";
+import { getMemberByEmail, ensureOwnerMember } from "../services/team-service.js";
+import { buildMemberScope, getShopPlanLimits, scopeAllowsAi } from "../services/member-scope.js";
+import { requireClerkSession } from "../middleware/clerk-auth.js";
 
 const router = express.Router();
 
@@ -10,8 +13,6 @@ const LITE_HISTORY_MESSAGE_LIMIT = 4;
 const AGENT_HISTORY_MESSAGE_LIMIT = 10;
 
 const normalizeChatMode = (mode) => (mode === "agent" ? "agent" : "lite");
-import { getMemberByEmail, ensureOwnerMember } from "../services/team-service.js";
-import { buildMemberScope, getShopPlanLimits, scopeAllowsAi } from "../services/member-scope.js";
 
 const toIso = (value = Date.now()) => new Date(value).toISOString();
 
@@ -68,6 +69,8 @@ const normalizeHistoryEntries = (history = []) => {
 };
 
 const normalizeEmail = (email) => String(email || "").trim().toLowerCase();
+
+router.use(requireClerkSession);
 
 const ensureAuthorized = (db, shopId, userEmail) => {
   const email = normalizeEmail(userEmail);

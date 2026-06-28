@@ -24,7 +24,7 @@ import {
 } from 'lucide-react';
 import { ChatVisualization, type VisualizationData } from './ChatVisualization';
 import { useApp } from '../../../context/AppContext';
-import { API_BASE } from '../../../lib/api';
+import { API_BASE, authFetch } from '../../../lib/api';
 import { humanizeAgentStep, sanitizeUserFacingText } from '../../../lib/humanizeAgentStep';
 
 interface Attachment {
@@ -458,7 +458,7 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({ isOpen, onToggle }) =>
   }, [activeShopId]);
 
   const requestRecentChats = useCallback(async () => {
-    const response = await fetch(
+    const response = await authFetch(
       `${API_BASE}/api/analytics/chats?shopId=${encodeURIComponent(
         normalizedShopId ?? ''
       )}&userEmail=${encodeURIComponent(userEmail)}`
@@ -471,7 +471,7 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({ isOpen, onToggle }) =>
   }, [normalizedShopId, userEmail]);
 
   const requestConversation = useCallback(async (conversationId: string) => {
-    const response = await fetch(
+    const response = await authFetch(
       `${API_BASE}/api/analytics/chats/${encodeURIComponent(
         conversationId
       )}?shopId=${encodeURIComponent(normalizedShopId ?? '')}&userEmail=${encodeURIComponent(
@@ -486,7 +486,7 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({ isOpen, onToggle }) =>
   }, [normalizedShopId, userEmail]);
 
   const requestNewChat = useCallback(async (mode: ChatMode = 'lite') => {
-    const response = await fetch(`${API_BASE}/api/analytics/chats`, {
+    const response = await authFetch(`${API_BASE}/api/analytics/chats`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ shopId: normalizedShopId, userEmail, mode }),
@@ -499,7 +499,7 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({ isOpen, onToggle }) =>
   }, [normalizedShopId, userEmail]);
 
   const requestDeleteChat = useCallback(async (conversationId: string) => {
-    const response = await fetch(
+    const response = await authFetch(
       `${API_BASE}/api/analytics/chats/${encodeURIComponent(
         conversationId
       )}?shopId=${encodeURIComponent(normalizedShopId ?? '')}&userEmail=${encodeURIComponent(
@@ -956,7 +956,7 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({ isOpen, onToggle }) =>
       .slice(-4)
       .map((message) => ({ sender: message.sender, message: message.message }));
 
-    const response = await fetch(
+    const response = await authFetch(
       `${API_BASE}/api/analytics/chats/${encodeURIComponent(
         conversationId
       )}/messages/stream`,

@@ -9,6 +9,7 @@ import {
   KeyboardShortcuts,
 } from "../types";
 import clientIo from "socket.io-client";
+import { authFetch } from "./api";
 
 const API_BASE = (import.meta.env.VITE_API_BASE || "").replace(/\/+$/, "");
 
@@ -507,7 +508,7 @@ function buildSale(
 }
 
 async function fetchShopMeta(rawShopId: string) {
-  const res = await fetch(`${API_BASE}/api/shop/${rawShopId}/meta`);
+  const res = await authFetch(`${API_BASE}/api/shop/${rawShopId}/meta`);
   if (!res.ok) throw new Error(`Failed to load shop metadata (${res.status})`);
   const body = await res.json();
   const meta = body.meta || body;
@@ -749,7 +750,7 @@ function applySnapshot(
 
 async function fetchSnapshot(shopKey: string) {
   const rawShopId = normalizeShopId(shopKey);
-  const res = await fetch(`${API_BASE}/api/shop/${rawShopId}/snapshot`);
+  const res = await authFetch(`${API_BASE}/api/shop/${rawShopId}/snapshot`);
   if (!res.ok) throw new Error(`Failed to load snapshot (${res.status})`);
   const data = await res.json();
   if (!data?.snapshot) return;
@@ -1080,7 +1081,7 @@ async function saveBusinessRules(rules: BusinessRules): Promise<void> {
   if (!currentShopKey) throw new Error("No active shop");
   const cleanShopId = normalizeShopId(currentShopKey);
 
-  const res = await fetch(`${API_BASE}/api/business-rules/${cleanShopId}`, {
+  const res = await authFetch(`${API_BASE}/api/business-rules/${cleanShopId}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(rules),
@@ -1133,7 +1134,7 @@ async function createSaleRecord(sale: Omit<Sale, "id">): Promise<Sale> {
       : undefined,
   };
 
-  const res = await fetch(`${API_BASE}/api/sales/complete`, {
+  const res = await authFetch(`${API_BASE}/api/sales/complete`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
@@ -1188,7 +1189,7 @@ export const db = {
     async create(shop: Omit<Shop, "id"> & { id?: string }) {
       const shopId =
         shop.id?.replace(/^shop_/, "") || String(Math.floor(Date.now() / 1000));
-      await fetch(`${API_BASE}/api/shop/setup`, {
+      await authFetch(`${API_BASE}/api/shop/setup`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ shopId, formData: shop }),
@@ -1229,7 +1230,7 @@ export const db = {
       }
       const shopKey = toShopKey(targetShop);
       const cleanShopId = normalizeShopId(targetShop);
-      const response = await fetch(
+      const response = await authFetch(
         `${API_BASE}/api/inventory/${encodeURIComponent(cleanShopId)}/${encodeURIComponent(id)}`,
         {
           method: "DELETE",
@@ -1282,7 +1283,7 @@ export const db = {
     async refresh(shopId: string): Promise<string[]> {
       const shopKey = toShopKey(shopId);
       const cleanShopId = normalizeShopId(shopId || shopKey);
-      const response = await fetch(
+      const response = await authFetch(
         `${API_BASE}/api/payment-methods/${cleanShopId}`,
       );
       const rawBody: unknown = await response.json();
@@ -1305,7 +1306,7 @@ export const db = {
     async setEnabled(shopId: string, methods: string[]): Promise<string[]> {
       const shopKey = toShopKey(shopId);
       const cleanShopId = normalizeShopId(shopId || shopKey);
-      const response = await fetch(
+      const response = await authFetch(
         `${API_BASE}/api/payment-methods/${cleanShopId}`,
         {
           method: "PUT",

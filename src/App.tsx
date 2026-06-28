@@ -1,4 +1,4 @@
-import { useEffect, useCallback, useMemo, useState } from "react";
+import { useEffect, useCallback, useMemo, useState, useRef } from "react";
 import {
   BrowserRouter as Router,
   Routes,
@@ -21,6 +21,13 @@ import AboutUs from "./pages/aboutUs/AboutUs";
 import MobileScan from "./pages/mobilesessions/MobileScan";
 import TeamOnboard from "./pages/team/TeamOnboard";
 import { PublicReceiptView } from "./components/modules/receipts/PublicReceiptView";
+import {
+  TEAM_SETUP_CACHE_KEY,
+  readAccountIntent,
+  clearAccountIntent,
+  intentToMetadataAccountType,
+} from "./lib/authFlow";
+import { authFetch, setAuthTokenGetter } from "./lib/api";
 
 // Get Clerk publishable key from environment
 const clerkPubKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
@@ -63,8 +70,6 @@ type ShopStatus = {
   isCompleted: boolean;
 };
 
-const TEAM_SETUP_CACHE_KEY = "ceypos::teamSetup";
-
 type TeamSetupCache = {
   accountType: "team";
   teamOnboarded: true;
@@ -103,6 +108,29 @@ function PostAuthApp() {
     () => loadTeamSetupCache(userEmail),
     [userEmail],
   );
+
+  useEffect(() => {
+    if (!user) return;
+    const intent = readAccountIntent();
+    if (!intent) return;
+
+    const existingType = user.unsafeMetadata?.accountType;
+    if (existingType === "team" || existingType === "owner") {
+      clearAccountIntent();
+      return;
+    }
+
+    const metaType = intentToMetadataAccountType(intent);
+    if (metaType === "team") {
+      void user.update({
+        unsafeMetadata: {
+          ...(user.unsafeMetadata || {}),
+          accountType: "team",
+        },
+      });
+    }
+    clearAccountIntent();
+  }, [user]);
 
   const rawMetadata = user?.unsafeMetadata;
   const metadata = useMemo(() => rawMetadata ?? {}, [rawMetadata]);
@@ -284,12 +312,12 @@ function PostAuthApp() {
       (typeof metadata.displayName === "string" && metadata.displayName.trim()) ||
       user.fullName ||
       userEmail.split("@")[0] ||
-      "Team member";
+      "Employee";
 
     let cancelled = false;
     (async () => {
       try {
-        const response = await fetch("/api/team/register", {
+        const response = await authFetch("/api/team/register", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -407,6 +435,7 @@ function PostAuthContent({
     shopId: string;
     dbFileName: string;
   } | null>(null);
+  const validationReadyRef = useRef(false);
 
   const effectiveShopData = useMemo(() => {
     const metadata = user?.unsafeMetadata ?? {};
@@ -452,7 +481,7 @@ function PostAuthContent({
       lastValidated &&
       lastValidated.shopId === shopId &&
       lastValidated.dbFileName === dbFileName &&
-      validationState === "ready"
+      validationReadyRef.current
     ) {
       return;
     }
@@ -463,14 +492,15 @@ function PostAuthContent({
 
     setValidationState("checking");
     setValidationMessage(null);
+    validationReadyRef.current = false;
 
     (async () => {
       try {
-        const response = await fetch(
+        const response = await authFetch(
           `/api/shop/${encodeURIComponent(shopId)}/exists`,
           {
             signal: controller.signal,
-          }
+          },
         );
         const payload = await response.json().catch(() => ({}));
 
@@ -493,6 +523,7 @@ function PostAuthContent({
 
         if (!cancelled) {
           setLastValidated({ shopId, dbFileName });
+          validationReadyRef.current = true;
           setValidationState("ready");
           onShopStatusChange({ isCompleted: true, shopId, dbFileName });
         }
@@ -524,7 +555,6 @@ function PostAuthContent({
     onShopStatusChange,
     retryToken,
     user,
-    validationState,
   ]);
 
   if (!isLoaded || !user) {
@@ -652,37 +682,97 @@ function PostAuthContent({
       <Route
         path="/about"
         element={
-          <Navigate to={forceWizard ? "/shop-wizard" : "/dashboard"} replace />
+          <Navigate
+            to={
+              forceWizard
+                ? accountType === "team"
+                  ? "/team-onboard"
+                  : "/shop-wizard"
+                : "/dashboard"
+            }
+            replace
+          />
         }
       />
       <Route
         path="/features"
         element={
-          <Navigate to={forceWizard ? "/shop-wizard" : "/dashboard"} replace />
+          <Navigate
+            to={
+              forceWizard
+                ? accountType === "team"
+                  ? "/team-onboard"
+                  : "/shop-wizard"
+                : "/dashboard"
+            }
+            replace
+          />
         }
       />
       <Route
         path="/pricing"
         element={
-          <Navigate to={forceWizard ? "/shop-wizard" : "/dashboard"} replace />
+          <Navigate
+            to={
+              forceWizard
+                ? accountType === "team"
+                  ? "/team-onboard"
+                  : "/shop-wizard"
+                : "/dashboard"
+            }
+            replace
+          />
         }
       />
       <Route
         path="/support"
         element={
-          <Navigate to={forceWizard ? "/shop-wizard" : "/dashboard"} replace />
+          <Navigate
+            to={
+              forceWizard
+                ? accountType === "team"
+                  ? "/team-onboard"
+                  : "/shop-wizard"
+                : "/dashboard"
+            }
+            replace
+          />
         }
       />
       <Route
         path="/contact"
         element={
-          <Navigate to={forceWizard ? "/shop-wizard" : "/dashboard"} replace />
+          <Navigate
+            to={
+              forceWizard
+                ? accountType === "team"
+                  ? "/team-onboard"
+                  : "/shop-wizard"
+                : "/dashboard"
+            }
+            replace
+          />
         }
       />
 
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
+}
+
+function AuthApiBridge() {
+  const { getToken, isLoaded } = useAuth();
+
+  useEffect(() => {
+    if (!isLoaded) {
+      setAuthTokenGetter(null);
+      return;
+    }
+    setAuthTokenGetter(() => getToken());
+    return () => setAuthTokenGetter(null);
+  }, [getToken, isLoaded]);
+
+  return null;
 }
 
 function App() {
@@ -701,6 +791,7 @@ function App() {
 
   return (
     <ClerkProvider publishableKey={clerkPubKey}>
+      <AuthApiBridge />
       <Router>
         <AppRouter />
       </Router>

@@ -206,7 +206,7 @@ export const ShopWizardStep5: React.FC = () => {
                     textTransform: 'uppercase',
                     letterSpacing: '0.5px'
                   }}>
-                    Owner
+                    Owner / Manager
                   </p>
                   <p style={{
                     fontFamily: 'Inter, sans-serif',

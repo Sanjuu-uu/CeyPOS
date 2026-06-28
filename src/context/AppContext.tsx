@@ -9,6 +9,7 @@ import {
   clearTerminalSession,
 } from '../lib/shopContext';
 import { installGlobalBarcodeRouter } from '../lib/barcodeRouter';
+import { authFetch } from '../lib/api';
 
 interface AppContextType {
   currentModule: ModuleName;
@@ -168,7 +169,7 @@ export const AppProvider: React.FC<AppProviderProps> = ({
 
     if (context.member.role === 'owner' && !terminal) {
       try {
-        const res = await fetch('/api/terminals/primary/ensure', {
+        const res = await authFetch('/api/terminals/primary/ensure', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({

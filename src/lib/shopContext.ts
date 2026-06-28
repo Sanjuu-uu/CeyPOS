@@ -1,4 +1,5 @@
 import type { ShopContextResponse } from "../types/team";
+import { authFetch } from "./api";
 import {
   loadTerminalSession,
   saveTerminalSession,
@@ -20,7 +21,7 @@ export async function fetchShopContext(
   if (terminalId) params.set("terminalId", terminalId);
   if (terminalToken) params.set("terminalToken", terminalToken);
 
-  const res = await fetch(`/api/team/context?${params.toString()}`);
+  const res = await authFetch(`/api/team/context?${params.toString()}`);
   const body = await res.json();
   if (!res.ok) {
     throw new Error(body?.error || "Failed to load shop context");

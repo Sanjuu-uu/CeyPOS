@@ -1,9 +1,20 @@
 import { useEffect, useState, useMemo } from "react";
 import { Eye, EyeOff, Mail, Lock, ArrowRight, X } from "lucide-react";
-import { useClerk, useSignIn } from "@clerk/clerk-react";
+import { useAuth, useClerk, useSignIn } from "@clerk/clerk-react";
 import { useLocation, useNavigate } from "react-router-dom";
 import Navigation from "../components/Navigation";
 import Footer from "../components/Footer";
+import {
+  sanitizeRedirectTarget,
+  PENDING_OAUTH_KEY,
+  buildRegisterHref,
+  parseAccountParam,
+  getPostRegisterPath,
+  persistAccountIntent,
+  readAccountIntent,
+  buildOAuthRedirectUrl,
+  buildOAuthRedirectCompleteUrl,
+} from "../../lib/authFlow";
 
 type ClerkErrorEntry = {
   code?: string;
@@ -42,14 +53,36 @@ const Login = () => {
   const navigate = useNavigate();
   const location = useLocation();
 
+  const accountIntent = useMemo(() => {
+    const urlIntent = parseAccountParam(location.search);
+    if (location.search.includes("account=employee")) {
+      return urlIntent;
+    }
+    return readAccountIntent() || urlIntent;
+  }, [location.search]);
+
+  useEffect(() => {
+    if (accountIntent) {
+      persistAccountIntent(accountIntent);
+    }
+  }, [accountIntent]);
+
   const redirectTo = useMemo(() => {
     const params = new URLSearchParams(location.search);
-    const target = params.get("redirect") || "/";
-    if (target.startsWith("/") && !target.startsWith("//")) {
-      return target;
+    return sanitizeRedirectTarget(
+      params.get("redirect"),
+      getPostRegisterPath(accountIntent),
+    );
+  }, [location.search, accountIntent]);
+
+  const { isSignedIn, isLoaded: isAuthLoaded } = useAuth();
+
+  useEffect(() => {
+    if (!isAuthLoaded) return;
+    if (isSignedIn) {
+      navigate(redirectTo, { replace: true });
     }
-    return "/";
-  }, [location.search]);
+  }, [isSignedIn, isAuthLoaded, navigate, redirectTo]);
 
   const [showPassword, setShowPassword] = useState(false);
   const [email, setEmail] = useState("");
@@ -461,19 +494,24 @@ const Login = () => {
     setHumanChallengePending(false);
     deactivateRegisterPrompt();
     setOauthProvider("google");
-    sessionStorage.setItem("ceypos::pendingOauth", "google-login");
+    sessionStorage.setItem(PENDING_OAUTH_KEY, "google-login");
 
     try {
       await signIn.authenticateWithRedirect({
         strategy: "oauth_google",
-        redirectUrl: `/login?redirect=${encodeURIComponent(redirectTo)}`,
-        redirectUrlComplete: redirectTo,
+        redirectUrl: buildOAuthRedirectUrl(
+          "/login",
+          redirectTo,
+          accountIntent,
+        ),
+        redirectUrlComplete: buildOAuthRedirectCompleteUrl(redirectTo),
       });
     } catch (err: any) {
       console.error("Google login error:", err);
       setError("Failed to continue with Google. Please try again.");
       deactivateRegisterPrompt();
       setOauthProvider(null);
+      sessionStorage.removeItem(PENDING_OAUTH_KEY);
     }
   };
 
@@ -484,19 +522,24 @@ const Login = () => {
     setHumanChallengePending(false);
     deactivateRegisterPrompt();
     setOauthProvider("apple");
-    sessionStorage.setItem("ceypos::pendingOauth", "apple-login");
+    sessionStorage.setItem(PENDING_OAUTH_KEY, "apple-login");
 
     try {
       await signIn.authenticateWithRedirect({
         strategy: "oauth_apple",
-        redirectUrl: `/login?redirect=${encodeURIComponent(redirectTo)}`,
-        redirectUrlComplete: redirectTo,
+        redirectUrl: buildOAuthRedirectUrl(
+          "/login",
+          redirectTo,
+          accountIntent,
+        ),
+        redirectUrlComplete: buildOAuthRedirectCompleteUrl(redirectTo),
       });
     } catch (err: any) {
       console.error("Apple login error:", err);
       setError("Failed to continue with Apple. Please try again.");
       deactivateRegisterPrompt();
       setOauthProvider(null);
+      sessionStorage.removeItem(PENDING_OAUTH_KEY);
     }
   };
 
@@ -654,13 +697,13 @@ const Login = () => {
 
   // ... (useEffect for pendingOauth remains unchanged) ...
   useEffect(() => {
-    const pendingOauth = sessionStorage.getItem("ceypos::pendingOauth");
+    const pendingOauth = sessionStorage.getItem(PENDING_OAUTH_KEY);
     if (!pendingOauth) {
       return;
     }
 
     if (oauthProvider === null && step === "login") {
-      sessionStorage.removeItem("ceypos::pendingOauth");
+      sessionStorage.removeItem(PENDING_OAUTH_KEY);
     }
   }, [oauthProvider, step]);
 
@@ -1288,6 +1331,11 @@ const Login = () => {
                   </button>
                 </form>
 
+                {/* CAPTCHA Widget - Required for Clerk custom OAuth flows */}
+                <div className="my-4 flex justify-center">
+                  <div id="clerk-captcha" />
+                </div>
+
                 {/* Sign Up Link */}
                 <p className="mt-6 text-center text-sm text-gray-600">
                   Don't have an account?{" "}
@@ -1299,12 +1347,12 @@ const Login = () => {
                   </a>
                 </p>
                 <p className="mt-2 text-center text-sm text-gray-600">
-                  Team member?{" "}
+                  Employee?{" "}
                   <a
-                    href="/register?account=team"
+                    href={buildRegisterHref("employee")}
                     className="text-gray-900 hover:text-gray-700 font-medium"
                   >
-                    Join as team member
+                    Join as an Employee
                   </a>
                 </p>
               </div>

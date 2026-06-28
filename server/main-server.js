@@ -6,6 +6,7 @@ import cors from 'cors';
 import http from 'http';
 import path from 'path';
 import fs from 'fs';
+import { clerkMiddleware } from '@clerk/express';
 import { processUserQuestion } from '../mcp-server/mcp.js';
 
 const app = express();
@@ -39,6 +40,18 @@ app.use(
   })
 );
 app.use(express.json({ limit: "10mb" }));
+
+if (process.env.CLERK_SECRET_KEY) {
+  app.use(
+    clerkMiddleware({
+      secretKey: process.env.CLERK_SECRET_KEY,
+    }),
+  );
+} else if (process.env.NODE_ENV === "production") {
+  console.warn(
+    "CLERK_SECRET_KEY is not set — authenticated API routes will reject requests in production.",
+  );
+}
 
 // Routes
 import inventoryRouter from "./src/routes/inventory.js";

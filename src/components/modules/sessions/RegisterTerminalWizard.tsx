@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { Loader2, MonitorSpeaker, RefreshCw, Shield, X } from "lucide-react";
-import { postJSON } from "../../../lib/api";
+import { postJSON, authFetch } from "../../../lib/api";
 import { db } from "../../../lib/db";
 
 interface RegisterTerminalWizardProps {
@@ -62,7 +62,7 @@ export const RegisterTerminalWizard: React.FC<RegisterTerminalWizardProps> = ({
   const loadPending = async () => {
     try {
       const params = new URLSearchParams({ shopId, userEmail });
-      const res = await fetch(`/api/terminals/pairing/pending?${params.toString()}`);
+      const res = await authFetch(`/api/terminals/pairing/pending?${params.toString()}`);
       const result = await res.json();
       if (res.ok) setPending(result.pending || []);
     } catch {
@@ -140,7 +140,7 @@ export const RegisterTerminalWizard: React.FC<RegisterTerminalWizardProps> = ({
                     Connect Register Terminal
                   </h2>
                   <p className="text-sm" style={{ color: "var(--gray--600)" }}>
-                    Share this code with a team member on their register device
+                    Share this code with an employee on their register device
                   </p>
                 </div>
               </div>

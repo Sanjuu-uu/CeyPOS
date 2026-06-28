@@ -13,8 +13,9 @@ import {
   sanitizeShopIdentifier,
 } from "../utils/shop-database.js";
 import { getShopSnapshot } from "../services/shop-snapshot.js";
-import { ensureOwnerMember } from "../services/team-service.js";
+import { ensureOwnerMember, normalizeEmail } from "../services/team-service.js";
 import { ensurePrimaryTerminal } from "../services/terminal-service.js";
+import { requireClerkSession } from "../middleware/clerk-auth.js";
 
 const router = express.Router();
 
@@ -57,16 +58,21 @@ router.post("/register", (req, res) => {
 });
 
 // Persist full ShopWizard payload, creating or updating the dedicated shop database
-router.post("/setup", (req, res) => {
+router.post("/setup", requireClerkSession, (req, res) => {
   try {
     const { formData, shopId: existingShopId } = req.body || {};
     if (!formData) {
       return res.status(400).json({ error: "formData is required" });
     }
 
-    const ownerEmail = (formData.email || req.body?.userEmail || "").trim();
+    const ownerEmail = normalizeEmail(formData.email || req.userEmail || "");
     if (!ownerEmail) {
       return res.status(400).json({ error: "Owner email is required" });
+    }
+    if (req.userEmail && ownerEmail !== req.userEmail) {
+      return res.status(403).json({
+        error: "Shop owner email must match your signed-in account",
+      });
     }
 
     const sanitizedEmail = sanitizeShopIdentifier(ownerEmail);

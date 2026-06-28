@@ -41,7 +41,7 @@ export const TeamSettings: React.FC = () => {
       );
       setMembers(data.members || []);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load team members");
+      setError(err instanceof Error ? err.message : "Failed to load employees");
     } finally {
       setLoading(false);
     }
@@ -80,17 +80,17 @@ export const TeamSettings: React.FC = () => {
     return (
       <div className="flex items-center justify-center py-12 text-gray-500">
         <Loader2 className="animate-spin mr-2" size={18} />
-        Loading team…
+        Loading employees…
       </div>
     );
   }
 
   return (
     <div className="space-y-6">
-      <Card title="Team Members" className="border border-gray-100">
+      <Card title="Employees" className="border border-gray-100">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <p className="text-sm text-gray-600">
-            Manage roles, Pro Team seats, and member access for this shop.
+            Manage roles, Pro Team seats, and employee access for this shop.
           </p>
           <div className="text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded-lg px-3 py-1.5">
             Pro Team seats: {proSeatsUsed} / {proSeatLimit} assigned

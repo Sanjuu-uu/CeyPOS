@@ -140,7 +140,7 @@ const validateField = (
     case "shopName":
       return value.trim() ? "" : "Shop name is required.";
     case "ownerName":
-      return value.trim() ? "" : "Owner name is required.";
+      return value.trim() ? "" : "Owner / Manager name is required.";
     case "email":
       if (!value.trim()) return "Email address is required.";
       if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value))
@@ -443,7 +443,7 @@ export const ShopWizardStep1: React.FC = () => {
                       marginBottom: "6px",
                     }}
                   >
-                    Owner Name *
+                    Owner / Manager Name *
                   </label>
                   <input
                     type="text"

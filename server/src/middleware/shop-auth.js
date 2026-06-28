@@ -5,7 +5,7 @@ import { validateTerminalToken } from "../services/terminal-service.js";
 
 export function requireShopBody(req, res, next) {
   const shopId = req.body?.shopId || req.query?.shopId || resolveShopIdByOwnerEmail(req.body?.ownerEmail || req.query?.ownerEmail)?.shopId;
-  const userEmail = req.body?.userEmail || req.query?.userEmail;
+  const userEmail = req.userEmail || req.body?.userEmail || req.query?.userEmail;
   if (!shopId || !userEmail) {
     return res.status(400).json({ error: "shopId and userEmail are required" });
   }

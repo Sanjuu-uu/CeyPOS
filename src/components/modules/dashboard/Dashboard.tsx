@@ -440,7 +440,7 @@ export const Dashboard: React.FC = () => {
                   </table>
                 </div>
               ) : (
-                <p className="text-sm text-gray-500">Leaderboard will appear after team members record sales.</p>
+                <p className="text-sm text-gray-500">Leaderboard will appear after employees record sales.</p>
               )}
             </Card>
           )}

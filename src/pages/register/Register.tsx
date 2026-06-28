@@ -1,20 +1,62 @@
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useCallback } from "react";
 import { Eye, EyeOff, Mail, Lock, User, ArrowRight } from "lucide-react";
-import { useSignUp } from "@clerk/clerk-react";
+import { useAuth, useSignUp, useUser } from "@clerk/clerk-react";
 import { useNavigate, useLocation } from "react-router-dom";
 import Navigation from "../components/Navigation";
 import Footer from "../components/Footer";
 import { getEmailValidationError } from "../utils/emailValidation";
+import {
+  parseAccountParam,
+  persistAccountIntent,
+  getPostRegisterPath,
+  getAccountTypeLabel,
+  buildOAuthRedirectUrl,
+  buildOAuthRedirectCompleteUrl,
+  intentToMetadataAccountType,
+  PENDING_OAUTH_KEY,
+  clearAccountIntent,
+} from "../../lib/authFlow";
 
 type RegisterAction = "register" | "verify" | "resend" | null;
 
 const Register = () => {
   const { isLoaded, signUp, setActive } = useSignUp();
+  const { isSignedIn } = useAuth();
+  const { user } = useUser();
   const navigate = useNavigate();
   const location = useLocation();
-  const isTeamAccount =
-    new URLSearchParams(location.search).get("account") === "team";
-  const postRegisterPath = isTeamAccount ? "/team-onboard" : "/shop-wizard";
+  const accountIntent = useMemo(() => {
+    const urlIntent = parseAccountParam(location.search);
+    if (location.search.includes("account=employee")) {
+      return urlIntent;
+    }
+    return readAccountIntent() || urlIntent;
+  }, [location.search]);
+  const postRegisterPath = getPostRegisterPath(accountIntent);
+  const accountLabel = getAccountTypeLabel(accountIntent);
+
+  useEffect(() => {
+    persistAccountIntent(accountIntent);
+  }, [accountIntent]);
+
+  useEffect(() => {
+    if (!isSignedIn) return;
+    navigate(postRegisterPath, { replace: true });
+  }, [isSignedIn, navigate, postRegisterPath]);
+
+  const applyAccountMetadata = useCallback(async () => {
+    if (!user) return;
+    const metaType = intentToMetadataAccountType(accountIntent);
+    if (metaType === "team") {
+      await user.update({
+        unsafeMetadata: {
+          ...(user.unsafeMetadata || {}),
+          accountType: "team",
+        },
+      });
+    }
+    clearAccountIntent();
+  }, [accountIntent, user]);
 
   const [showPassword, setShowPassword] = useState(false);
   const [fullName, setFullName] = useState("");
@@ -143,7 +185,8 @@ const Register = () => {
 
       if (result.status === "complete") {
         await setActive({ session: result.createdSessionId });
-        navigate(postRegisterPath);
+        await applyAccountMetadata();
+        navigate(postRegisterPath, { replace: true });
       } else if (result.status === "missing_requirements") {
         console.log("Email verification required");
 
@@ -224,13 +267,13 @@ const Register = () => {
   }, []);
 
   useEffect(() => {
-    const pendingOauth = sessionStorage.getItem("ceypos::pendingOauth");
+    const pendingOauth = sessionStorage.getItem(PENDING_OAUTH_KEY);
     if (!pendingOauth) {
       return;
     }
 
     if (oauthProvider === null && step === "register") {
-      sessionStorage.removeItem("ceypos::pendingOauth");
+      sessionStorage.removeItem(PENDING_OAUTH_KEY);
     }
   }, [oauthProvider, step]);
 
@@ -260,7 +303,8 @@ const Register = () => {
 
       if (result.status === "complete") {
         await setActive({ session: result.createdSessionId });
-        navigate(postRegisterPath);
+        await applyAccountMetadata();
+        navigate(postRegisterPath, { replace: true });
       } else if (result.status === "missing_requirements") {
         console.log(
           "Missing requirements after verification:",
@@ -364,18 +408,20 @@ const Register = () => {
     setError("");
     setHumanChallengePending(false);
     setOauthProvider("google");
-    sessionStorage.setItem("ceypos::pendingOauth", "google-register");
+    sessionStorage.setItem(PENDING_OAUTH_KEY, "google-register");
+    persistAccountIntent(accountIntent);
 
     try {
       await signUp.authenticateWithRedirect({
         strategy: "oauth_google",
-        redirectUrl: "/register",
-        redirectUrlComplete: "/",
+        redirectUrl: buildOAuthRedirectUrl("/register", postRegisterPath, accountIntent),
+        redirectUrlComplete: buildOAuthRedirectCompleteUrl(postRegisterPath),
       });
     } catch (err: any) {
       console.error("Google signup error:", err);
       setError("Failed to sign up with Google. Please try again.");
       setOauthProvider(null);
+      sessionStorage.removeItem(PENDING_OAUTH_KEY);
     }
   };
 
@@ -385,18 +431,20 @@ const Register = () => {
     setError("");
     setHumanChallengePending(false);
     setOauthProvider("apple");
-    sessionStorage.setItem("ceypos::pendingOauth", "apple-register");
+    sessionStorage.setItem(PENDING_OAUTH_KEY, "apple-register");
+    persistAccountIntent(accountIntent);
 
     try {
       await signUp.authenticateWithRedirect({
         strategy: "oauth_apple",
-        redirectUrl: "/register",
-        redirectUrlComplete: "/",
+        redirectUrl: buildOAuthRedirectUrl("/register", postRegisterPath, accountIntent),
+        redirectUrlComplete: buildOAuthRedirectCompleteUrl(postRegisterPath),
       });
     } catch (err: any) {
       console.error("Apple signup error:", err);
       setError("Failed to sign up with Apple. Please check configuration.");
       setOauthProvider(null);
+      sessionStorage.removeItem(PENDING_OAUTH_KEY);
     }
   };
 
@@ -563,13 +611,13 @@ const Register = () => {
               {/* Header */}
               <div className="text-center mb-8">
                 <div className="inline-flex items-center bg-gradient-to-r from-gray-100 to-gray-200 text-gray-700 px-4 py-2 rounded-full text-xs font-medium mb-4">
-                  CeyPOS Register
+                  CeyPOS Register · {accountLabel}
                 </div>
                 <h1 className="text-2xl font-black text-gray-900 mb-2">
                   Get Started CeyPOS!
                 </h1>
                 <p className="text-gray-600 text-sm">
-                  Create your account to get started
+                  Create your {accountLabel.toLowerCase()} account to get started
                 </p>
               </div>
 

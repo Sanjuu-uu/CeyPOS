@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Loader2, MonitorSpeaker, ShieldCheck } from "lucide-react";
 import { useUser } from "@clerk/clerk-react";
 import { useApp } from "../../../context/AppContext";
-import { postJSON } from "../../../lib/api";
+import { postJSON, authFetch } from "../../../lib/api";
 import { saveTerminalSession } from "../../../lib/shopContext";
 import { db } from "../../../lib/db";
 
@@ -22,7 +22,7 @@ export const PairingModal: React.FC = () => {
 
     const interval = window.setInterval(async () => {
       try {
-        const res = await fetch(
+        const res = await authFetch(
           `/api/terminals/pairing/status/${encodeURIComponent(requestId)}?shopId=${encodeURIComponent(activeShopId)}`,
         );
         const body = await res.json();
@@ -58,7 +58,7 @@ export const PairingModal: React.FC = () => {
           window.dispatchEvent(new CustomEvent("ceypos:terminal-updated", { detail: { terminalId: claim.terminalId } }));
           await refreshShopContext();
         } else if (body.status === "rejected") {
-          setError("Pairing request was rejected by the shop owner.");
+          setError("Pairing request was rejected by the Owner / Manager.");
           setStatus("error");
         }
       } catch {

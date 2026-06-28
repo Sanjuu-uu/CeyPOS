@@ -20,8 +20,11 @@ import {
 } from "../services/terminal-service.js";
 import { getEmployeeOfMonth, getMemberStats } from "../services/member-stats-service.js";
 import { scopeAllows } from "../services/member-scope.js";
+import { requireClerkSession } from "../middleware/clerk-auth.js";
 
 const router = Router();
+
+router.use(requireClerkSession);
 
 router.post(
   "/pairing-code/create",
