@@ -19,6 +19,7 @@ import Login from "./pages/login/Login";
 import Register from "./pages/register/Register";
 import AboutUs from "./pages/aboutUs/AboutUs";
 import MobileScan from "./pages/mobilesessions/MobileScan";
+import TeamOnboard from "./pages/team/TeamOnboard";
 import { PublicReceiptView } from "./components/modules/receipts/PublicReceiptView";
 
 // Get Clerk publishable key from environment
@@ -62,17 +63,59 @@ type ShopStatus = {
   isCompleted: boolean;
 };
 
+const TEAM_SETUP_CACHE_KEY = "ceypos::teamSetup";
+
+type TeamSetupCache = {
+  accountType: "team";
+  teamOnboarded: true;
+  userEmail: string;
+  shopId: string;
+  dbFileName: string;
+  mainTerminalEmail: string;
+  displayName: string;
+};
+
+function loadTeamSetupCache(userEmail?: string | null): TeamSetupCache | null {
+  if (!userEmail) return null;
+  try {
+    const raw = localStorage.getItem(TEAM_SETUP_CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<TeamSetupCache>;
+    if (
+      parsed.accountType !== "team" ||
+      parsed.teamOnboarded !== true ||
+      parsed.userEmail?.toLowerCase() !== userEmail.toLowerCase() ||
+      !parsed.shopId ||
+      !parsed.dbFileName
+    ) {
+      return null;
+    }
+    return parsed as TeamSetupCache;
+  } catch {
+    return null;
+  }
+}
+
 function PostAuthApp() {
   const { user } = useUser();
+  const userEmail = user?.primaryEmailAddress?.emailAddress || "";
+  const teamSetupCache = useMemo(
+    () => loadTeamSetupCache(userEmail),
+    [userEmail],
+  );
 
   const rawMetadata = user?.unsafeMetadata;
   const metadata = useMemo(() => rawMetadata ?? {}, [rawMetadata]);
   const metadataShopId =
-    typeof metadata.shopId === "string" ? metadata.shopId : "";
+    typeof metadata.shopId === "string" ? metadata.shopId : teamSetupCache?.shopId ?? "";
   const metadataDbFileName =
-    typeof metadata.dbFileName === "string" ? metadata.dbFileName : "";
+    typeof metadata.dbFileName === "string"
+      ? metadata.dbFileName
+      : teamSetupCache?.dbFileName ?? "";
   const metadataCompleted = Boolean(
-    metadata.shopCompleted === true && metadataShopId && metadataDbFileName
+    (metadata.shopCompleted === true || teamSetupCache?.teamOnboarded === true) &&
+      metadataShopId &&
+      metadataDbFileName
   );
 
   const wizardInitialFormData = useMemo<Partial<ShopFormData>>(() => {
@@ -221,11 +264,92 @@ function PostAuthApp() {
 
   const activeShopId = shopStatus.shopId || metadataShopId;
 
+  const accountType =
+    metadata.accountType === "team" || teamSetupCache?.accountType === "team"
+      ? ("team" as const)
+      : ("owner" as const);
+
+  useEffect(() => {
+    if (accountType !== "team" || metadataShopId || !userEmail || !user) {
+      return;
+    }
+
+    const mainTerminalEmail =
+      typeof metadata.mainTerminalEmail === "string"
+        ? metadata.mainTerminalEmail.trim()
+        : "";
+    if (!mainTerminalEmail) return;
+
+    const displayName =
+      (typeof metadata.displayName === "string" && metadata.displayName.trim()) ||
+      user.fullName ||
+      userEmail.split("@")[0] ||
+      "Team member";
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const response = await fetch("/api/team/register", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            ownerEmail: mainTerminalEmail,
+            userEmail,
+            displayName,
+            clerkUserId: user.id,
+            accountType: "team",
+          }),
+        });
+        const result = await response.json();
+        if (!response.ok || !result?.shopId || !result?.dbFileName || cancelled) {
+          return;
+        }
+
+        localStorage.setItem(
+          TEAM_SETUP_CACHE_KEY,
+          JSON.stringify({
+            accountType: "team",
+            teamOnboarded: true,
+            userEmail,
+            mainTerminalEmail,
+            displayName,
+            shopId: result.shopId,
+            dbFileName: result.dbFileName,
+          }),
+        );
+        setShopStatus({
+          shopId: result.shopId,
+          dbFileName: result.dbFileName,
+          isCompleted: true,
+        });
+        await user.update({
+          unsafeMetadata: {
+            ...(user.unsafeMetadata || {}),
+            accountType: "team",
+            teamOnboarded: true,
+            mainTerminalEmail,
+            displayName,
+            shopId: result.shopId,
+            dbFileName: result.dbFileName,
+            shopCompleted: true,
+          },
+        });
+      } catch {
+        // The team onboarding screen remains the fallback.
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [accountType, metadata, metadataShopId, user, userEmail]);
+
   return (
     <AppProvider
-      userEmail={user?.primaryEmailAddress?.emailAddress}
+      userEmail={userEmail}
       shopId={activeShopId || undefined}
       shopProfile={shopProfile}
+      accountType={accountType}
     >
       <ShopWizardProvider
         userEmail={user?.primaryEmailAddress?.emailAddress}
@@ -254,6 +378,18 @@ function PostAuthContent({
   onShopStatusChange,
 }: PostAuthContentProps) {
   const { user, isLoaded } = useUser();
+  const userEmail = user?.primaryEmailAddress?.emailAddress || "";
+  const teamSetupCache = useMemo(
+    () => loadTeamSetupCache(userEmail),
+    [userEmail],
+  );
+  const metadata = user?.unsafeMetadata ?? {};
+  const accountType =
+    metadata.accountType === "team" || teamSetupCache?.accountType === "team"
+      ? "team"
+      : "owner";
+  const teamOnboarded =
+    metadata.teamOnboarded === true || teamSetupCache?.teamOnboarded === true;
   const {
     isCompleted: wizardCompleted,
     shopId: wizardShopId,
@@ -275,10 +411,13 @@ function PostAuthContent({
   const effectiveShopData = useMemo(() => {
     const metadata = user?.unsafeMetadata ?? {};
     const metadataShopId =
-      typeof metadata.shopId === "string" ? metadata.shopId : "";
+      typeof metadata.shopId === "string" ? metadata.shopId : teamSetupCache?.shopId ?? "";
     const metadataDbFileName =
-      typeof metadata.dbFileName === "string" ? metadata.dbFileName : "";
-    const metadataCompleted = metadata.shopCompleted === true;
+      typeof metadata.dbFileName === "string"
+        ? metadata.dbFileName
+        : teamSetupCache?.dbFileName ?? "";
+    const metadataCompleted =
+      metadata.shopCompleted === true || teamSetupCache?.teamOnboarded === true;
 
     const computedShopId = wizardShopId || shopStatus.shopId || metadataShopId;
     const computedDbFileName =
@@ -294,7 +433,7 @@ function PostAuthContent({
       dbFileName: computedDbFileName,
       isCompleted: computedCompleted,
     };
-  }, [shopDbFileName, shopStatus, user, wizardCompleted, wizardShopId]);
+  }, [shopDbFileName, shopStatus, teamSetupCache, user, wizardCompleted, wizardShopId]);
 
   useEffect(() => {
     if (!isLoaded || !user) {
@@ -441,36 +580,72 @@ function PostAuthContent({
     );
   }
 
-  const forceWizard = validationState !== "ready";
+  const forceWizard =
+    accountType === "owner"
+      ? validationState !== "ready"
+      : !teamOnboarded || validationState !== "ready";
 
   return (
     <Routes>
       <Route path="/mobilesessions" element={<Navigate to="/mobilesessions/scan" replace />} />
       <Route path="/mobilesessions/scan" element={<MobileScan />} />
+      <Route path="/team-onboard" element={<TeamOnboard />} />
       <Route
         path="/"
         element={
-          <Navigate to={forceWizard ? "/shop-wizard" : "/dashboard"} replace />
+          <Navigate
+            to={
+              accountType === "team" && !teamOnboarded
+                ? "/team-onboard"
+                : forceWizard
+                  ? accountType === "team"
+                    ? "/team-onboard"
+                    : "/shop-wizard"
+                  : "/dashboard"
+            }
+            replace
+          />
         }
       />
       <Route
         path="/home"
         element={
-          <Navigate to={forceWizard ? "/shop-wizard" : "/dashboard"} replace />
+          <Navigate
+            to={
+              forceWizard
+                ? accountType === "team"
+                  ? "/team-onboard"
+                  : "/shop-wizard"
+                : "/dashboard"
+            }
+            replace
+          />
         }
       />
 
       <Route
         path="/shop-wizard"
         element={
-          forceWizard ? <ShopWizard /> : <Navigate to="/dashboard" replace />
+          accountType === "team" ? (
+            <Navigate to="/team-onboard" replace />
+          ) : forceWizard ? (
+            <ShopWizard />
+          ) : (
+            <Navigate to="/dashboard" replace />
+          )
         }
       />
 
       <Route
         path="/dashboard/*"
         element={
-          forceWizard ? <Navigate to="/shop-wizard" replace /> : <MainLayout />
+          accountType === "team" && forceWizard ? (
+            <Navigate to="/team-onboard" replace />
+          ) : forceWizard && accountType === "owner" ? (
+            <Navigate to="/shop-wizard" replace />
+          ) : (
+            <MainLayout />
+          )
         }
       />
 

@@ -90,6 +90,47 @@ function openShopDatabaseIfExists(shopId) {
   return db;
 }
 
+function resolveShopIdByOwnerEmail(ownerEmail) {
+  const normalizedEmail = String(ownerEmail || "").trim().toLowerCase();
+  if (!normalizedEmail) return null;
+
+  ensureShopDatabaseDirectory();
+  const entries = fs.readdirSync(SHOP_DATABASE_DIRECTORY, { withFileTypes: true });
+  for (const entry of entries) {
+    if (!entry.isFile() || !entry.name.toLowerCase().endsWith(".db")) continue;
+
+    const fullPath = path.join(SHOP_DATABASE_DIRECTORY, entry.name);
+    let db;
+    try {
+      db = new Database(fullPath, { fileMustExist: true });
+      db.pragma("journal_mode = WAL");
+      initializeShopDatabaseSchema(db);
+      const row = db
+        .prepare("SELECT shop_id, owner_email FROM shop_meta WHERE lower(owner_email) = lower(?) LIMIT 1")
+        .get(normalizedEmail);
+      if (row?.shop_id) {
+        return {
+          shopId: row.shop_id,
+          ownerEmail: row.owner_email || normalizedEmail,
+          dbFileName: entry.name,
+        };
+      }
+    } catch {
+      // ignore unreadable databases while searching by owner email
+    } finally {
+      if (db) {
+        try {
+          db.close();
+        } catch {
+          // ignore
+        }
+      }
+    }
+  }
+
+  return null;
+}
+
 function initializeShopDatabaseSchema(db) {
   const ddl = `
   CREATE TABLE IF NOT EXISTS shop_meta (
@@ -300,6 +341,84 @@ function initializeShopDatabaseSchema(db) {
 
   CREATE INDEX IF NOT EXISTS idx_receipt_tokens_txcode
     ON receipt_tokens (shop_id, transaction_code);
+
+  CREATE TABLE IF NOT EXISTS shop_members (
+    member_id TEXT PRIMARY KEY,
+    shop_id TEXT NOT NULL,
+    clerk_user_id TEXT,
+    email TEXT NOT NULL,
+    display_name TEXT NOT NULL,
+    role TEXT NOT NULL DEFAULT 'cashier',
+    status TEXT NOT NULL DEFAULT 'pending',
+    pro_team_seat INTEGER DEFAULT 0,
+    pin_hash TEXT,
+    invited_by_email TEXT,
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL,
+    last_login_at DATETIME,
+    UNIQUE(shop_id, email)
+  );
+
+  CREATE TABLE IF NOT EXISTS shop_terminals (
+    terminal_id TEXT PRIMARY KEY,
+    shop_id TEXT NOT NULL,
+    terminal_type TEXT NOT NULL,
+    label TEXT,
+    status TEXT NOT NULL,
+    device_fingerprint TEXT,
+    device_meta TEXT,
+    paired_by_member_id TEXT,
+    approved_by_member_id TEXT,
+    terminal_token_hash TEXT,
+    created_at DATETIME NOT NULL,
+    last_seen_at DATETIME,
+    revoked_at DATETIME
+  );
+
+  CREATE TABLE IF NOT EXISTS terminal_pairing_codes (
+    pairing_id TEXT PRIMARY KEY,
+    shop_id TEXT NOT NULL,
+    code TEXT NOT NULL,
+    status TEXT NOT NULL,
+    created_by_member_id TEXT,
+    target_terminal_id TEXT,
+    expires_at DATETIME NOT NULL,
+    created_at DATETIME NOT NULL
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_pairing_codes_shop_code
+    ON terminal_pairing_codes (shop_id, code);
+
+  CREATE TABLE IF NOT EXISTS terminal_pairing_requests (
+    request_id TEXT PRIMARY KEY,
+    shop_id TEXT NOT NULL,
+    pairing_id TEXT NOT NULL,
+    member_id TEXT NOT NULL,
+    device_meta TEXT,
+    status TEXT NOT NULL,
+    requested_at DATETIME NOT NULL,
+    resolved_at DATETIME,
+    resolved_by_member_id TEXT
+  );
+
+  CREATE TABLE IF NOT EXISTS member_daily_stats (
+    shop_id TEXT NOT NULL,
+    member_id TEXT NOT NULL,
+    date TEXT NOT NULL,
+    transactions_count INTEGER DEFAULT 0,
+    total_sales DECIMAL(10,2) DEFAULT 0,
+    items_sold INTEGER DEFAULT 0,
+    PRIMARY KEY (shop_id, member_id, date)
+  );
+
+  CREATE TABLE IF NOT EXISTS member_shifts (
+    shift_id TEXT PRIMARY KEY,
+    shop_id TEXT NOT NULL,
+    terminal_id TEXT NOT NULL,
+    member_id TEXT NOT NULL,
+    started_at DATETIME NOT NULL,
+    ended_at DATETIME
+  );
   `;
 
   db.exec(ddl);
@@ -351,6 +470,40 @@ function initializeShopDatabaseSchema(db) {
   } catch (error) {
     // ignore if migration already applied
   }
+
+  runTeamWorkflowColumnMigrations(db);
+}
+
+function runTeamWorkflowColumnMigrations(db) {
+  const addColumnIfMissing = (table, column, definition) => {
+    try {
+      const cols = db.prepare(`PRAGMA table_info(${table})`).all().map((c) => c.name);
+      if (cols.length && !cols.includes(column)) {
+        db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+      }
+    } catch {
+      // ignore
+    }
+  };
+
+  addColumnIfMissing("shop_meta", "plan_tier", "TEXT DEFAULT 'free'");
+  addColumnIfMissing("shop_meta", "max_register_terminals", "INTEGER DEFAULT 0");
+  addColumnIfMissing("shop_meta", "max_team_members", "INTEGER DEFAULT 1");
+  addColumnIfMissing("shop_meta", "pro_team_seats", "INTEGER DEFAULT 0");
+  addColumnIfMissing("shop_meta", "ai_enabled", "INTEGER DEFAULT 0");
+  addColumnIfMissing("shop_meta", "ai_mode", "TEXT");
+
+  addColumnIfMissing("transactions", "terminal_id", "TEXT");
+  addColumnIfMissing("transactions", "served_by_member_id", "TEXT");
+  addColumnIfMissing("transactions", "served_by_display_name", "TEXT");
+  addColumnIfMissing("transactions", "served_by_role", "TEXT");
+
+  addColumnIfMissing("mobile_sessions", "created_by_member_id", "TEXT");
+  addColumnIfMissing("mobile_sessions", "terminal_id", "TEXT");
+  addColumnIfMissing("mobile_sessions", "scan_url", "TEXT");
+
+  addColumnIfMissing("analytics_conversations", "member_id", "TEXT");
+  addColumnIfMissing("analytics_conversations", "scope", "TEXT DEFAULT 'shop'");
 }
 
 function createShopDatabase(shopId, shopMeta) {
@@ -517,6 +670,7 @@ export {
   getShopDatabaseFileName,
   openShopDatabase,
   openShopDatabaseIfExists,
+  resolveShopIdByOwnerEmail,
   createShopDatabase,
   initializeShopDatabaseSchema,
   ensureAllShopDatabasesSchema,

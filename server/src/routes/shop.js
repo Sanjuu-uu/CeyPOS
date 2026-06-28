@@ -13,6 +13,8 @@ import {
   sanitizeShopIdentifier,
 } from "../utils/shop-database.js";
 import { getShopSnapshot } from "../services/shop-snapshot.js";
+import { ensureOwnerMember } from "../services/team-service.js";
+import { ensurePrimaryTerminal } from "../services/terminal-service.js";
 
 const router = express.Router();
 
@@ -114,6 +116,8 @@ router.post("/setup", (req, res) => {
       try {
         upsertShopMetadata(db, existingShopId, meta);
         applyAdditionalData(db, existingShopId);
+        const ownerMember = ensureOwnerMember(db, existingShopId, { ...meta, shop_id: existingShopId });
+        ensurePrimaryTerminal(db, existingShopId, ownerMember.member_id);
       } finally {
         db.close();
       }
@@ -137,6 +141,8 @@ router.post("/setup", (req, res) => {
     const db = createShopDatabase(generatedShopId, meta);
     try {
       applyAdditionalData(db, generatedShopId);
+      const ownerMember = ensureOwnerMember(db, generatedShopId, { ...meta, shop_id: generatedShopId });
+      ensurePrimaryTerminal(db, generatedShopId, ownerMember.member_id);
     } finally {
       db.close();
     }

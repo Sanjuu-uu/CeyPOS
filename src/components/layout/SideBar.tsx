@@ -58,6 +58,7 @@ export const Sidebar: React.FC = () => {
     setIsSidebarCollapsed,
     isMobileMenuOpen,
     setIsMobileMenuOpen,
+    canAccessModule,
   } = useApp();
 
   const effectiveCollapsed = isMobileMenuOpen ? false : isSidebarCollapsed;
@@ -181,7 +182,9 @@ export const Sidebar: React.FC = () => {
 
         {/* Menu Items */}
         <div className="p-3 space-y-1 overflow-y-auto flex-1">
-          {menuItems.map((item) => (
+          {menuItems
+            .filter((item) => canAccessModule(item.module))
+            .map((item) => (
             <SidebarItem
               key={item.module}
               icon={item.icon}

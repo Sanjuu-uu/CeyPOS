@@ -146,12 +146,12 @@ function normalizeAiMode(mode) {
 }
 
 function buildGeminiModel(options = {}) {
-  const { model = DEFAULT_GEMINI_MODEL, tools = GEMINI_TOOLS, mode = 'lite' } = options;
+  const { model = DEFAULT_GEMINI_MODEL, tools = GEMINI_TOOLS, mode = 'lite', scopeContext = null } = options;
   const normalizedMode = normalizeAiMode(mode);
   const modeConfig = MODE_CONFIG[normalizedMode];
   const config = {
     model,
-    systemInstruction: buildSystemPrompt(mode),
+    systemInstruction: buildSystemPrompt(mode, scopeContext),
     generationConfig: {
       temperature: normalizedMode === 'agent' ? 0.25 : 0.15,
       maxOutputTokens: modeConfig.maxOutputTokens,
@@ -188,9 +188,14 @@ Security rules:
 - Only read data. Do not attempt writes, schema changes, attachments, network calls, or filesystem access.
 ${buildUserFacingPromptRules()}`;
 
-function buildSystemPrompt(mode = 'lite') {
+function buildSystemPrompt(mode = 'lite', scopeContext = null) {
+  let scopeNote = '';
+  if (scopeContext?.aiScope === 'self' && scopeContext?.memberId) {
+    scopeNote = `\n\nTeam member scope: Only analyze sales and transactions where served_by_member_id equals '${scopeContext.memberId}'. Never query or reveal other team members' performance or owner-only shop settings.`;
+  }
+
   if (normalizeAiMode(mode) === 'agent') {
-    return `${BASE_SYSTEM_PROMPT}
+    return `${BASE_SYSTEM_PROMPT}${scopeNote}
 
 Mode: Agent.
 - Handle comprehensive analytics and math with up to 8 SQL runs.
@@ -199,7 +204,7 @@ Mode: Agent.
 - Final answer: concise result, key numbers, assumptions, and next action if useful.`;
   }
 
-  return `${BASE_SYSTEM_PROMPT}
+  return `${BASE_SYSTEM_PROMPT}${scopeNote}
 
 Mode: Lite.
 - Optimize for speed and cost.
@@ -1570,6 +1575,7 @@ async function synthesizeToolFallbackAnswer(question, session, mode, partialAnsw
 async function processUserQuestion(question, shopId, history = [], options = {}) {
   const mode = normalizeAiMode(options.mode);
   const onStep = options.onStep;
+  const memberScope = options.memberScope || null;
   const modeConfig = MODE_CONFIG[mode];
   const effectiveShopId = normalizeShopId(shopId);
   const session = createSessionLog(question, shopId, effectiveShopId);
@@ -1638,7 +1644,12 @@ async function processUserQuestion(question, shopId, history = [], options = {})
       status: 'running',
     });
 
-    const model = buildGeminiModel({ mode });
+    const model = buildGeminiModel({
+      mode,
+      scopeContext: memberScope
+        ? { aiScope: memberScope.aiScope, memberId: memberScope.memberId }
+        : null,
+    });
     const contents = [
       ...buildContentsFromHistory(history, mode),
       {

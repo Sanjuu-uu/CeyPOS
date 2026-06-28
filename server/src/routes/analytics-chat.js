@@ -10,7 +10,8 @@ const LITE_HISTORY_MESSAGE_LIMIT = 4;
 const AGENT_HISTORY_MESSAGE_LIMIT = 10;
 
 const normalizeChatMode = (mode) => (mode === "agent" ? "agent" : "lite");
-const normalizeEmail = (email) => String(email || "").trim().toLowerCase();
+import { getMemberByEmail, ensureOwnerMember } from "../services/team-service.js";
+import { buildMemberScope, getShopPlanLimits, scopeAllowsAi } from "../services/member-scope.js";
 
 const toIso = (value = Date.now()) => new Date(value).toISOString();
 
@@ -66,21 +67,29 @@ const normalizeHistoryEntries = (history = []) => {
     }));
 };
 
+const normalizeEmail = (email) => String(email || "").trim().toLowerCase();
+
 const ensureAuthorized = (db, shopId, userEmail) => {
   const email = normalizeEmail(userEmail);
   if (!email) {
     return { ok: false, error: "userEmail is required" };
   }
-  const owner = db
-    .prepare("SELECT owner_email FROM shop_meta WHERE shop_id = ?")
-    .get(shopId);
-  const ownerEmail = owner?.owner_email
-    ? String(owner.owner_email).toLowerCase()
-    : "";
-  if (ownerEmail && ownerEmail !== email) {
+
+  const shopMeta = db.prepare("SELECT * FROM shop_meta WHERE shop_id = ?").get(shopId);
+  let member = getMemberByEmail(db, shopId, email);
+  if (!member && normalizeEmail(shopMeta?.owner_email) === email) {
+    member = ensureOwnerMember(db, shopId, shopMeta);
+  }
+  if (!member || member.status === "suspended") {
     return { ok: false, error: "User is not authorized for shop" };
   }
-  return { ok: true };
+
+  const scope = buildMemberScope(member, null, getShopPlanLimits(shopMeta));
+  if (!scopeAllowsAi(scope)) {
+    return { ok: false, error: "AI analytics not available for this account" };
+  }
+
+  return { ok: true, member, scope, aiScope: scope.modules.aiChat };
 };
 
 const mapMessageRow = (row) => ({
@@ -506,7 +515,15 @@ router.post("/:conversationId/messages/stream", async (req, res) => {
       buildAnalyticsQuestion(cleanQuestion, safeAttachments),
       shopId,
       aiContextPayload,
-      { mode, onStep: mode === "agent" ? pushStep : undefined }
+      {
+        mode,
+        onStep: mode === "agent" ? pushStep : undefined,
+        memberScope: auth.aiScope === "self"
+          ? { aiScope: "self", memberId: auth.member.member_id }
+          : auth.aiScope === "shop"
+            ? { aiScope: "shop", memberId: auth.member.member_id }
+            : null,
+      },
     );
 
     const answer = result?.answer || "Sorry, I could not generate a response.";

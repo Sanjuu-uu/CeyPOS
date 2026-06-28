@@ -2,6 +2,7 @@ import { Router } from "express";
 import { openShopDatabase, shopDatabaseExists } from "../utils/shop-database.js";
 import { adjustStockLevels, normalizeProduct } from "../services/inventory-service.js";
 import { publishChange } from "../realtime/change-bus.js";
+import { recordMemberSaleStats } from "../services/member-stats-service.js";
 import crypto from "crypto";
 
 const router = Router();
@@ -48,6 +49,7 @@ router.post("/complete", (req, res) => {
   }
 
   const { shopId, customer = {}, items = [], paymentMethod = "cash", createdAt } = req.body;
+  const servedBy = req.body?.servedBy || {};
 
   if (!shopDatabaseExists(shopId)) {
     return res.status(404).json({ ok: false, error: "shop_not_configured" });
@@ -203,9 +205,10 @@ router.post("/complete", (req, res) => {
           `
           INSERT INTO transactions (
             receipt_id, transaction_code, customer_id,
-            subtotal, discount, tax, total, payment_method, created_at
+            subtotal, discount, tax, total, payment_method, created_at,
+            terminal_id, served_by_member_id, served_by_display_name, served_by_role
           )
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `
         )
         .run(
@@ -217,7 +220,11 @@ router.post("/complete", (req, res) => {
           tax,
           finalTotal,
           paymentMethod,
-          effectiveDate
+          effectiveDate,
+          servedBy.terminalId || null,
+          servedBy.memberId || null,
+          servedBy.displayName || null,
+          servedBy.role || null,
         );
 
       const transactionId = Number(txInfo.lastInsertRowid);
@@ -233,6 +240,10 @@ router.post("/complete", (req, res) => {
         total: finalTotal,
         payment_method: paymentMethod,
         created_at: effectiveDate,
+        terminal_id: servedBy.terminalId || null,
+        served_by_member_id: servedBy.memberId || null,
+        served_by_display_name: servedBy.displayName || null,
+        served_by_role: servedBy.role || null,
       };
 
       // --- C) ITEMS + STOCK ---
@@ -298,6 +309,14 @@ router.post("/complete", (req, res) => {
       const dailySalesRow = db
         .prepare("SELECT * FROM daily_sales WHERE shop_id = ? AND date = ?")
         .get(shopId, day);
+
+      if (servedBy.memberId) {
+        recordMemberSaleStats(db, shopId, servedBy.memberId, {
+          total: finalTotal,
+          itemsSold: cleanItems.reduce((sum, item) => sum + item.quantity, 0),
+          date: day,
+        });
+      }
 
       return {
         transactionId,

@@ -7,12 +7,15 @@ import {
   Users,
   Package,
   FileText,
+  Trophy,
+  Medal,
 } from "lucide-react";
 import { db } from "../../../lib/db";
 import { useApp } from "../../../context/AppContext";
 import { Sale } from "../../../types";
 import { useUser } from "@clerk/clerk-react";
 import { useNavigate } from "react-router-dom";
+import { getJSON } from "../../../lib/api";
 
 type SalesUpdatedPayload = {
   shopId?: string;
@@ -50,11 +53,47 @@ const isSaleCreatedPayload = (payload: unknown): payload is SaleCreatedPayload =
   return validShopId && validSale;
 };
 
+type MemberStatRow = {
+  member_id?: string;
+  display_name?: string;
+  role?: string;
+  total_sales?: number;
+  transactions_count?: number;
+  date?: string;
+};
+
+type TeamMemberRow = {
+  member_id: string;
+  display_name: string;
+  email: string;
+  role: string;
+  status: string;
+};
+
+type MemberStatsResponse = {
+  ok: boolean;
+  stats: MemberStatRow[];
+  employeeOfMonth: {
+    member_id?: string;
+    display_name?: string;
+    total_sales?: number;
+    transactions_count?: number;
+  } | null;
+};
+
 export const Dashboard: React.FC = () => {
-  const { currentShop, setCurrentModule } = useApp();
-  const { isLoaded: isUserLoaded } = useUser();
+  const { currentShop, setCurrentModule, activeShopId, memberScope } = useApp();
+  const { isLoaded: isUserLoaded, user } = useUser();
   const navigate = useNavigate();
   const [sales, setSales] = useState<Sale[]>([]);
+  const [memberStats, setMemberStats] = useState<MemberStatRow[]>([]);
+  const [employeeOfMonth, setEmployeeOfMonth] = useState<MemberStatsResponse["employeeOfMonth"]>(null);
+  const [teamMembers, setTeamMembers] = useState<TeamMemberRow[]>([]);
+  const [selectedMemberId, setSelectedMemberId] = useState<string>("all");
+  const userEmail =
+    user?.primaryEmailAddress?.emailAddress ||
+    user?.emailAddresses?.[0]?.emailAddress ||
+    "";
 
   // --- ADDED: Gatekeeper Logic ---
   // This effect checks if the user is loaded and if they have a shop.
@@ -132,6 +171,71 @@ export const Dashboard: React.FC = () => {
       }
     };
   }, [currentShop]);
+
+  const isCashierView = memberScope?.role === "cashier";
+  const canFilterMembers = Boolean(memberScope?.role === "owner" || memberScope?.role === "manager");
+  const showEmployeeWidgets = Boolean(memberScope?.memberId);
+  const showLeaderboard = Boolean(memberScope?.modules?.analytics) && !isCashierView;
+
+  useEffect(() => {
+    if (!canFilterMembers || !activeShopId || !userEmail) {
+      setTeamMembers([]);
+      setSelectedMemberId("all");
+      return;
+    }
+
+    void getJSON<{ ok: boolean; members: TeamMemberRow[] }>(
+      `/api/team/members?shopId=${encodeURIComponent(activeShopId)}&userEmail=${encodeURIComponent(userEmail)}`,
+    )
+      .then((data) => {
+        setTeamMembers(Array.isArray(data.members) ? data.members : []);
+      })
+      .catch(() => {
+        setTeamMembers([]);
+      });
+  }, [activeShopId, userEmail, canFilterMembers]);
+
+  useEffect(() => {
+    if (!showEmployeeWidgets || !activeShopId || !userEmail) {
+      setMemberStats([]);
+      setEmployeeOfMonth(null);
+      return;
+    }
+
+    const today = new Date().toISOString().slice(0, 10);
+    const monthStart = new Date();
+    monthStart.setDate(1);
+    const fromDate = monthStart.toISOString().slice(0, 10);
+    const memberQuery =
+      isCashierView && memberScope?.memberId
+        ? `&memberId=${encodeURIComponent(memberScope.memberId)}`
+        : canFilterMembers && selectedMemberId !== "all"
+          ? `&memberId=${encodeURIComponent(selectedMemberId)}`
+          : "";
+
+    void getJSON<MemberStatsResponse>(
+      `/api/terminals/member-stats?shopId=${encodeURIComponent(activeShopId)}&userEmail=${encodeURIComponent(userEmail)}&fromDate=${fromDate}&toDate=${today}${memberQuery}`,
+    )
+      .then((data) => {
+        setMemberStats(Array.isArray(data.stats) ? data.stats : []);
+        setEmployeeOfMonth(data.employeeOfMonth || null);
+      })
+      .catch(() => {
+        setMemberStats([]);
+        setEmployeeOfMonth(null);
+      });
+  }, [showEmployeeWidgets, activeShopId, userEmail, isCashierView, memberScope?.memberId, canFilterMembers, selectedMemberId]);
+
+  const myPerformance = useMemo(() => {
+    if (!isCashierView) return null;
+    return memberStats.reduce(
+      (acc, row) => ({
+        totalSales: acc.totalSales + Number(row.total_sales || 0),
+        transactions: acc.transactions + Number(row.transactions_count || 0),
+      }),
+      { totalSales: 0, transactions: 0 },
+    );
+  }, [isCashierView, memberStats]);
 
   const stats = useMemo(() => {
     if (!sales.length) {
@@ -241,6 +345,107 @@ export const Dashboard: React.FC = () => {
           </Card>
         ))}
       </div>
+
+      {showEmployeeWidgets && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <Card title={isCashierView ? "My Performance" : "Employee of the Month"} className="border border-gray-100">
+            {isCashierView ? (
+              <div className="flex items-start gap-4">
+                <div className="p-3 rounded-lg bg-amber-50 text-amber-600">
+                  <Trophy size={22} />
+                </div>
+                <div>
+                  <p className="text-lg font-semibold text-gray-900">
+                    {memberScope?.displayName || "You"}
+                  </p>
+                  <p className="text-sm text-gray-500 mt-1">
+                    ${myPerformance?.totalSales.toFixed(2) || "0.00"} sales this month
+                  </p>
+                  <p className="text-xs text-gray-400 mt-1">
+                    {myPerformance?.transactions || 0} transactions
+                  </p>
+                </div>
+              </div>
+            ) : employeeOfMonth?.display_name ? (
+              <div className="flex items-start gap-4">
+                <div className="p-3 rounded-lg bg-amber-50 text-amber-600">
+                  <Trophy size={22} />
+                </div>
+                <div>
+                  <p className="text-lg font-semibold text-gray-900">
+                    {employeeOfMonth.display_name}
+                  </p>
+                  <p className="text-sm text-gray-500 mt-1">
+                    ${Number(employeeOfMonth.total_sales || 0).toFixed(2)} sales
+                  </p>
+                  <p className="text-xs text-gray-400 mt-1">
+                    {Number(employeeOfMonth.transactions_count || 0)} transactions this month
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <p className="text-sm text-gray-500">No employee stats yet this month.</p>
+            )}
+          </Card>
+
+          {!showLeaderboard ? null : (
+            <Card title="Team Leaderboard" className="lg:col-span-2 border border-gray-100">
+              {canFilterMembers && (
+                <div className="mb-4 flex flex-wrap items-center gap-3">
+                  <label className="text-sm font-medium text-gray-700" htmlFor="member-filter">
+                    Filter reports by member
+                  </label>
+                  <select
+                    id="member-filter"
+                    value={selectedMemberId}
+                    onChange={(event) => setSelectedMemberId(event.target.value)}
+                    className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700"
+                  >
+                    <option value="all">All members</option>
+                    {teamMembers.map((member) => (
+                      <option key={member.member_id} value={member.member_id}>
+                        {member.display_name} ({member.role})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              {memberStats.length > 0 ? (
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-gray-200 text-sm">
+                    <thead>
+                      <tr>
+                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Rank</th>
+                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Employee</th>
+                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Sales</th>
+                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Transactions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {memberStats.slice(0, 5).map((row, index) => (
+                        <tr key={row.member_id || row.display_name || index}>
+                          <td className="px-3 py-3">
+                            {index === 0 ? (
+                              <Medal size={16} className="text-amber-500" />
+                            ) : (
+                              <span className="text-gray-500">#{index + 1}</span>
+                            )}
+                          </td>
+                          <td className="px-3 py-3 font-medium text-gray-900">{row.display_name || "Unknown"}</td>
+                          <td className="px-3 py-3">${Number(row.total_sales || 0).toFixed(2)}</td>
+                          <td className="px-3 py-3">{Number(row.transactions_count || 0)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <p className="text-sm text-gray-500">Leaderboard will appear after team members record sales.</p>
+              )}
+            </Card>
+          )}
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Recent Activity */}

@@ -1298,6 +1298,15 @@ const Login = () => {
                     Register
                   </a>
                 </p>
+                <p className="mt-2 text-center text-sm text-gray-600">
+                  Team member?{" "}
+                  <a
+                    href="/register?account=team"
+                    className="text-gray-900 hover:text-gray-700 font-medium"
+                  >
+                    Join as team member
+                  </a>
+                </p>
               </div>
             </div>
 

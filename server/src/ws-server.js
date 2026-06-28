@@ -4,8 +4,40 @@ import { openShopDatabase, shopDatabaseExists } from "./utils/shop-database.js";
 import { getInventory, upsertProducts } from "./services/inventory-service.js";
 import { getShopSnapshot } from "./services/shop-snapshot.js";
 import { bus as changeBus, publishChange } from "./realtime/change-bus.js";
+import { validateTerminalToken } from "./services/terminal-service.js";
 
 let ioInstance;
+
+const changeLatencySamples = [];
+const CHANGE_LATENCY_SAMPLE_LIMIT = 200;
+
+function recordChangeLatency(event) {
+  const publishedAt = Date.parse(event?.timestamp || "");
+  if (!Number.isFinite(publishedAt)) return;
+
+  const latencyMs = Date.now() - publishedAt;
+  if (!Number.isFinite(latencyMs) || latencyMs < 0) return;
+
+  changeLatencySamples.push(latencyMs);
+  if (changeLatencySamples.length > CHANGE_LATENCY_SAMPLE_LIMIT) {
+    changeLatencySamples.shift();
+  }
+
+  if (changeLatencySamples.length >= 20 && changeLatencySamples.length % 20 === 0) {
+    const sorted = [...changeLatencySamples].sort((a, b) => a - b);
+    const percentile = (value) => sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * value))];
+    const average = sorted.reduce((sum, value) => sum + value, 0) / sorted.length;
+    console.info(
+      "[change-bus] latency",
+      JSON.stringify({
+        samples: sorted.length,
+        avgMs: Number(average.toFixed(2)),
+        p50Ms: percentile(0.5),
+        p95Ms: percentile(0.95),
+      }),
+    );
+  }
+}
 
 const validateMobileSocketSession = (shopId, sessionId, token, sessionType) => {
   if (!sessionId && !token) {
@@ -101,6 +133,7 @@ function init(httpServer, opts = {}) {
   changeBus.on("change", (event) => {
     if (!event?.shopId) return;
     const room = `shop_${event.shopId}`;
+    recordChangeLatency(event);
     io.to(room).emit("change", event);
   });
 
@@ -112,6 +145,10 @@ function init(httpServer, opts = {}) {
     const token = socket.handshake.query?.token || socket.handshake.auth?.token;
     const requestedSessionType =
       socket.handshake.query?.sessionType || socket.handshake.auth?.sessionType;
+    const terminalId =
+      socket.handshake.query?.terminalId || socket.handshake.auth?.terminalId;
+    const terminalToken =
+      socket.handshake.query?.terminalToken || socket.handshake.auth?.terminalToken;
     if (!shopId) {
       console.warn("Socket connection without shopId - disconnecting");
       socket.emit("error", { message: "shopId is required" });
@@ -144,6 +181,22 @@ function init(httpServer, opts = {}) {
         socket.emit("error", { message: sessionCheck.error });
         socket.disconnect(true);
         return;
+      }
+
+      if (terminalId && terminalToken) {
+        const db = openShopDatabase(shopId);
+        try {
+          const terminalCheck = validateTerminalToken(db, shopId, terminalId, terminalToken);
+          if (!terminalCheck.ok) {
+            socket.emit("error", { message: terminalCheck.error });
+            socket.disconnect(true);
+            return;
+          }
+          socket.data.terminalId = terminalId;
+          socket.data.terminalType = terminalCheck.terminal.terminal_type;
+        } finally {
+          db.close();
+        }
       }
 
       if (sessionCheck.isMobileSession) {
@@ -240,6 +293,14 @@ function init(httpServer, opts = {}) {
 
     socket.on("disconnect", (reason) => {
       console.log(`Socket ${socket.id} disconnected: ${reason}`);
+      if (socket.data?.terminalId) {
+        publishChange({
+          shopId,
+          entity: "terminals",
+          action: "left",
+          payload: { terminalId: socket.data.terminalId, socketId: socket.id, reason },
+        });
+      }
       publishChange({
         shopId,
         entity: "sessions",

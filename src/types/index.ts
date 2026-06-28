@@ -7,6 +7,8 @@ export interface User {
   role: "admin" | "manager" | "staff";
   shopId: string;
   permissions: string[];
+  memberId?: string;
+  terminalId?: string;
   avatarUrl?: string;
 }
 

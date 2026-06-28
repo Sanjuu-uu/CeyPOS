@@ -1,7 +1,7 @@
 import { useEffect, useState, useMemo } from "react";
 import { Eye, EyeOff, Mail, Lock, User, ArrowRight } from "lucide-react";
 import { useSignUp } from "@clerk/clerk-react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import Navigation from "../components/Navigation";
 import Footer from "../components/Footer";
 import { getEmailValidationError } from "../utils/emailValidation";
@@ -11,6 +11,10 @@ type RegisterAction = "register" | "verify" | "resend" | null;
 const Register = () => {
   const { isLoaded, signUp, setActive } = useSignUp();
   const navigate = useNavigate();
+  const location = useLocation();
+  const isTeamAccount =
+    new URLSearchParams(location.search).get("account") === "team";
+  const postRegisterPath = isTeamAccount ? "/team-onboard" : "/shop-wizard";
 
   const [showPassword, setShowPassword] = useState(false);
   const [fullName, setFullName] = useState("");
@@ -139,7 +143,7 @@ const Register = () => {
 
       if (result.status === "complete") {
         await setActive({ session: result.createdSessionId });
-        navigate("/shop-wizard");
+        navigate(postRegisterPath);
       } else if (result.status === "missing_requirements") {
         console.log("Email verification required");
 
@@ -256,7 +260,7 @@ const Register = () => {
 
       if (result.status === "complete") {
         await setActive({ session: result.createdSessionId });
-        navigate("/shop-wizard");
+        navigate(postRegisterPath);
       } else if (result.status === "missing_requirements") {
         console.log(
           "Missing requirements after verification:",

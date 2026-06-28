@@ -1,32 +1,53 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { ModuleName, User, Shop, CartItem } from '../types';
+import { MemberScope } from '../types/team';
 import { db } from '../lib/db';
+import {
+  fetchShopContext,
+  loadTerminalSession,
+  saveTerminalSession,
+  clearTerminalSession,
+} from '../lib/shopContext';
+import { installGlobalBarcodeRouter } from '../lib/barcodeRouter';
 
 interface AppContextType {
   currentModule: ModuleName;
   setCurrentModule: (module: ModuleName) => void;
-
   isSidebarCollapsed: boolean;
   setIsSidebarCollapsed: (collapsed: boolean) => void;
-
-  // ▼ ADD THESE TWO LINES to the interface ▼
   isMobileMenuOpen: boolean;
   setIsMobileMenuOpen: (open: boolean) => void;
-  // ▲ END ADDITION ▲
-
   currentUser: User | null;
   currentShop: Shop | null;
   activeShopId: string | null;
-
+  memberScope: MemberScope | null;
+  accountType: 'owner' | 'team';
+  pairingRequired: boolean;
+  refreshShopContext: () => Promise<void>;
   cart: CartItem[];
   addToCart: (product: CartItem) => void;
   removeFromCart: (productId: string) => void;
   updateCartItemQuantity: (productId: string, quantity: number) => void;
   clearCart: () => void;
   cartTotal: number;
+  canAccessModule: (module: ModuleName) => boolean;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
+
+const MODULE_SCOPE_MAP: Partial<Record<ModuleName, keyof MemberScope['modules']>> = {
+  dashboard: undefined,
+  pos: 'pos',
+  inventory: 'inventory',
+  sessions: 'sessions',
+  analytics: 'analytics',
+  settings: 'settings',
+  reports: 'reports',
+  payments: 'payments',
+  receipts: 'receipts',
+  business: 'business',
+  Subscription: 'subscription',
+};
 
 interface AppProviderProps {
   children: React.ReactNode;
@@ -37,6 +58,7 @@ interface AppProviderProps {
     address?: string;
     contact?: string;
   };
+  accountType?: 'owner' | 'team';
 }
 
 export const AppProvider: React.FC<AppProviderProps> = ({
@@ -44,56 +66,185 @@ export const AppProvider: React.FC<AppProviderProps> = ({
   userEmail,
   shopId: externalShopId,
   shopProfile,
+  accountType = 'owner',
 }) => {
   const [currentModule, setCurrentModule] = useState<ModuleName>('dashboard');
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
-
-  // ▼ INSERT this new state hook right after `isSidebarCollapsed` ▼
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  // ▲ END INSERTION ▲
-
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [currentShop, setCurrentShop] = useState<Shop | null>(null);
+  const [memberScope, setMemberScope] = useState<MemberScope | null>(null);
+  const [pairingRequired, setPairingRequired] = useState(false);
   const [cart, setCart] = useState<CartItem[]>([]);
 
-  // Calculate cart total
   const cartTotal = cart.reduce((total, item) => total + item.price * item.quantity, 0);
 
-  // Initialize app with sample data
-  useEffect(() => {
-    // Initialize database
-    db.init();
+  const canAccessModule = useCallback(
+    (module: ModuleName) => {
+      if (!memberScope) {
+        if (accountType === 'owner') return true;
+        return module === 'dashboard' || module === 'support';
+      }
+      const key = MODULE_SCOPE_MAP[module];
+      if (!key) return true;
+      const value = memberScope.modules[key];
+      return value === true || typeof value === 'string';
+    },
+    [accountType, memberScope],
+  );
 
+  const refreshShopContext = useCallback(async () => {
+    if (!externalShopId || !userEmail) {
+      setPairingRequired(accountType === 'team');
+      return;
+    }
+
+    let terminal = loadTerminalSession(externalShopId);
+    const isStalePrimarySession = accountType === 'team' && terminal?.terminalType === 'primary';
+    if (isStalePrimarySession) {
+      clearTerminalSession();
+      terminal = null;
+    }
+    let effectiveTerminal = terminal;
+    if (
+      accountType === 'team' &&
+      (!effectiveTerminal ||
+        effectiveTerminal.terminalType !== 'register' ||
+        !effectiveTerminal.terminalToken)
+    ) {
+      setPairingRequired(true);
+    }
+
+    let context;
+    try {
+      context = await fetchShopContext(
+        externalShopId,
+        userEmail,
+        effectiveTerminal?.terminalId,
+        effectiveTerminal?.terminalToken,
+      );
+    } catch (error) {
+      if (accountType !== 'team' || !effectiveTerminal) {
+        if (accountType === 'team') {
+          setPairingRequired(true);
+        }
+        throw error;
+      }
+
+      clearTerminalSession();
+      effectiveTerminal = null;
+      setPairingRequired(true);
+      context = await fetchShopContext(externalShopId, userEmail);
+    }
+
+    setMemberScope(context.scope);
+    db.setSaleAttribution({
+      memberId: context.member.memberId,
+      displayName: context.member.displayName,
+      role: context.member.role,
+      terminalId: context.terminal?.terminalId || effectiveTerminal?.terminalId,
+    });
+    setCurrentUser({
+      id: context.member.memberId,
+      name: context.member.displayName,
+      email: context.member.email,
+      role: context.member.role === 'cashier' ? 'staff' : context.member.role === 'manager' ? 'manager' : 'admin',
+      shopId: `shop_${externalShopId}`,
+      permissions: [],
+      memberId: context.member.memberId,
+      terminalId: context.terminal?.terminalId || effectiveTerminal?.terminalId,
+    });
+
+    const needsPairing =
+      accountType === 'team' &&
+      context.member.role !== 'owner' &&
+      (!effectiveTerminal ||
+        effectiveTerminal.terminalType !== 'register' ||
+        !effectiveTerminal.terminalToken ||
+        !context.terminal ||
+        context.terminal.terminalType !== 'register');
+
+    setPairingRequired(Boolean(needsPairing));
+
+    if (context.member.role === 'owner' && !terminal) {
+      try {
+        const res = await fetch('/api/terminals/primary/ensure', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            shopId: externalShopId,
+            userEmail,
+            deviceMeta: { userAgent: navigator.userAgent },
+          }),
+        });
+        const body = await res.json();
+        if (res.ok && body.terminalToken && body.terminal?.terminalId) {
+          const primaryTerminal = {
+            shopId: externalShopId,
+            terminalId: body.terminal.terminalId,
+            terminalToken: body.terminalToken,
+            terminalType: 'primary',
+            label: body.terminal.label,
+          };
+          saveTerminalSession(primaryTerminal);
+          setCurrentUser((prev) =>
+            prev
+              ? { ...prev, terminalId: primaryTerminal.terminalId }
+              : prev,
+          );
+          void db.connectWebSocket(externalShopId, {
+            terminalId: primaryTerminal.terminalId,
+            terminalToken: primaryTerminal.terminalToken,
+          });
+        }
+      } catch {
+        // non-fatal
+      }
+    }
+  }, [externalShopId, userEmail, accountType]);
+
+  useEffect(() => {
+    db.init();
+    installGlobalBarcodeRouter();
+  }, []);
+
+  useEffect(() => {
     (async () => {
       if (!externalShopId) {
         setCurrentShop(null);
         return;
       }
 
+      const terminal = loadTerminalSession(externalShopId);
+
       try {
-        await db.connectWebSocket(externalShopId);
-        const loadedShop = db.shops.getById(`shop_${externalShopId}`);
-        if (loadedShop) {
-          setCurrentShop(loadedShop);
-        } else {
-          setCurrentShop({
-            id: `shop_${externalShopId}`,
-            name: 'My Shop',
-            address: '',
-            contact: '',
-          } as Shop);
-        }
+        await db.connectWebSocket(externalShopId, terminal || undefined);
       } catch (e) {
         console.warn('Failed to connect WebSocket for shop', externalShopId, e);
       }
+
+      try {
+        await refreshShopContext();
+      } catch (e) {
+        console.warn('Failed to refresh shop context for shop', externalShopId, e);
+      }
+
+      const loadedShop = db.shops.getById(`shop_${externalShopId}`);
+      if (loadedShop) {
+        setCurrentShop(loadedShop);
+      } else {
+        setCurrentShop({
+          id: `shop_${externalShopId}`,
+          name: 'My Shop',
+          address: '',
+          contact: '',
+        } as Shop);
+      }
     })();
-  }, [externalShopId]);
+  }, [externalShopId, refreshShopContext]);
 
   useEffect(() => {
-    if (!externalShopId || !shopProfile) {
-      return;
-    }
-
+    if (!externalShopId || !shopProfile) return;
     setCurrentShop((prev) => {
       const base: Shop =
         prev ?? {
@@ -102,50 +253,42 @@ export const AppProvider: React.FC<AppProviderProps> = ({
           address: '',
           contact: '',
         };
-
-      const next: Shop = {
+      return {
         ...base,
         name: shopProfile.name || base.name,
         address: shopProfile.address ?? base.address,
         contact: shopProfile.contact ?? base.contact,
       };
-
-      return next;
     });
   }, [externalShopId, shopProfile]);
 
   useEffect(() => {
-    if (!userEmail) {
-      setCurrentUser(null);
-      return;
-    }
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent).detail;
+      if (detail?.terminalId) {
+        setPairingRequired(false);
+        void refreshShopContext();
+      }
+      if (detail?.revoked) {
+        clearTerminalSession();
+        setPairingRequired(true);
+      }
+    };
+    window.addEventListener('ceypos:terminal-updated', handler);
+    return () => window.removeEventListener('ceypos:terminal-updated', handler);
+  }, [refreshShopContext]);
 
-    setCurrentUser({
-      id: `clerk_${userEmail}`,
-      name: userEmail.split('@')[0] || userEmail,
-      email: userEmail,
-      role: 'admin',
-      shopId: externalShopId ? `shop_${externalShopId}` : '',
-      permissions: ['*'],
-    });
-  }, [userEmail, externalShopId]);
-
-  // Cart management functions
   const addToCart = (product: CartItem) => {
     setCart((prevCart) => {
       const existingItem = prevCart.find((item) => item.id === product.id);
-
       if (existingItem) {
-        // Update quantity if item already exists
         return prevCart.map((item) =>
           item.id === product.id
             ? { ...item, quantity: item.quantity + product.quantity }
-            : item
+            : item,
         );
-      } else {
-        // Add new item
-        return [...prevCart, product];
       }
+      return [...prevCart, product];
     });
   };
 
@@ -155,18 +298,14 @@ export const AppProvider: React.FC<AppProviderProps> = ({
 
   const updateCartItemQuantity = (productId: string, quantity: number) => {
     setCart((prevCart) => {
-      if (quantity <= 0) {
-        return prevCart.filter((item) => item.id !== productId);
-      }
+      if (quantity <= 0) return prevCart.filter((item) => item.id !== productId);
       return prevCart.map((item) =>
-        item.id === productId ? { ...item, quantity } : item
+        item.id === productId ? { ...item, quantity } : item,
       );
     });
   };
 
-  const clearCart = () => {
-    setCart([]);
-  };
+  const clearCart = () => setCart([]);
 
   return (
     <AppContext.Provider
@@ -175,21 +314,22 @@ export const AppProvider: React.FC<AppProviderProps> = ({
         setCurrentModule,
         isSidebarCollapsed,
         setIsSidebarCollapsed,
-
-        // ▼ EXPOSE these two values in the provider’s value object ▼
         isMobileMenuOpen,
         setIsMobileMenuOpen,
-        // ▲ END EXPOSURE ▲
-
         currentUser,
         currentShop,
         activeShopId: externalShopId ?? null,
+        memberScope,
+        accountType,
+        pairingRequired,
+        refreshShopContext,
         cart,
         addToCart,
         removeFromCart,
         updateCartItemQuantity,
         clearCart,
         cartTotal,
+        canAccessModule,
       }}
     >
       {children}

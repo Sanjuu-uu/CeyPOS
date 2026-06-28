@@ -33,6 +33,7 @@ import {
   type PaperWidth,
 } from "../../../lib/printerSettings";
 import { printReceipt } from "../../../lib/receiptPrinter";
+import { TeamSettings } from "../team/TeamSettings";
 
 // --- ADVANCED KEYBOARD SETTINGS ---
 const KeyboardSettings: React.FC = () => {
@@ -585,10 +586,11 @@ const PrinterSettingsPanel: React.FC = () => {
 
 // --- MAIN SETTINGS COMPONENT ---
 export const Settings: React.FC = () => {
-  const { currentShop, currentUser } = useApp();
+  const { currentShop, currentUser, memberScope } = useApp();
   const [activeTab, setActiveTab] = useState<
     | "general"
     | "users"
+    | "team"
     | "notifications"
     | "security"
     | "appearance"
@@ -691,6 +693,9 @@ export const Settings: React.FC = () => {
           {[
             { id: "general", label: "General", icon: <Store size={16} /> },
             { id: "users", label: "Users", icon: <User size={16} /> },
+            ...(memberScope?.modules?.team
+              ? [{ id: "team", label: "Team", icon: <Shield size={16} /> }]
+              : []),
             {
               id: "keybindings",
               label: "Keybindings",
@@ -911,6 +916,8 @@ export const Settings: React.FC = () => {
           </Card>
         </div>
       )}
+
+      {activeTab === "team" && memberScope?.modules?.team && <TeamSettings />}
 
       {/* Notifications Tab */}
       {activeTab === "notifications" && (

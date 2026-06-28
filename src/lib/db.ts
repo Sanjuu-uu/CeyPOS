@@ -22,7 +22,19 @@ type SocketType = ReturnType<typeof clientIo> & {
   ) => void;
 };
 
+let currentServedBy: {
+  memberId?: string;
+  displayName?: string;
+  role?: string;
+  terminalId?: string;
+} | null = null;
+
 let socket: SocketType | null = null;
+let currentTerminalKey: string | null = null;
+
+function setSaleAttribution(info: typeof currentServedBy) {
+  currentServedBy = info;
+}
 let currentShopKey: string | null = null;
 
 // Export Business Rules Types
@@ -867,14 +879,35 @@ function handleChange(event: ChangeEventPayload | null | undefined) {
       });
       break;
     }
+    case "terminals": {
+      emit("sessionUpdated", {
+        shopId: shopKey,
+        action: event.action,
+        payload,
+      });
+      if (event.action === "revoked") {
+        window.dispatchEvent(
+          new CustomEvent("ceypos:terminal-updated", { detail: { revoked: true, payload } }),
+        );
+      }
+      break;
+    }
     default:
       break;
   }
 }
 
-function ensureSocket(shopKey: string) {
+function ensureSocket(
+  shopKey: string,
+  terminal?: { terminalId: string; terminalToken: string },
+) {
   const rawShopId = normalizeShopId(shopKey);
-  if (socket && currentShopKey === shopKey) {
+  const nextTerminalKey =
+    terminal?.terminalId && terminal?.terminalToken
+      ? `${terminal.terminalId}:${terminal.terminalToken}`
+      : "__anon__";
+
+  if (socket && currentShopKey === shopKey && currentTerminalKey === nextTerminalKey) {
     return socket;
   }
   if (socket) {
@@ -882,15 +915,24 @@ function ensureSocket(shopKey: string) {
       socket.off("change");
       socket.off("initialState");
       socket.off("disconnect");
+      socket.off("mobile:barcode");
     } catch (err) {
       console.warn("Failed clearing previous socket listeners", err);
     }
     socket.disconnect();
     socket = null;
+    currentTerminalKey = null;
   }
 
-  socket = clientIo(API_BASE, { query: { shopId: rawShopId } }) as SocketType;
+  const query: Record<string, string> = { shopId: rawShopId };
+  if (terminal?.terminalId && terminal?.terminalToken) {
+    query.terminalId = terminal.terminalId;
+    query.terminalToken = terminal.terminalToken;
+  }
+
+  socket = clientIo(API_BASE, { query }) as SocketType;
   currentShopKey = shopKey;
+  currentTerminalKey = nextTerminalKey;
 
   socket.on("connect", () => {
     console.log("WS connected", socket?.id);
@@ -922,12 +964,15 @@ function shopsAsArray(): Shop[] {
   return Object.values(shopsCache);
 }
 
-async function connectWebSocket(shopId: string) {
+async function connectWebSocket(
+  shopId: string,
+  terminal?: { terminalId: string; terminalToken: string },
+) {
   const rawShopId = normalizeShopId(shopId);
   const shopKey = toShopKey(shopId);
   await fetchShopMeta(rawShopId);
   await fetchSnapshot(shopKey);
-  ensureSocket(shopKey);
+  ensureSocket(shopKey, terminal);
 }
 
 function getProductsByShop(shopId: string): Product[] {
@@ -1078,6 +1123,14 @@ async function createSaleRecord(sale: Omit<Sale, "id">): Promise<Sale> {
     pointsRedeemed: sale.pointsRedeemed || 0,
     paymentMethod: sale.paymentMethod,
     createdAt: sale.timestamp || new Date().toISOString(),
+    servedBy: currentServedBy
+      ? {
+          memberId: currentServedBy.memberId,
+          displayName: currentServedBy.displayName,
+          role: currentServedBy.role,
+          terminalId: currentServedBy.terminalId,
+        }
+      : undefined,
   };
 
   const res = await fetch(`${API_BASE}/api/sales/complete`, {
@@ -1128,6 +1181,7 @@ export const db = {
   off,
   init: () => undefined,
   connectWebSocket,
+  setSaleAttribution,
   shops: {
     getAll: (): Shop[] => shopsAsArray(),
     getById: (id: string): Shop | undefined => shopsCache[id],

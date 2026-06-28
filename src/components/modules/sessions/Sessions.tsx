@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import QRCode from "qrcode";
 import { useUser } from "@clerk/clerk-react";
@@ -12,7 +12,6 @@ import {
   PowerOff,
   QrCode,
   RefreshCw,
-  Shield,
   Smartphone,
   Trash2,
   Wifi,
@@ -20,316 +19,13 @@ import {
 } from "lucide-react";
 import { Card } from "../../ui/Card";
 import { Button } from "../../ui/Button";
-import { postJSON } from "../../../lib/api";
+import { postJSON, getJSON } from "../../../lib/api";
 import { db } from "../../../lib/db";
 import { useApp } from "../../../context/AppContext";
+import { RegisterTerminalWizard } from "./RegisterTerminalWizard";
 
 type MobileSessionType = "barcode" | "checkout";
-type SessionType = MobileSessionType | "cashier";
-
-// ─── Cashier Wizard (2FA flow) ────────────────────────────────────────────────
-
-interface CashierWizardProps {
-  onClose: () => void;
-  sidebarCollapsed: boolean;
-}
-
-const CashierWizard: React.FC<CashierWizardProps> = ({
-  onClose,
-  sidebarCollapsed,
-}) => {
-  const [step, setStep] = useState(1);
-  const [twoFACode, setTwoFACode] = useState("CY-4829-3761");
-  const [isConnecting, setIsConnecting] = useState(false);
-  const [isConnected, setIsConnected] = useState(false);
-
-  const handleConnect = () => {
-    setIsConnecting(true);
-    setTimeout(() => {
-      setIsConnecting(false);
-      setIsConnected(true);
-      setTimeout(() => onClose(), 2000);
-    }, 3000);
-  };
-
-  const generateNewCode = () => {
-    const newCode = `CY-${Math.floor(Math.random() * 9000) + 1000}-${Math.floor(Math.random() * 9000) + 1000}`;
-    setTwoFACode(newCode);
-  };
-
-  return (
-    <div className="fixed inset-0 z-40">
-      <div
-        className={`absolute right-0 bottom-0 top-[40px] ${sidebarCollapsed ? "md:left-16" : "md:left-60"} bg-black/10 backdrop-blur-sm`}
-      />
-      <div
-        className={`absolute right-0 bottom-0 top-[65px] ${sidebarCollapsed ? "md:left-16" : "md:left-60"} flex items-center justify-center px-3 py-2 md:px-5 md:py-3`}
-      >
-        <div
-          className="relative z-10 w-full max-w-2xl flex flex-col bg-white shadow-2xl overflow-hidden"
-          style={{
-            borderRadius: "var(--radius--16px)",
-            border: "1px solid var(--gray--200)",
-            maxHeight: "min(900px, calc(100dvh - 120px))",
-          }}
-        >
-          {/* Header */}
-          <div
-            className="p-6 border-b flex-shrink-0"
-            style={{ borderColor: "var(--gray--200)" }}
-          >
-            <div className="flex justify-between items-center mb-4">
-              <div className="flex items-center gap-3">
-                <div
-                  className="p-2 rounded-lg"
-                  style={{ backgroundColor: "var(--gray--100)" }}
-                >
-                  <MonitorSpeaker size={24} />
-                </div>
-                <div>
-                  <h2
-                    className="text-xl font-bold"
-                    style={{ color: "var(--gray--900)" }}
-                  >
-                    Connect Cashier Device
-                  </h2>
-                  <p
-                    className="text-sm"
-                    style={{ color: "var(--gray--600)" }}
-                  >
-                    Connect another cashier terminal to your shop
-                  </p>
-                </div>
-              </div>
-              <button
-                onClick={onClose}
-                className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
-                aria-label="Close"
-              >
-                <X size={20} />
-              </button>
-            </div>
-
-            {/* Progress Steps */}
-            <div className="flex items-center justify-center gap-2">
-              {[1, 2, 3].map((stepNum) => (
-                <div key={stepNum} className="flex items-center">
-                  <div
-                    className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium transition-all duration-200 ${
-                      stepNum <= step ? "text-black" : "text-gray-400"
-                    }`}
-                    style={{
-                      backgroundColor:
-                        stepNum <= step ? "#c5f542" : "var(--gray--200)",
-                    }}
-                  >
-                    {isConnected ? <CheckCircle size={16} /> : stepNum}
-                  </div>
-                  {stepNum < 3 && (
-                    <div
-                      className="w-8 h-0.5 mx-2 transition-all duration-200"
-                      style={{
-                        backgroundColor:
-                          stepNum < step ? "#c5f542" : "var(--gray--200)",
-                      }}
-                    />
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Content */}
-          <div className="flex-1 p-6 flex flex-col items-center justify-center min-h-0 overflow-y-auto">
-            <AnimatePresence mode="wait">
-              {step === 1 && (
-                <motion.div
-                  key="step1"
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -20 }}
-                  className="text-center space-y-6 w-full max-w-sm"
-                >
-                  <div className="space-y-2">
-                    <h3 className="text-lg font-semibold">
-                      Initialize Connection
-                    </h3>
-                    <p className="text-gray-600">
-                      Preparing to connect your cashier device
-                    </p>
-                  </div>
-                  <div
-                    className="p-6 rounded-lg border"
-                    style={{
-                      borderColor: "var(--gray--200)",
-                      backgroundColor: "var(--gray--50)",
-                    }}
-                  >
-                    <Wifi size={48} className="mx-auto mb-4 text-gray-400" />
-                    <p className="text-sm text-gray-600">
-                      Make sure your device is connected to the same network
-                    </p>
-                  </div>
-                  <Button
-                    variant="primary"
-                    onClick={() => setStep(2)}
-                    className="w-full"
-                  >
-                    Start Connection
-                  </Button>
-                </motion.div>
-              )}
-
-              {step === 2 && (
-                <motion.div
-                  key="step2"
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -20 }}
-                  className="text-center space-y-6 w-full max-w-sm"
-                >
-                  <div className="space-y-2">
-                    <h3 className="text-lg font-semibold">Enter 2FA Code</h3>
-                    <p className="text-gray-600">
-                      Enter this code on your cashier device
-                    </p>
-                  </div>
-                  <div className="space-y-4">
-                    <div
-                      className="p-6 rounded-lg border text-center"
-                      style={{
-                        borderColor: "var(--gray--200)",
-                        backgroundColor: "var(--gray--50)",
-                      }}
-                    >
-                      <Shield
-                        size={32}
-                        className="mx-auto mb-4 text-gray-600"
-                      />
-                      <div
-                        className="text-3xl font-mono font-bold mb-4"
-                        style={{ color: "var(--gray--900)" }}
-                      >
-                        {twoFACode}
-                      </div>
-                      <div className="flex justify-center gap-2">
-                        <button
-                          onClick={() =>
-                            navigator.clipboard.writeText(twoFACode)
-                          }
-                          className="flex items-center gap-2 px-3 py-1 rounded text-sm hover:bg-gray-200 transition-colors"
-                        >
-                          <Copy size={14} />
-                          Copy
-                        </button>
-                        <button
-                          onClick={generateNewCode}
-                          className="flex items-center gap-2 px-3 py-1 rounded text-sm hover:bg-gray-200 transition-colors"
-                        >
-                          <RefreshCw size={14} />
-                          New Code
-                        </button>
-                      </div>
-                    </div>
-                    <p className="text-xs text-gray-500">
-                      Code expires in 5 minutes
-                    </p>
-                  </div>
-                  <Button
-                    variant="primary"
-                    onClick={() => setStep(3)}
-                    className="w-full"
-                  >
-                    Continue
-                  </Button>
-                </motion.div>
-              )}
-
-              {step === 3 && (
-                <motion.div
-                  key="step3"
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -20 }}
-                  className="text-center space-y-6 w-full max-w-sm"
-                >
-                  {!isConnecting && !isConnected && (
-                    <>
-                      <div className="space-y-2">
-                        <h3 className="text-lg font-semibold">
-                          Ready to Connect
-                        </h3>
-                        <p className="text-gray-600">
-                          Click connect to establish the session
-                        </p>
-                      </div>
-                      <div
-                        className="p-6 rounded-lg border"
-                        style={{
-                          borderColor: "var(--gray--200)",
-                          backgroundColor: "var(--gray--50)",
-                        }}
-                      >
-                        <div className="flex items-center gap-3 justify-center mb-4">
-                          <MonitorSpeaker size={24} />
-                          <span className="text-lg font-medium">
-                            Connect Cashier Device
-                          </span>
-                        </div>
-                        <p className="text-sm text-gray-600">
-                          Session will be active for this shop
-                        </p>
-                      </div>
-                      <Button
-                        variant="primary"
-                        onClick={handleConnect}
-                        className="w-full"
-                      >
-                        Connect Device
-                      </Button>
-                    </>
-                  )}
-
-                  {isConnecting && (
-                    <>
-                      <div className="space-y-2">
-                        <h3 className="text-lg font-semibold">
-                          Connecting...
-                        </h3>
-                        <p className="text-gray-600">
-                          Establishing secure connection
-                        </p>
-                      </div>
-                      <div className="flex items-center justify-center">
-                        <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-green-500" />
-                      </div>
-                    </>
-                  )}
-
-                  {isConnected && (
-                    <>
-                      <div className="space-y-2">
-                        <h3 className="text-lg font-semibold text-green-600">
-                          Connected Successfully!
-                        </h3>
-                        <p className="text-gray-600">
-                          Your device is now connected to the shop
-                        </p>
-                      </div>
-                      <div className="flex items-center justify-center">
-                        <CheckCircle size={64} className="text-green-500" />
-                      </div>
-                    </>
-                  )}
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-};
+type SessionType = MobileSessionType | "register";
 
 // ─── Mobile Session Wizard (QR flow) ─────────────────────────────────────────
 
@@ -686,7 +382,7 @@ const SessionWizard: React.FC<SessionWizardProps> = ({
 // ─── Sessions Page ────────────────────────────────────────────────────────────
 
 export const Sessions: React.FC = () => {
-  const { activeShopId, isSidebarCollapsed } = useApp();
+  const { activeShopId, isSidebarCollapsed, memberScope, setCurrentModule, currentUser } = useApp();
   const { user } = useUser();
   const userEmail =
     user?.primaryEmailAddress?.emailAddress ||
@@ -694,8 +390,10 @@ export const Sessions: React.FC = () => {
     "";
   const userId = user?.id ?? null;
   const shopId = activeShopId ?? "";
+  const canManageTerminals =
+    memberScope?.role === "owner" || memberScope?.role === "manager";
 
-  const [showCashierWizard, setShowCashierWizard] = useState(false);
+  const [showRegisterWizard, setShowRegisterWizard] = useState(false);
   const [showMobileWizard, setShowMobileWizard] = useState(false);
   const [activeSession, setActiveSession] = useState<MobileSessionType | null>(
     null,
@@ -707,107 +405,103 @@ export const Sessions: React.FC = () => {
       status: "created" | "linked";
       at: string;
       actor?: string;
-      expiresAt?: string; // present for pending sessions
+      expiresAt?: string;
+    }>
+  >([]);
+  const [registerTerminals, setRegisterTerminals] = useState<
+    Array<{
+      terminalId: string;
+      label: string;
+      pairedMemberName?: string;
+      lastSeenAt?: string | null;
     }>
   >([]);
   const [expandedSession, setExpandedSession] = useState<string | null>(null);
   const [confirmingRevoke, setConfirmingRevoke] = useState<string | null>(null);
   const [revokingSession, setRevokingSession] = useState<string | null>(null);
-  // Maps sessionId → { scanUrl, expiresAt } for QR display in detail panel
   const [sessionScanUrls, setSessionScanUrls] = useState<
     Record<string, { scanUrl: string; expiresAt: string }>
   >({});
 
-  // ── Restore feed from localStorage ──────────────────────────────────────────
-  useEffect(() => {
-    if (!shopId) return;
+  const registerTerminalLimit = memberScope?.plan.maxRegisterTerminals ?? 0;
+  const registerTerminalCount = registerTerminals.length;
+  // TEMP: bypass register cap so terminal pairing can be tested freely.
+  const registerLimitReached = false;
+  const registerLimitText = `${registerTerminalCount}/${registerTerminalLimit} registers`;
+
+  const refreshActiveSessions = useCallback(async () => {
+    if (!shopId || !userEmail) return;
     try {
-      const raw = localStorage.getItem(`ceypos_session_feed_${shopId}`);
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          setSessionFeed(parsed);
+      const data = await getJSON<{
+        ok: boolean;
+        terminals: Array<{
+          terminal_id: string;
+          terminal_type: string;
+          label: string;
+          paired_member_name?: string;
+          last_seen_at?: string | null;
+        }>;
+        mobileSessions: Array<{
+          session_id: string;
+          session_type: string;
+          status: string;
+          created_at: string;
+          expires_at: string;
+          created_by_email?: string;
+          scan_url?: string | null;
+        }>;
+      }>(
+        `/api/terminals/active?shopId=${encodeURIComponent(shopId)}&userEmail=${encodeURIComponent(userEmail)}`,
+      );
+
+      setRegisterTerminals(
+        (data.terminals || [])
+          .filter((terminal) => terminal.terminal_type === "register")
+          .map((terminal) => ({
+            terminalId: terminal.terminal_id,
+            label: terminal.label,
+            pairedMemberName: terminal.paired_member_name,
+            lastSeenAt: terminal.last_seen_at,
+          })),
+      );
+
+      setSessionFeed(
+        (data.mobileSessions || []).map((session) => ({
+          sessionId: session.session_id,
+          type: session.session_type,
+          status: session.status === "active" ? "linked" : "created",
+          at: new Date(session.created_at).toLocaleTimeString(),
+          actor: session.created_by_email,
+          expiresAt: session.expires_at,
+        })),
+      );
+
+      const scanMap: Record<string, { scanUrl: string; expiresAt: string }> = {};
+      for (const session of data.mobileSessions || []) {
+        if (session.scan_url) {
+          scanMap[session.session_id] = {
+            scanUrl: session.scan_url,
+            expiresAt: session.expires_at,
+          };
         }
       }
-    } catch { /* ignore */ }
-  }, [shopId]);
+      setSessionScanUrls((prev) => ({ ...scanMap, ...prev }));
+    } catch {
+      // keep current UI state on transient failures
+    }
+  }, [shopId, userEmail]);
 
-  // ── Persist feed ─────────────────────────────────────────────────────────────
+  useEffect(() => {
+    void refreshActiveSessions();
+  }, [refreshActiveSessions]);
+
   useEffect(() => {
     if (!shopId) return;
-    try {
-      localStorage.setItem(`ceypos_session_feed_${shopId}`, JSON.stringify(sessionFeed));
-    } catch { /* ignore */ }
-  }, [sessionFeed, shopId]);
-
-  // ── Restore scanUrls from localStorage (skip already-expired entries) ────────
-  useEffect(() => {
-    if (!shopId) return;
-    try {
-      const raw = localStorage.getItem(`ceypos_scan_urls_${shopId}`);
-      if (raw) {
-        const parsed = JSON.parse(raw) as Record<string, { scanUrl: string; expiresAt: string }>;
-        const now = Date.now();
-        const fresh = Object.fromEntries(
-          Object.entries(parsed).filter(([, v]) => Date.parse(v.expiresAt) > now),
-        );
-        if (Object.keys(fresh).length > 0) setSessionScanUrls(fresh);
-      }
-    } catch { /* ignore */ }
-  }, [shopId]);
-
-  // ── Persist scanUrls ─────────────────────────────────────────────────────────
-  useEffect(() => {
-    if (!shopId) return;
-    try {
-      localStorage.setItem(`ceypos_scan_urls_${shopId}`, JSON.stringify(sessionScanUrls));
-    } catch { /* ignore */ }
-  }, [sessionScanUrls, shopId]);
-
-  // ── WebSocket session events ─────────────────────────────────────────────────
-  useEffect(() => {
-    if (!shopId) return;
-    const unsubscribe = db.on("sessionUpdated", (event: unknown) => {
-      if (!event || typeof event !== "object") return;
-      const candidate = event as Record<string, unknown>;
-      const payload =
-        candidate.payload && typeof candidate.payload === "object"
-          ? (candidate.payload as Record<string, unknown>)
-          : {};
-      const action = typeof candidate.action === "string" ? candidate.action : "";
-      const sessionId = String(payload.sessionId || "");
-      if (!sessionId) return;
-
-      if (action === "revoked") {
-        setSessionFeed((prev) => prev.filter((item) => item.sessionId !== sessionId));
-        setExpandedSession((prev) => (prev === sessionId ? null : prev));
-        setConfirmingRevoke((prev) => (prev === sessionId ? null : prev));
-        return;
-      }
-
-      if (action !== "linked" && action !== "created") return;
-      const type = String(payload.sessionType || "");
-      const actor = String(payload.linkedBy || payload.createdBy || "");
-      const expiresAt =
-        action === "created" && typeof payload.expiresAt === "string"
-          ? payload.expiresAt
-          : undefined;
-      setSessionFeed((prev) =>
-        [
-          {
-            sessionId,
-            type,
-            status: action as "created" | "linked",
-            at: new Date().toLocaleTimeString(),
-            actor: actor || undefined,
-            expiresAt,
-          },
-          ...prev.filter((item) => item.sessionId !== sessionId),
-        ].slice(0, 5),
-      );
+    const unsubscribe = db.on("sessionUpdated", () => {
+      void refreshActiveSessions();
     });
     return () => unsubscribe();
-  }, [shopId]);
+  }, [shopId, refreshActiveSessions]);
 
   // ── Auto-delete pending sessions when they expire ────────────────────────────
   useEffect(() => {
@@ -881,20 +575,21 @@ export const Sessions: React.FC = () => {
     setRevokingSession(sessionId);
     try {
       await postJSON("/api/mobile/sessions/revoke", { sessionId, shopId, userEmail });
-      setSessionFeed((prev) => prev.filter((item) => item.sessionId !== sessionId));
-      setSessionScanUrls((prev) => {
-        const next = { ...prev };
-        delete next[sessionId];
-        return next;
-      });
+      await refreshActiveSessions();
       setExpandedSession((prev) => (prev === sessionId ? null : prev));
     } catch {
-      setSessionFeed((prev) => prev.filter((item) => item.sessionId !== sessionId));
-      setSessionScanUrls((prev) => {
-        const next = { ...prev };
-        delete next[sessionId];
-        return next;
-      });
+      await refreshActiveSessions();
+    } finally {
+      setRevokingSession(null);
+      setConfirmingRevoke(null);
+    }
+  };
+
+  const handleRevokeTerminal = async (terminalId: string) => {
+    setRevokingSession(terminalId);
+    try {
+      await postJSON("/api/terminals/revoke", { terminalId, shopId, userEmail });
+      await refreshActiveSessions();
     } finally {
       setRevokingSession(null);
       setConfirmingRevoke(null);
@@ -906,19 +601,16 @@ export const Sessions: React.FC = () => {
     scanUrl: string,
     expiresAt: string,
   ) => {
-    // Store the scan URL so the detail panel can render the QR
     setSessionScanUrls((prev) => ({ ...prev, [sessionId]: { scanUrl, expiresAt } }));
-    // Also stamp expiresAt onto the feed item (may arrive before/after WS event)
-    setSessionFeed((prev) =>
-      prev.map((item) =>
-        item.sessionId === sessionId ? { ...item, expiresAt } : item,
-      ),
-    );
+    void refreshActiveSessions();
   };
 
   const startSession = (sessionType: SessionType) => {
-    if (sessionType === "cashier") {
-      setShowCashierWizard(true);
+    if (sessionType === "register") {
+      if (!canManageTerminals || registerLimitReached) {
+        return;
+      }
+      setShowRegisterWizard(true);
     } else {
       setActiveSession(sessionType);
       setShowMobileWizard(true);
@@ -934,13 +626,13 @@ export const Sessions: React.FC = () => {
     features: string[];
   }> = [
     {
-      id: "cashier",
-      title: "Connect Cashier Device",
+      id: "register",
+      title: "Connect Register Terminal",
       description:
-        "Connect another cashier terminal to your shop for multiple point-of-sale operations",
+        "Pair an additional register terminal for multi-station checkout with owner approval",
       icon: <MonitorSpeaker size={32} />,
       color: "#c5f542",
-      features: ["Multi-terminal support", "2FA authentication", "Real-time sync"],
+      features: ["Multi-terminal support", "Secure pairing code", "Real-time sync"],
     },
     {
       id: "barcode",
@@ -1010,6 +702,13 @@ export const Sessions: React.FC = () => {
                   <p className="text-gray-600 text-sm leading-relaxed">
                     {session.description}
                   </p>
+                  {session.id === "register" && (
+                    <p className={`text-xs ${registerLimitReached ? "text-red-600" : "text-gray-500"}`}>
+                      {registerLimitReached
+                        ? "Register terminal limit reached for the current plan."
+                        : `Available for this shop plan: ${registerLimitText}.`}
+                    </p>
+                  )}
                 </div>
 
                 <div className="space-y-2">
@@ -1037,7 +736,8 @@ export const Sessions: React.FC = () => {
                   onClick={() => startSession(session.id)}
                   className="w-full mt-4"
                   disabled={
-                    session.id !== "cashier" && (!shopId || !userEmail)
+                    (session.id === "register" && (!canManageTerminals || !shopId || !userEmail)) ||
+                    (session.id !== "register" && (!shopId || !userEmail))
                   }
                   style={{
                     backgroundColor: session.color,
@@ -1065,9 +765,11 @@ export const Sessions: React.FC = () => {
               <div className="flex items-center gap-3">
                 <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
                 <div>
-                  <p className="font-medium text-green-900">Main Terminal</p>
+                  <p className="font-medium text-green-900">Primary Terminal</p>
                   <p className="text-sm text-green-700">
-                    Current device — Always active
+                    {currentUser?.terminalId
+                      ? `This device — ${currentUser.name || memberScope?.displayName || "Connected"}`
+                      : "Current device — Always active"}
                   </p>
                 </div>
               </div>
@@ -1076,7 +778,63 @@ export const Sessions: React.FC = () => {
               </span>
             </div>
 
-            {sessionFeed.length === 0 ? (
+            {registerTerminals.map((terminal) => {
+              const isConfirming = confirmingRevoke === terminal.terminalId;
+              const isRevoking = revokingSession === terminal.terminalId;
+
+              return (
+                <div
+                  key={terminal.terminalId}
+                  className="flex items-center justify-between p-4 bg-blue-50 rounded-lg border border-blue-200"
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse flex-shrink-0" />
+                    <div className="min-w-0">
+                      <p className="font-medium text-blue-900">{terminal.label}</p>
+                      <p className="text-sm text-blue-700 truncate">
+                        Register terminal
+                        {terminal.pairedMemberName
+                          ? ` — ${terminal.pairedMemberName}`
+                          : ""}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    <span className="text-xs text-blue-600 bg-blue-100 px-2 py-1 rounded">
+                      ACTIVE
+                    </span>
+                    {canManageTerminals &&
+                      (isConfirming ? (
+                        <>
+                          <button
+                            onClick={() => void handleRevokeTerminal(terminal.terminalId)}
+                            disabled={isRevoking}
+                            className="px-2 py-1 rounded text-xs font-medium bg-red-500 text-white hover:bg-red-600 disabled:opacity-50"
+                          >
+                            Revoke
+                          </button>
+                          <button
+                            onClick={() => setConfirmingRevoke(null)}
+                            className="px-2 py-1 rounded text-xs text-gray-500 hover:bg-gray-100"
+                          >
+                            Cancel
+                          </button>
+                        </>
+                      ) : (
+                        <button
+                          onClick={() => setConfirmingRevoke(terminal.terminalId)}
+                          className="p-1.5 rounded-lg hover:bg-red-50 text-gray-400 hover:text-red-500 transition-colors"
+                          title="Revoke register terminal"
+                        >
+                          <PowerOff size={14} />
+                        </button>
+                      ))}
+                  </div>
+                </div>
+              );
+            })}
+
+            {sessionFeed.length === 0 && registerTerminals.length === 0 ? (
               <div className="text-center py-8 text-gray-500">
                 <Wifi size={32} className="mx-auto mb-2 opacity-50" />
                 <p className="text-sm">No additional sessions active</p>
@@ -1232,7 +990,7 @@ export const Sessions: React.FC = () => {
                                       <div className="w-[140px] h-[140px] flex flex-col items-center justify-center rounded-lg border border-dashed border-gray-200 bg-gray-50 text-center gap-2 px-3">
                                         <QrCode size={28} className="text-gray-300" />
                                         <p className="text-[10px] text-gray-400 leading-tight">
-                                          QR available only in the current session
+                                          QR unavailable — refresh or recreate the session
                                         </p>
                                       </div>
                                     )}
@@ -1315,10 +1073,16 @@ export const Sessions: React.FC = () => {
       </Card>
 
       <AnimatePresence>
-        {showCashierWizard && (
-          <CashierWizard
-            onClose={() => setShowCashierWizard(false)}
+        {showRegisterWizard && shopId && userEmail && (
+          <RegisterTerminalWizard
+            onClose={() => {
+              setShowRegisterWizard(false);
+              void refreshActiveSessions();
+            }}
             sidebarCollapsed={isSidebarCollapsed}
+            shopId={shopId}
+            userEmail={userEmail}
+            onManagePlan={() => setCurrentModule("Subscription")}
           />
         )}
         {showMobileWizard && (

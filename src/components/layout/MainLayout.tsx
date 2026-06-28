@@ -4,6 +4,7 @@ import { Sidebar } from '../layout/SideBar';
 import { TopBar } from '../layout/TopBar';
 import { useApp } from '../../context/AppContext';
 import { ModuleRouter } from '../modules/ModuleRouter';
+import { PairingModal } from '../modules/team/PairingModal';
 
 export const MainLayout: React.FC = () => {
   const { isSidebarCollapsed } = useApp();
@@ -27,6 +28,7 @@ export const MainLayout: React.FC = () => {
         <main className="flex-1 overflow-y-auto p-6 bg-gray-50">
           <ModuleRouter />
         </main>
+        <PairingModal />
       </div>
     </div>
   );

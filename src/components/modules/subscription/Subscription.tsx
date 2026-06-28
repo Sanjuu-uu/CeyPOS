@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Card } from "../../ui/Card";
 import { Button } from "../../ui/Button";
 import { Crown, Zap, Package, FileText, Users, Briefcase } from "lucide-react";
+import { useApp } from "../../../context/AppContext";
 
 // Define the plan types
 type PlanId = "basic" | "pro" | "max";
@@ -10,14 +11,24 @@ type BillingPeriod = "monthly" | "annual";
 type ViewMode = "business" | "enterprise";
 
 export const Subscription: React.FC = () => {
+  const { memberScope, setCurrentModule } = useApp();
+
   // State for the MAIN toggle (Business vs. Enterprise)
   const [viewMode, setViewMode] = useState<ViewMode>("business");
 
   // State for the billing toggle (Monthly vs. Annual)
   const [billingPeriod, setBillingPeriod] = useState<BillingPeriod>("monthly");
 
-  // State to keep track of the current active plan
-  const [currentPlan, setCurrentPlan] = useState<PlanId>("pro");
+  const currentShopTier = memberScope?.plan?.tier ?? "free";
+  const currentPlan: PlanId =
+    currentShopTier === "plus"
+      ? "pro"
+      : currentShopTier === "pro"
+        ? "max"
+        : "basic";
+  const registerLimit = memberScope?.plan?.maxRegisterTerminals ?? 0;
+  const teamLimit = memberScope?.plan?.maxTeamMembers ?? 1;
+  const proTeamSeats = memberScope?.plan?.proTeamSeats ?? 0;
 
   // --- BUSINESS PLANS (Basic, Pro, Max) ---
   const businessPlans = [
@@ -91,21 +102,12 @@ export const Subscription: React.FC = () => {
     "24/7/365 Dedicated Support",
   ];
 
-  // --- Dummy billing history ---
-  const billingHistory = [
-    {
-      id: "inv-001",
-      date: "October 1, 2025",
-      description: "Pro Plan - Monthly",
-      amount: "$49.00",
-    },
-    {
-      id: "inv-002",
-      date: "September 1, 2025",
-      description: "Pro Plan - Monthly",
-      amount: "$49.00",
-    },
-  ];
+  const billingHistory: Array<{
+    id: string;
+    date: string;
+    description: string;
+    amount: string;
+  }> = [];
 
   const cardVariants = {
     hidden: { opacity: 0, y: 20 },
@@ -128,20 +130,26 @@ export const Subscription: React.FC = () => {
           <div>
             <h2 className="font-semibold text-gray-900">Your Current Plan</h2>
             <p className="text-gray-600 text-sm mt-1">
-              You are currently on the{" "}
-              <span className="font-medium capitalize">{currentPlan}</span>{" "}
-              plan.
+              You are currently on the <span className="font-medium capitalize">{currentShopTier}</span> tier.
+            </p>
+            <p className="text-gray-500 text-xs mt-2">
+              Register terminals: {registerLimit} · Team members: {teamLimit} · Pro team seats: {proTeamSeats}
             </p>
           </div>
           <div className="flex gap-3 w-full sm:w-auto">
-            <Button variant="outline" className="w-1/2 sm:w-auto">
+            <Button
+              variant="outline"
+              className="w-1/2 sm:w-auto"
+              onClick={() => setCurrentModule("support")}
+            >
               Manage Billing
             </Button>
             <Button
               variant="secondary"
               className="w-1/2 sm:w-auto text-red-600 hover:bg-red-50 hover:border-red-200"
+              onClick={() => setCurrentModule("support")}
             >
-              Cancel Subscription
+              Contact Support
             </Button>
           </div>
         </div>
@@ -328,7 +336,7 @@ export const Subscription: React.FC = () => {
                           variant={
                             currentPlan === plan.id ? "secondary" : "primary"
                           }
-                          onClick={() => setCurrentPlan(plan.id as PlanId)}
+                          onClick={() => setCurrentModule("support")}
                           className="w-full mt-4"
                           disabled={currentPlan === plan.id}
                           style={
@@ -343,7 +351,7 @@ export const Subscription: React.FC = () => {
                         >
                           {currentPlan === plan.id
                             ? "Current Plan"
-                            : "Select Plan"}
+                            : "Talk to Sales"}
                         </Button>
                       </div>
                     </Card>
@@ -397,13 +405,14 @@ export const Subscription: React.FC = () => {
                     <Button
                       variant="primary"
                       className="w-full mt-4"
+                      onClick={() => setCurrentModule("support")}
                       style={{
                         backgroundColor: "#c5f542", // Blue, matching Sessions style
                         color: "black",
                         border: "none",
                       }}
                     >
-                      Get Team Plan
+                      Talk to Sales
                     </Button>
                   </div>
                 </Card>
@@ -440,6 +449,7 @@ export const Subscription: React.FC = () => {
                     <Button
                       variant="primary"
                       className="w-full mt-4"
+                      onClick={() => setCurrentModule("support")}
                       style={{
                         backgroundColor: "#c5f542", // Purple, matching icon theme and Sessions style
                         color: "black",
@@ -505,7 +515,7 @@ export const Subscription: React.FC = () => {
                     colSpan={4}
                     className="px-3 py-4 text-sm text-center text-gray-500"
                   >
-                    No billing history
+                    No billing history synced yet.
                   </td>
                 </tr>
               )}
