@@ -86,6 +86,9 @@ export const AppProvider: React.FC<AppProviderProps> = ({
         if (accountType === 'owner') return true;
         return module === 'dashboard' || module === 'support';
       }
+      if (memberScope.role === 'owner' && module === 'analytics') {
+        return true;
+      }
       const key = MODULE_SCOPE_MAP[module];
       if (!key) return true;
       const value = memberScope.modules[key];

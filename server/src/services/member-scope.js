@@ -74,7 +74,7 @@ export function buildMemberScope(member, terminal, shopPlan) {
         pos: true,
         inventory: true,
         sessions: true,
-        analytics: plan.aiEnabled,
+        analytics: true,
         aiChat: plan.aiEnabled ? "shop" : false,
         settings: true,
         team: true,
