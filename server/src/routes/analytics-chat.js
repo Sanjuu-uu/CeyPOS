@@ -181,7 +181,7 @@ const getRecentConversationContext = (db, shopId, userEmail, activeConversationI
 
 router.get("/", (req, res) => {
   const shopId = String(req.query.shopId || "").trim();
-  const userEmail = req.query.userEmail;
+  const userEmail = req.userEmail || req.query.userEmail;
   if (!shopId) {
     return res.status(400).json({ error: "shopId is required" });
   }
@@ -245,8 +245,10 @@ router.get("/", (req, res) => {
 });
 
 router.post("/", (req, res) => {
-  const { shopId, userEmail, mode: requestedMode } = req.body || {};
-  const mode = normalizeChatMode(requestedMode);
+  const body = req.body || {};
+  const shopId = body.shopId;
+  const userEmail = req.userEmail || body.userEmail;
+  const mode = normalizeChatMode(body.mode);
   if (!shopId) {
     return res.status(400).json({ error: "shopId is required" });
   }
@@ -289,7 +291,7 @@ router.post("/", (req, res) => {
 router.get("/:conversationId", (req, res) => {
   const { conversationId } = req.params;
   const shopId = String(req.query.shopId || "").trim();
-  const userEmail = req.query.userEmail;
+  const userEmail = req.userEmail || req.query.userEmail;
   if (!shopId || !conversationId) {
     return res.status(400).json({ error: "shopId and conversationId are required" });
   }
@@ -352,7 +354,7 @@ router.get("/:conversationId", (req, res) => {
 router.delete("/:conversationId", (req, res) => {
   const { conversationId } = req.params;
   const shopId = String(req.query.shopId || "").trim();
-  const userEmail = req.query.userEmail;
+  const userEmail = req.userEmail || req.query.userEmail;
   if (!shopId || !conversationId) {
     return res.status(400).json({ error: "shopId and conversationId are required" });
   }
@@ -398,8 +400,11 @@ router.post("/:conversationId/messages/stream", async (req, res) => {
   res.flushHeaders?.();
 
   const { conversationId } = req.params;
-  const { shopId, userEmail, question, attachments, history } = req.body || {};
-  const mode = normalizeChatMode(req.body?.mode);
+  const body = req.body || {};
+  const shopId = body.shopId;
+  const userEmail = req.userEmail || body.userEmail;
+  const { question, attachments, history } = body;
+  const mode = normalizeChatMode(body.mode);
   if (!shopId || !conversationId || !question) {
     res.write(`event: error\n`);
     res.write(`data: ${JSON.stringify({ error: "shopId, conversationId, and question are required" })}\n\n`);
