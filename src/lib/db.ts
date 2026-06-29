@@ -231,6 +231,10 @@ interface ShopCache {
   sales: Sale[];
   paymentMethods: string[];
   businessRules: BusinessRules; // Added
+  // Tracks transaction ids whose stock deduction has already been applied,
+  // so an optimistic local deduction and the realtime echo of the same
+  // transaction never deduct stock twice. (Fixes intermittent double stock drop.)
+  stockAppliedTxIds: Set<number>;
 }
 
 const shopCaches: Record<string, ShopCache> = Object.create(null);
@@ -252,6 +256,7 @@ function ensureShopCache(shopKey: string): ShopCache {
       transactionItemsByTx: new Map(),
       sales: [],
       paymentMethods: [],
+      stockAppliedTxIds: new Set(),
       businessRules: {
         loyalty: {
           enabled: false,
@@ -824,26 +829,33 @@ function handleChange(event: ChangeEventPayload | null | undefined) {
       if (isTransactionRow(txSource)) {
         upsertTransaction(shopKey, txSource, items);
 
-        // ⚠️ FIX: DEDUCT INCOMING STOCK TO PREVENT MULTI-TERMINAL OVERSOLD ISSUES
+        // Deduct incoming stock so other terminals stay in sync, but only once
+        // per transaction. The terminal that made the sale already deducted
+        // optimistically in createSaleRecord; without this guard the realtime
+        // echo of that same transaction would deduct the stock a second time.
         const cache = ensureShopCache(shopKey);
-        let invChanged = false;
-        items.forEach((item) => {
-          if (item.inventory_code) {
-            const inv = cache.inventoryByCode.get(String(item.inventory_code));
-            if (inv && typeof inv.stock === "number") {
-              inv.stock = Math.max(0, inv.stock - (item.quantity || 0));
-              invChanged = true;
+        const txId = txSource.transaction_id;
+        if (!cache.stockAppliedTxIds.has(txId)) {
+          cache.stockAppliedTxIds.add(txId);
+          let invChanged = false;
+          items.forEach((item) => {
+            if (item.inventory_code) {
+              const inv = cache.inventoryByCode.get(String(item.inventory_code));
+              if (inv && typeof inv.stock === "number") {
+                inv.stock = Math.max(0, inv.stock - (item.quantity || 0));
+                invChanged = true;
+              }
             }
-          }
-        });
-        if (invChanged) {
-          cache.products = Array.from(cache.inventoryByCode.values())
-            .map((row) => toProduct(shopKey, row))
-            .sort((a, b) => a.name.localeCompare(b.name));
-          emit("inventoryUpdated", {
-            shopId: shopKey,
-            items: cache.products.slice(),
           });
+          if (invChanged) {
+            cache.products = Array.from(cache.inventoryByCode.values())
+              .map((row) => toProduct(shopKey, row))
+              .sort((a, b) => a.name.localeCompare(b.name));
+            emit("inventoryUpdated", {
+              shopId: shopKey,
+              items: cache.products.slice(),
+            });
+          }
         }
       }
       break;
@@ -1153,7 +1165,17 @@ async function createSaleRecord(sale: Omit<Sale, "id">): Promise<Sale> {
   };
 
   const cache = ensureShopCache(shopKey);
+  // Mark this transaction's stock as applied so the realtime echo of the same
+  // transaction does not deduct stock a second time on this terminal.
+  const appliedTxId = Number(body.transactionId);
   let invChanged = false;
+  if (!Number.isNaN(appliedTxId) && cache.stockAppliedTxIds.has(appliedTxId)) {
+    // Already deducted (e.g. realtime echo arrived first) — skip to avoid double drop.
+    return saleRecord;
+  }
+  if (!Number.isNaN(appliedTxId)) {
+    cache.stockAppliedTxIds.add(appliedTxId);
+  }
   sale.items.forEach((item) => {
     const inv = cache.inventoryByCode.get(String(item.id));
     if (inv && typeof inv.stock === "number") {
