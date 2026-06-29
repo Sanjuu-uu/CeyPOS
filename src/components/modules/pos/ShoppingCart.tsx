@@ -47,7 +47,7 @@ const useCartCalculations = (
   cartTotal: number,
   rules: BusinessRules | null,
   activeTaxIds: number[],
-  selectedDiscountId: number | null,
+  selectedDiscountId: number | string | null,
   selectedPaymentMethod: PaymentMethod,
   customer: Customer | null,
   redeemPointsInput: string,
@@ -57,12 +57,19 @@ const useCartCalculations = (
 ) => {
   const discountAmount = useMemo(() => {
     if (!selectedDiscountId || !rules) return 0;
-    const discount = rules.discounts.find((d) => d.id === selectedDiscountId);
-    return discount
+    // Match by string so it works whether the discount id is a DB integer
+    // (loaded from a snapshot) or a client-generated string (set right after
+    // configuring discounts, before the next snapshot assigns real ids).
+    const discount = rules.discounts.find(
+      (d) => String(d.id) === String(selectedDiscountId),
+    );
+    const raw = discount
       ? discount.type === "percent"
         ? cartTotal * (discount.value / 100)
         : discount.value
       : 0;
+    // A fixed discount can't exceed the subtotal.
+    return Math.min(raw, cartTotal);
   }, [cartTotal, selectedDiscountId, rules]);
 
   const taxableAmount = Math.max(0, cartTotal - discountAmount);
@@ -185,9 +192,9 @@ export const ShoppingCart: React.FC = () => {
   const [syncSuccessMsg, setSyncSuccessMsg] = useState<string | null>(null);
 
   const [rules, setRules] = useState<BusinessRules | null>(null);
-  const [selectedDiscountId, setSelectedDiscountId] = useState<number | null>(
-    null,
-  );
+  const [selectedDiscountId, setSelectedDiscountId] = useState<
+    number | string | null
+  >(null);
   const [activeTaxIds, setActiveTaxIds] = useState<number[]>([]);
 
   const [searchPhone, setSearchPhone] = useState("");
@@ -369,7 +376,31 @@ export const ShoppingCart: React.FC = () => {
           .map((tax) => tax.id),
       );
     }
+    // Keep rules current when they're edited in Settings or arrive late from
+    // the snapshot — otherwise discounts/loyalty options would be stale.
+    const handleRulesUpdate = (payload: unknown) => {
+      const next = (payload as { rules?: BusinessRules } | null)?.rules;
+      if (next) setRules(next);
+    };
+    const unsubscribe = db.on("businessRulesUpdated", handleRulesUpdate);
+    return () => unsubscribe();
   }, [currentShop]);
+
+  // Refresh the selected customer's points balance after a sale (or a sale on
+  // another terminal) so the displayed balance reflects redeemed/earned points.
+  useEffect(() => {
+    if (!customer || !currentShop) return;
+    const handleCustomersUpdate = (payload: unknown) => {
+      const list = (payload as { customers?: Customer[] } | null)?.customers;
+      if (!Array.isArray(list)) return;
+      const fresh = list.find((c) => c.id === customer.id);
+      if (fresh && fresh.pointsBalance !== customer.pointsBalance) {
+        setCustomer(fresh);
+      }
+    };
+    const unsubscribe = db.on("customersUpdated", handleCustomersUpdate);
+    return () => unsubscribe();
+  }, [customer, currentShop]);
 
   const syncRetryCount = useRef(0);
   const syncTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -500,6 +531,10 @@ export const ShoppingCart: React.FC = () => {
     cashReceived,
   );
 
+  const totalPointsAwarded = Number(
+    (pointsToEarn + pointsFromChange).toFixed(2),
+  );
+
   const handleCustomerCheck = (e?: React.FormEvent) => {
     e?.preventDefault();
     if (!searchPhone.trim() || !currentShop) return;
@@ -552,7 +587,7 @@ export const ShoppingCart: React.FC = () => {
         tax: taxAmount,
         discount: discountAmount,
         total: finalTotal,
-        pointsEarned: Number((pointsToEarn + pointsFromChange).toFixed(2)),
+        pointsEarned: totalPointsAwarded,
         pointsRedeemed: actualPointsRedeemed,
         paymentMethod: selectedPaymentMethod,
         timestamp: new Date().toISOString(),
@@ -600,9 +635,7 @@ export const ShoppingCart: React.FC = () => {
             // formatter will turn "8" into "INV-00000008", matching what
             // the Receipts page derives from sale.id.
             receiptNumber: canonicalSaleId,
-            pointsEarned: Number(
-              (pointsToEarn + pointsFromChange).toFixed(2),
-            ),
+            pointsEarned: totalPointsAwarded,
             pointsRedeemed: actualPointsRedeemed,
           }
         : null;
@@ -798,10 +831,10 @@ export const ShoppingCart: React.FC = () => {
         )}
         {rules?.loyalty.enabled && customer && (
           <div className="space-y-2 mb-6">
-            {(pointsToEarn > 0 || pointsFromChange > 0) && (
+            {totalPointsAwarded > 0 && (
               <div className="bg-gray-50 px-4 py-2 rounded-full text-sm font-medium text-gray-600 border border-gray-100">
                 <span className="font-bold text-black">
-                  +{Number((pointsToEarn + pointsFromChange).toFixed(2))} Points
+                  +{totalPointsAwarded} Points
                 </span>{" "}
                 added
                 {pointsFromChange > 0 && (
@@ -1101,9 +1134,9 @@ export const ShoppingCart: React.FC = () => {
                   <select
                     className="bg-transparent border-b border-gray-300 text-right outline-none text-xs w-24 focus:border-[#ecff76]"
                     onChange={(e) =>
-                      setSelectedDiscountId(Number(e.target.value) || null)
+                      setSelectedDiscountId(e.target.value || null)
                     }
-                    value={selectedDiscountId || ""}
+                    value={selectedDiscountId ?? ""}
                   >
                     <option value="">None</option>
                     {rules.discounts.map((d) => (
@@ -1116,6 +1149,17 @@ export const ShoppingCart: React.FC = () => {
                       </option>
                     ))}
                   </select>
+                </div>
+              )}
+              {discountAmount > 0 && (
+                <div className="flex justify-between items-center text-xs font-bold text-green-600">
+                  <span className="flex items-center gap-1">
+                    <Tag size={10} /> Discount Applied
+                  </span>
+                  <span>
+                    - {currencySymbol}
+                    {discountAmount.toFixed(2)}
+                  </span>
                 </div>
               )}
               {rules?.taxes &&

@@ -96,8 +96,6 @@ router.post("/complete", (req, res) => {
     });
   }
 
-  const finalTotal = Math.max(0, calculatedSubtotal - discount + tax);
-
   const cleanCustomer = normalizeCustomer(customer);
 
   let db;
@@ -108,6 +106,26 @@ router.post("/complete", (req, res) => {
     console.error("complete sale failed: db error", err);
     return res.status(500).json({ ok: false, error: "database_unavailable" });
   }
+
+  // Convert redeemed points into a monetary discount using the shop's redeem
+  // rate, so the recorded total matches what the customer actually pays.
+  // (Previously redemption reduced the customer's points but not the total.)
+  let redeemRate = 0.01;
+  try {
+    const loyaltyRow = db
+      .prepare("SELECT redeem_rate FROM business_rules_loyalty WHERE shop_id = ?")
+      .get(shopId);
+    if (loyaltyRow && Number.isFinite(Number(loyaltyRow.redeem_rate))) {
+      redeemRate = Number(loyaltyRow.redeem_rate);
+    }
+  } catch (err) {
+    console.warn("Failed to read redeem rate, using default", err);
+  }
+  const redemptionValue = pointsRedeemed * redeemRate;
+  const finalTotal = Math.max(
+    0,
+    calculatedSubtotal - discount + tax - redemptionValue,
+  );
 
   try {
     const result = db.transaction(() => {
