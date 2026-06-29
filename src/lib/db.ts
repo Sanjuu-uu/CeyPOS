@@ -1364,6 +1364,41 @@ export const db = {
       removeInventoryRows(shopKey, codes);
       return codes;
     },
+    async deleteMany(ids: string[], shopId?: string): Promise<string[]> {
+      const targetShop = shopId || currentShopKey;
+      if (!targetShop) {
+        throw new Error("No active shop selected");
+      }
+      const uniqueIds = Array.from(
+        new Set((ids || []).map((id) => String(id).trim()).filter(Boolean)),
+      );
+      if (!uniqueIds.length) return [];
+      const shopKey = toShopKey(targetShop);
+      const cleanShopId = normalizeShopId(targetShop);
+      const response = await authFetch(
+        `${API_BASE}/api/inventory/${encodeURIComponent(cleanShopId)}/bulk-delete`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ codes: uniqueIds }),
+        },
+      );
+      let body: unknown = null;
+      try {
+        body = await response.json();
+      } catch {
+        body = null;
+      }
+      const payload = isObject(body)
+        ? (body as InventoryDeleteResponse)
+        : undefined;
+      if (!response.ok || payload?.ok === false) {
+        throw new Error(payload?.error || "Failed to delete products");
+      }
+      const codes = payload?.codes ? toStringArray(payload.codes) : uniqueIds;
+      removeInventoryRows(shopKey, codes);
+      return codes;
+    },
   },
   sales: {
     getAll: (): Sale[] => getSalesByShop(currentShopKey || ""),

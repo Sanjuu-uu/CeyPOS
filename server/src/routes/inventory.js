@@ -51,6 +51,17 @@ router.post("/upload", (req, res, next) => {
     next();
   });
 }, async (req, res) => {
+  let db = null;
+  const releaseDb = () => {
+    if (db) {
+      try {
+        db.close();
+      } catch (closeErr) {
+        console.warn("Failed to close inventory DB", closeErr);
+      }
+      db = null;
+    }
+  };
   try {
     const shopId = req.query.shopId || req.body.shopId;
     if (!shopId) {
@@ -70,18 +81,6 @@ router.post("/upload", (req, res, next) => {
       console.error(`[INVENTORY UPLOAD ERROR] Missing database`, { time: new Date().toISOString(), shopId });
       return res.status(404).json({ error: "Shop database not found. Please complete shop setup." });
     }
-
-    let db;
-    const releaseDb = () => {
-      if (db) {
-        try {
-          db.close();
-        } catch (closeErr) {
-          console.warn("Failed to close inventory DB", closeErr);
-        }
-        db = null;
-      }
-    };
 
     try {
       db = openShopDatabase(shopId);
@@ -199,27 +198,38 @@ router.post("/upload", (req, res, next) => {
         });
       }
     });
-    // Check for duplicate barcode_id in DB
+    // Reconcile barcode_id against the DB. Re-importing the SAME product (same
+    // inventory_code) is an update and must be allowed; only reject a barcode
+    // that already belongs to a DIFFERENT inventory_code (a genuine clash).
+    // Previously every existing barcode was rejected, so any re-import failed
+    // with "No valid rows".
     if (validRows.length) {
-      const dbBarcodes = new Set();
-      const rowsToInsert = [];
-      // Query all barcode_ids in DB
+      const dbBarcodeToCode = new Map();
       try {
-    const stmt = db.prepare('SELECT barcode_id FROM inventory WHERE barcode_id IS NOT NULL');
+        const stmt = db.prepare(
+          'SELECT inventory_code, barcode_id FROM inventory WHERE barcode_id IS NOT NULL'
+        );
         for (const row of stmt.iterate()) {
-          if (row.barcode_id) dbBarcodes.add(String(row.barcode_id).trim());
+          if (row.barcode_id) {
+            dbBarcodeToCode.set(
+              String(row.barcode_id).trim(),
+              String(row.inventory_code)
+            );
+          }
         }
       } catch (dbErr) {
         console.error('[INVENTORY UPLOAD ERROR] Failed to query barcode_id from DB', dbErr);
       }
+      const rowsToInsert = [];
       validRows.forEach((r, idx) => {
-        if (r.barcode_id && dbBarcodes.has(String(r.barcode_id).trim())) {
-          validationIssues.push({ row: idx + 2, field: 'barcode_id', value: r.barcode_id, issue: 'Duplicate barcode_id in database', type: 'error' });
+        const barcode = r.barcode_id ? String(r.barcode_id).trim() : '';
+        const owner = barcode ? dbBarcodeToCode.get(barcode) : undefined;
+        if (owner && owner !== String(r.inventory_code)) {
+          validationIssues.push({ row: idx + 2, field: 'barcode_id', value: r.barcode_id, issue: 'Barcode already used by a different product', type: 'error' });
         } else {
           rowsToInsert.push(r);
         }
       });
-      // Only insert rows that do not have duplicate barcode_id in DB
       validRows.length = 0;
       validRows.push(...rowsToInsert);
     }
@@ -256,9 +266,10 @@ router.post("/upload", (req, res, next) => {
     console.error(`[INVENTORY UPLOAD ERROR] Unexpected server error`, { time: new Date().toISOString(), error: err });
     res.status(500).json({ error: "Unexpected server error during inventory import.", detail: String(err.message || err) });
   } finally {
-    // ensure db released if we exited early without inserting
-    // (releaseDb is safe if db already null)
-    if (typeof releaseDb === "function") releaseDb();
+    // Always release the DB handle — including on the early validation returns
+    // above. Previously those paths leaked SQLite handles, locking the file and
+    // making subsequent uploads fail even for valid files.
+    releaseDb();
   }
 });
 
@@ -338,6 +349,37 @@ router.delete("/:shopId/:inventoryCode", async (req, res) => {
       error: err,
     });
     res.status(500).json({ ok: false, error: "failed_to_delete_product" });
+  }
+});
+
+// Bulk delete — accepts { codes: string[] } so multi-select removal is a single
+// round-trip and a single realtime broadcast.
+router.post("/:shopId/bulk-delete", async (req, res) => {
+  const { shopId } = req.params;
+  const codes = Array.isArray(req.body?.codes) ? req.body.codes : [];
+
+  if (!shopId) {
+    return res.status(400).json({ ok: false, error: "missing_parameters" });
+  }
+  if (!codes.length) {
+    return res.status(400).json({ ok: false, error: "no_codes_provided" });
+  }
+  if (!shopDatabaseExists(shopId)) {
+    return res.status(404).json({ ok: false, error: "shop_not_found" });
+  }
+
+  try {
+    const removed = deleteProducts(shopId, codes, {
+      actor: req.user?.id || null,
+    });
+    res.json({ ok: true, codes: removed });
+  } catch (err) {
+    console.error("[INVENTORY BULK DELETE ERROR]", {
+      time: new Date().toISOString(),
+      shopId,
+      error: err,
+    });
+    res.status(500).json({ ok: false, error: "failed_to_delete_products" });
   }
 });
 

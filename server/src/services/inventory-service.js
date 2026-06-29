@@ -5,7 +5,9 @@ function normalizeProduct(input = {}) {
   const now = new Date().toISOString();
   return {
     inventory_code: input.inventory_code ?? input.inventoryCode ?? input.id ?? null,
-    barcode_id: input.barcode_id ?? input.barcodeId ?? null,
+    // Accept `barcode` too — the POS/inventory client sends the Product field
+    // named `barcode`; without this the barcode was silently dropped on save.
+    barcode_id: input.barcode_id ?? input.barcodeId ?? input.barcode ?? null,
     name: input.name ?? null,
     category: input.category ?? null,
     sku: input.sku ?? null,
