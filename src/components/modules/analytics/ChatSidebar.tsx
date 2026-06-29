@@ -1184,14 +1184,14 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({ isOpen, onToggle }) =>
 
   return (
     <aside
-      className={`relative flex h-full min-w-0 shrink-0 flex-col border-l border-gray-200 bg-white shadow-sm transition-[width] duration-300 ${
+      className={`relative isolate flex h-full min-w-0 shrink-0 flex-col overflow-visible border-l border-gray-200 bg-white shadow-sm transition-[width] duration-300 ${
         isOpen ? 'w-full md:w-[440px] lg:w-[480px] xl:w-[520px]' : 'w-[52px]'
       }`}
     >
       <button
         type="button"
         onClick={onToggle}
-        className="absolute -left-4 top-1/2 z-10 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full bg-[#c5f542] text-gray-950 shadow-sm transition hover:brightness-95"
+        className="absolute -left-4 top-1/2 z-[60] flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full bg-[#c5f542] text-gray-950 shadow-sm transition hover:brightness-95 pointer-events-auto"
         title={isOpen ? 'Collapse chat' : 'Expand chat'}
       >
         {isOpen ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}

@@ -62,6 +62,9 @@ export function buildMemberScope(member, terminal, shopPlan) {
     subscription: false,
   };
 
+  const aiAccess = role === "owner" || role === "manager" || Boolean(plan.aiEnabled);
+  const aiChatAccess = aiAccess ? (role === "owner" ? "shop" : "self") : false;
+
   if (role === "owner") {
     return {
       role: "owner",
@@ -75,7 +78,7 @@ export function buildMemberScope(member, terminal, shopPlan) {
         inventory: true,
         sessions: true,
         analytics: true,
-        aiChat: plan.aiEnabled ? "shop" : false,
+        aiChat: aiChatAccess,
         settings: true,
         team: true,
         reports: true,
@@ -100,7 +103,7 @@ export function buildMemberScope(member, terminal, shopPlan) {
         inventory: true,
         sessions: true,
         analytics: true,
-        aiChat: false,
+        aiChat: aiChatAccess,
         settings: false,
         team: true,
         reports: true,
