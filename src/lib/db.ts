@@ -235,6 +235,12 @@ interface ShopCache {
   // so an optimistic local deduction and the realtime echo of the same
   // transaction never deduct stock twice. (Fixes intermittent double stock drop.)
   stockAppliedTxIds: Set<number>;
+  // Shop-wide cart reservations (qty held in any terminal's open cart),
+  // keyed by inventory code. Broadcast by the server; ephemeral.
+  reservationsByCode: Map<string, number>;
+  // This terminal's own reservations (its current cart), so we can exclude
+  // them when computing what's available to *this* terminal.
+  myReservations: Map<string, number>;
 }
 
 const shopCaches: Record<string, ShopCache> = Object.create(null);
@@ -257,6 +263,8 @@ function ensureShopCache(shopKey: string): ShopCache {
       sales: [],
       paymentMethods: [],
       stockAppliedTxIds: new Set(),
+      reservationsByCode: new Map(),
+      myReservations: new Map(),
       businessRules: {
         loyalty: {
           enabled: false,
@@ -427,13 +435,25 @@ function toShopKey(shopId: string) {
 }
 
 function toProduct(shopKey: string, row: InventoryRow): Product {
+  const stock = Number(row.stock ?? 0);
+  const cache = ensureShopCache(shopKey);
+  const code = String(row.inventory_code);
+  // Quantity held across ALL terminals' carts, including this one, so the
+  // selling terminal sees the count drop the moment it adds to its cart.
+  // max(serverAggregate, myCart): myCart gives instant local feedback before
+  // the server echo arrives; the server aggregate takes over once it does.
+  const reserved = Math.max(
+    cache.reservationsByCode.get(code) || 0,
+    cache.myReservations.get(code) || 0,
+  );
   return {
-    id: String(row.inventory_code),
+    id: code,
     shopId: shopKey,
     name: row.name,
     category: row.category || "Uncategorized",
     price: Number(row.price ?? 0),
-    stock: Number(row.stock ?? 0),
+    stock,
+    availableStock: Math.max(0, stock - reserved),
     barcode: row.barcode_id || "",
     imageUrl: row.image_url || undefined,
   };
@@ -538,6 +558,16 @@ function applyInventoryRows(shopKey: string, rows: InventoryRow[]) {
     changed = true;
   }
   if (!changed) return;
+  cache.products = Array.from(cache.inventoryByCode.values())
+    .map((row) => toProduct(shopKey, row))
+    .sort((a, b) => a.name.localeCompare(b.name));
+  emit("inventoryUpdated", { shopId: shopKey, items: cache.products.slice() });
+}
+
+// Rebuild the product list (which carries availableStock) and notify the UI.
+// Used whenever reservations change without the underlying inventory changing.
+function rebuildProducts(shopKey: string) {
+  const cache = ensureShopCache(shopKey);
   cache.products = Array.from(cache.inventoryByCode.values())
     .map((row) => toProduct(shopKey, row))
     .sort((a, b) => a.name.localeCompare(b.name));
@@ -816,6 +846,23 @@ function handleChange(event: ChangeEventPayload | null | undefined) {
       }
       break;
     }
+    case "reservations": {
+      const reservations = isObject(payload)
+        ? (payload as { reservations?: unknown }).reservations
+        : undefined;
+      const cache = ensureShopCache(shopKey);
+      cache.reservationsByCode.clear();
+      if (isObject(reservations)) {
+        for (const [code, qty] of Object.entries(reservations)) {
+          const amount = Number(qty);
+          if (Number.isFinite(amount) && amount > 0) {
+            cache.reservationsByCode.set(String(code), amount);
+          }
+        }
+      }
+      rebuildProducts(shopKey);
+      break;
+    }
     case "transactions": {
       const txSource = isObject(payload)
         ? (payload as { transaction?: unknown }).transaction
@@ -949,6 +996,16 @@ function ensureSocket(
 
   socket.on("connect", () => {
     console.log("WS connected", socket?.id);
+    // Re-assert this terminal's cart holds after a (re)connect so the server's
+    // ephemeral reservation store is rebuilt for us.
+    const cache = ensureShopCache(shopKey);
+    if (cache.myReservations.size > 0 && socket) {
+      socket.emit("cart:reserve", {
+        items: Array.from(cache.myReservations.entries()).map(
+          ([inventory_code, quantity]) => ({ inventory_code, quantity }),
+        ),
+      });
+    }
   });
 
   socket.on("initialState", (snapshot: ShopSnapshotPayload) => {
@@ -986,6 +1043,36 @@ async function connectWebSocket(
   await fetchShopMeta(rawShopId);
   await fetchSnapshot(shopKey);
   ensureSocket(shopKey, terminal);
+}
+
+// Report this terminal's current cart to the server so other terminals see the
+// held stock as unavailable. Passing an empty list (e.g. after a sale or when
+// the cart is cleared) releases this terminal's holds.
+function reserveCart(
+  items: Array<{ inventory_code: string; quantity: number }>,
+) {
+  if (!currentShopKey) return;
+  const cache = ensureShopCache(currentShopKey);
+  cache.myReservations.clear();
+  for (const item of items) {
+    const code = String(item.inventory_code);
+    const qty = Number(item.quantity);
+    if (!code || !Number.isFinite(qty) || qty <= 0) continue;
+    cache.myReservations.set(code, (cache.myReservations.get(code) || 0) + qty);
+  }
+  // Optimistically refresh this terminal's view; the server echo will reconcile.
+  rebuildProducts(currentShopKey);
+  if (socket) {
+    try {
+      socket.emit("cart:reserve", {
+        items: Array.from(cache.myReservations.entries()).map(
+          ([inventory_code, quantity]) => ({ inventory_code, quantity }),
+        ),
+      });
+    } catch (err) {
+      console.warn("Failed to send cart reservation", err);
+    }
+  }
 }
 
 function getProductsByShop(shopId: string): Product[] {
@@ -1204,6 +1291,7 @@ export const db = {
   off,
   init: () => undefined,
   connectWebSocket,
+  reserveCart,
   setSaleAttribution,
   shops: {
     getAll: (): Shop[] => shopsAsArray(),
