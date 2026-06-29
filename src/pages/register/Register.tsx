@@ -8,6 +8,7 @@ import { getEmailValidationError } from "../utils/emailValidation";
 import {
   parseAccountParam,
   persistAccountIntent,
+  readAccountIntent,
   getPostRegisterPath,
   getAccountTypeLabel,
   buildOAuthRedirectUrl,
