@@ -601,6 +601,13 @@ export const Sessions: React.FC = () => {
     scanUrl: string,
     expiresAt: string,
   ) => {
+    if (shopId && activeSession) {
+      const normalizedShop = String(shopId).replace(/^shop_/, "");
+      localStorage.setItem(
+        `ceypos:mobile-session:${normalizedShop}:${activeSession}`,
+        sessionId,
+      );
+    }
     setSessionScanUrls((prev) => ({ ...prev, [sessionId]: { scanUrl, expiresAt } }));
     void refreshActiveSessions();
   };

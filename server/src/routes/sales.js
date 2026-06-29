@@ -271,6 +271,28 @@ router.post("/complete", (req, res) => {
         ) VALUES (?, ?, ?, ?, ?, ?)
       `);
 
+      const requestedQtyByCode = new Map();
+      for (const it of cleanItems) {
+        requestedQtyByCode.set(
+          it.inventoryCode,
+          (requestedQtyByCode.get(it.inventoryCode) || 0) + it.quantity,
+        );
+      }
+
+      const stockCheck = db.prepare(
+        "SELECT inventory_code, stock FROM inventory WHERE inventory_code = ?"
+      );
+      for (const [code, requestedQty] of requestedQtyByCode.entries()) {
+        const row = stockCheck.get(code);
+        if (!row) {
+          throw new Error(`UNKNOWN_PRODUCT:${code}`);
+        }
+        const available = Number(row.stock || 0);
+        if (requestedQty > available) {
+          throw new Error(`OUT_OF_STOCK:${code}:${available}`);
+        }
+      }
+
       let topItemName = null;
       let topQty = -1;
       const stockAdjustments = [];
@@ -427,6 +449,27 @@ router.post("/complete", (req, res) => {
         ok: false,
         error: "invalid_points_redemption",
         message: "Guest checkout cannot redeem points.",
+      });
+    }
+
+    if (String(err.message || "").startsWith("OUT_OF_STOCK:")) {
+      const [, inventoryCode, available] = String(err.message).split(":");
+      return res.status(409).json({
+        ok: false,
+        error: "out_of_stock",
+        inventoryCode,
+        available: Number(available || 0),
+        message: `Not enough stock for ${inventoryCode}. Available: ${available || 0}.`,
+      });
+    }
+
+    if (String(err.message || "").startsWith("UNKNOWN_PRODUCT:")) {
+      const [, inventoryCode] = String(err.message).split(":");
+      return res.status(400).json({
+        ok: false,
+        error: "unknown_product",
+        inventoryCode,
+        message: `Product ${inventoryCode} no longer exists.`,
       });
     }
 

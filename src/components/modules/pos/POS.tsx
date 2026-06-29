@@ -427,11 +427,19 @@ export const POS: React.FC = () => {
         typeof candidate.sessionType === "string"
           ? candidate.sessionType
           : "";
+      const sessionId =
+        typeof candidate.sessionId === "string" ? candidate.sessionId : "";
       const shopId =
         typeof candidate.shopId === "string" ? candidate.shopId : undefined;
 
       if (!value || !isMatchingShop(shopId)) return;
       if (sessionType && sessionType !== "checkout") return;
+      if (shopId && sessionId) {
+        const activeSessionId = localStorage.getItem(
+          `ceypos:mobile-session:${shopId.replace(/^shop_/, "")}:checkout`,
+        );
+        if (activeSessionId && activeSessionId !== sessionId) return;
+      }
 
       keepScannerAwake();
       pushToQueue(value);

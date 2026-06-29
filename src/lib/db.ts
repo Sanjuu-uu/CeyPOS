@@ -1241,7 +1241,7 @@ async function createSaleRecord(sale: Omit<Sale, "id">): Promise<Sale> {
 
   const body = await res.json();
   if (!res.ok || !body?.ok) {
-    throw new Error(body?.error || "Failed to complete sale");
+    throw new Error(body?.message || body?.error || "Failed to complete sale");
   }
 
   const saleRecord: Sale = {

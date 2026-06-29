@@ -347,11 +347,19 @@ export const Inventory: React.FC = () => {
         typeof candidate.value === 'string' ? candidate.value.trim() : '';
       const sessionType =
         typeof candidate.sessionType === 'string' ? candidate.sessionType : '';
+      const sessionId =
+        typeof candidate.sessionId === 'string' ? candidate.sessionId : '';
       const shopId =
         typeof candidate.shopId === 'string' ? candidate.shopId : undefined;
 
       if (!value || !isMatchingShop(shopId)) return;
       if (sessionType && sessionType !== 'barcode') return;
+      if (shopId && sessionId) {
+        const activeSessionId = localStorage.getItem(
+          `ceypos:mobile-session:${shopId.replace(/^shop_/, '')}:barcode`,
+        );
+        if (activeSessionId && activeSessionId !== sessionId) return;
+      }
 
       handleBarcodeCapture(value);
     };

@@ -34,6 +34,28 @@ type ScannerControls = {
   stop: () => void;
 };
 
+type ProductDraft = {
+  barcode: string;
+  inventoryCode: string;
+  name: string;
+  category: string;
+  sku: string;
+  price: string;
+  stock: string;
+  source: "inventory" | "global" | "manual" | "";
+};
+
+const EMPTY_DRAFT: ProductDraft = {
+  barcode: "",
+  inventoryCode: "",
+  name: "",
+  category: "",
+  sku: "",
+  price: "",
+  stock: "0",
+  source: "",
+};
+
 const getBarcodeDetector = (): BarcodeDetectorConstructor | null => {
   const candidate = (
     window as unknown as { BarcodeDetector?: unknown }
@@ -95,6 +117,11 @@ export default function MobileScan() {
   const [lastSentAt, setLastSentAt] = useState<number | null>(null);
   const [isSocketConnected, setIsSocketConnected] = useState(false);
   const [manualValue, setManualValue] = useState("");
+  const [productDraft, setProductDraft] = useState<ProductDraft>(EMPTY_DRAFT);
+  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [scanHistory, setScanHistory] = useState<
+    Array<{ barcode: string; source: string; at: number }>
+  >([]);
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -269,6 +296,16 @@ export default function MobileScan() {
     lastScanRef.current = { value: cleaned, ts: now };
     setLastValue(cleaned);
     setLastSentAt(now);
+    setSaveStatus("idle");
+
+    if (!isCheckoutSession) {
+      setProductDraft((prev) => ({
+        ...EMPTY_DRAFT,
+        ...prev,
+        barcode: cleaned,
+        source: prev.barcode === cleaned ? prev.source : "",
+      }));
+    }
 
     if (socketRef.current?.connected) {
       socketRef.current.emit("mobile:barcode", {
@@ -278,6 +315,48 @@ export default function MobileScan() {
         sessionId,
         shopId,
         sessionType,
+      }, (response: unknown) => {
+        if (isCheckoutSession) return;
+        const result = response as {
+          ok?: boolean;
+          lookup?: {
+            found?: boolean;
+            source?: string | null;
+            product?: Record<string, unknown> | null;
+          };
+        };
+        const lookup = result?.lookup;
+        const product = lookup?.product;
+        if (!result?.ok || !product) {
+          setScanHistory((prev) => [
+            { barcode: cleaned, source: "new", at: now },
+            ...prev.slice(0, 5),
+          ]);
+          return;
+        }
+        setProductDraft({
+          barcode: cleaned,
+          inventoryCode: String(product.inventory_code || ""),
+          name: String(product.name || ""),
+          category: String(product.category || ""),
+          sku: String(product.sku || ""),
+          price:
+            product.price === null || product.price === undefined
+              ? ""
+              : String(product.price),
+          stock:
+            product.stock === null || product.stock === undefined
+              ? "0"
+              : String(product.stock),
+          source:
+            lookup.source === "inventory" || lookup.source === "global"
+              ? lookup.source
+              : "manual",
+        });
+        setScanHistory((prev) => [
+          { barcode: cleaned, source: String(lookup.source || "match"), at: now },
+          ...prev.slice(0, 5),
+        ]);
       });
     } else {
       pendingScansRef.current = [
@@ -289,6 +368,50 @@ export default function MobileScan() {
 
     if (navigator.vibrate) {
       navigator.vibrate(25);
+    }
+  };
+
+  const saveImportedProduct = async () => {
+    if (!productDraft.barcode || !productDraft.name.trim() || saveStatus === "saving") {
+      return;
+    }
+    setSaveStatus("saving");
+    setStatusMessage("Saving product...");
+    try {
+      const result = await postJSON<{ row?: Record<string, unknown> }>(
+        "/api/mobile/import-product",
+        {
+          sessionId,
+          token: authToken,
+          shopId,
+          sessionType,
+          userEmail,
+          userId,
+          barcode: productDraft.barcode,
+          product: {
+            inventory_code: productDraft.inventoryCode || undefined,
+            name: productDraft.name.trim(),
+            category: productDraft.category.trim() || "Uncategorized",
+            sku: productDraft.sku.trim() || undefined,
+            price: productDraft.price === "" ? 0 : Number(productDraft.price),
+            stock: productDraft.stock === "" ? 0 : Number(productDraft.stock),
+            barcode_id: productDraft.barcode,
+          },
+        },
+      );
+      setSaveStatus("saved");
+      setStatusMessage("Product saved to this shop.");
+      if (result?.row) {
+        setProductDraft((prev) => ({
+          ...prev,
+          inventoryCode: String(result.row?.inventory_code || prev.inventoryCode),
+          source: "inventory",
+        }));
+      }
+      if (navigator.vibrate) navigator.vibrate([20, 30, 20]);
+    } catch (err) {
+      setSaveStatus("error");
+      setStatusMessage(err instanceof Error ? err.message : "Failed to save product.");
     }
   };
 
@@ -572,6 +695,106 @@ export default function MobileScan() {
                     Send
                   </button>
                 </form>
+              </div>
+            )}
+
+            {!isCheckoutSession && scanStatus !== "error" && (
+              <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.22em] text-gray-400">
+                      Import Product
+                    </p>
+                    <h2 className="text-base font-semibold text-gray-900">
+                      {productDraft.barcode || "Scan a barcode"}
+                    </h2>
+                  </div>
+                  {productDraft.source && (
+                    <span className="rounded-full bg-[#ecff76]/70 px-3 py-1 text-xs font-semibold text-gray-900">
+                      {productDraft.source === "global" ? "Global match" : "Shop match"}
+                    </span>
+                  )}
+                </div>
+
+                <div className="grid gap-3">
+                  <input
+                    value={productDraft.name}
+                    onChange={(event) =>
+                      setProductDraft((prev) => ({ ...prev, name: event.target.value }))
+                    }
+                    className="h-11 rounded-xl border border-gray-200 px-3 text-sm outline-none focus:border-[#ecff76]"
+                    placeholder="Product name"
+                  />
+                  <div className="grid grid-cols-2 gap-2">
+                    <input
+                      value={productDraft.category}
+                      onChange={(event) =>
+                        setProductDraft((prev) => ({ ...prev, category: event.target.value }))
+                      }
+                      className="h-11 min-w-0 rounded-xl border border-gray-200 px-3 text-sm outline-none focus:border-[#ecff76]"
+                      placeholder="Category"
+                    />
+                    <input
+                      value={productDraft.sku}
+                      onChange={(event) =>
+                        setProductDraft((prev) => ({ ...prev, sku: event.target.value }))
+                      }
+                      className="h-11 min-w-0 rounded-xl border border-gray-200 px-3 text-sm outline-none focus:border-[#ecff76]"
+                      placeholder="SKU"
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <input
+                      value={productDraft.price}
+                      onChange={(event) =>
+                        setProductDraft((prev) => ({ ...prev, price: event.target.value }))
+                      }
+                      inputMode="decimal"
+                      className="h-11 min-w-0 rounded-xl border border-gray-200 px-3 text-sm outline-none focus:border-[#ecff76]"
+                      placeholder="Price"
+                    />
+                    <input
+                      value={productDraft.stock}
+                      onChange={(event) =>
+                        setProductDraft((prev) => ({ ...prev, stock: event.target.value }))
+                      }
+                      inputMode="numeric"
+                      className="h-11 min-w-0 rounded-xl border border-gray-200 px-3 text-sm outline-none focus:border-[#ecff76]"
+                      placeholder="Stock"
+                    />
+                  </div>
+                  <button
+                    onClick={saveImportedProduct}
+                    disabled={!productDraft.barcode || !productDraft.name.trim() || saveStatus === "saving"}
+                    className="h-12 rounded-xl bg-gray-900 text-sm font-semibold text-white disabled:bg-gray-200 disabled:text-gray-400"
+                  >
+                    {saveStatus === "saving"
+                      ? "Saving..."
+                      : saveStatus === "saved"
+                        ? "Saved"
+                        : "Save to Inventory"}
+                  </button>
+                </div>
+
+                {scanHistory.length > 0 && (
+                  <div className="mt-4 border-t border-gray-100 pt-3">
+                    <p className="mb-2 text-xs font-medium text-gray-500">
+                      Previous scans
+                    </p>
+                    <div className="space-y-1">
+                      {scanHistory.map((scan) => (
+                        <button
+                          key={`${scan.barcode}-${scan.at}`}
+                          onClick={() => publishBarcode(scan.barcode)}
+                          className="flex w-full items-center justify-between rounded-lg bg-gray-50 px-3 py-2 text-left text-xs text-gray-600"
+                        >
+                          <span className="truncate font-mono">{scan.barcode}</span>
+                          <span className="ml-2 flex-shrink-0 capitalize">{scan.source}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>

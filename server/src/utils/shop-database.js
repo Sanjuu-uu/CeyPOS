@@ -288,6 +288,21 @@ function initializeShopDatabaseSchema(db) {
     device_meta TEXT
   );
 
+  CREATE TABLE IF NOT EXISTS mobile_scan_events (
+    event_id TEXT PRIMARY KEY,
+    session_id TEXT NOT NULL,
+    shop_id TEXT NOT NULL,
+    session_type TEXT NOT NULL,
+    barcode TEXT NOT NULL,
+    status TEXT NOT NULL,
+    product_code TEXT,
+    socket_id TEXT,
+    created_at DATETIME NOT NULL
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_mobile_scan_events_session_created
+    ON mobile_scan_events (session_id, created_at);
+
   CREATE TABLE IF NOT EXISTS analytics_conversations (
     id TEXT PRIMARY KEY,
     shop_id TEXT NOT NULL,
@@ -618,7 +633,7 @@ function ensureAllShopDatabasesSchema() {
   const initialized = [];
   for (const fileName of fs.readdirSync(SHOP_DATABASE_DIRECTORY)) {
     if (!fileName.endsWith(".db")) continue;
-    if (fileName === "receipt-tokens.db") continue;
+    if (fileName === "receipt-tokens.db" || fileName === "import-catalog.db") continue;
     const fullPath = path.join(SHOP_DATABASE_DIRECTORY, fileName);
     try {
       const db = new Database(fullPath, { fileMustExist: true });

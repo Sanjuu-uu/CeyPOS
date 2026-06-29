@@ -1,10 +1,12 @@
 // WebSocket server for real-time two-way sync per shop
 import { Server } from "socket.io";
+import { randomUUID } from "crypto";
 import { openShopDatabase, shopDatabaseExists } from "./utils/shop-database.js";
 import { getInventory, upsertProducts } from "./services/inventory-service.js";
 import { getShopSnapshot } from "./services/shop-snapshot.js";
 import { bus as changeBus, publishChange } from "./realtime/change-bus.js";
 import { validateTerminalToken } from "./services/terminal-service.js";
+import { lookupGlobalBarcodeProduct } from "./utils/global-barcode-database.js";
 
 let ioInstance;
 
@@ -104,6 +106,64 @@ function recordChangeLatency(event) {
         p95Ms: percentile(0.95),
       }),
     );
+  }
+}
+
+const normalizeBarcode = (value) => String(value || "").replace(/\s+/g, "").trim();
+
+function sessionRoom(shopId, sessionId) {
+  return `shop_${shopId}:session_${sessionId}`;
+}
+
+function resolveBarcodeForShop(shopId, barcode, { includeGlobal = false } = {}) {
+  const clean = normalizeBarcode(barcode);
+  if (!clean) return { barcode: clean, found: false, source: null, product: null };
+
+  const db = openShopDatabase(shopId);
+  try {
+    const inventory = db
+      .prepare("SELECT * FROM inventory WHERE barcode_id = ? LIMIT 1")
+      .get(clean);
+    if (inventory) {
+      return { barcode: clean, found: true, source: "inventory", product: inventory };
+    }
+
+    if (includeGlobal) {
+      const globalProduct = lookupGlobalBarcodeProduct(clean);
+      if (globalProduct) {
+        return { barcode: clean, found: true, source: "global", product: globalProduct };
+      }
+    }
+
+    return { barcode: clean, found: false, source: null, product: null };
+  } finally {
+    db.close();
+  }
+}
+
+function recordMobileScanEvent({ shopId, sessionId, sessionType, barcode, lookup, socketId }) {
+  const db = openShopDatabase(shopId);
+  try {
+    db.prepare(
+      `INSERT INTO mobile_scan_events (
+         event_id, session_id, shop_id, session_type, barcode, status,
+         product_code, socket_id, created_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(
+      randomUUID(),
+      sessionId || "",
+      shopId,
+      sessionType || "unknown",
+      barcode,
+      lookup?.found ? "matched" : "unmatched",
+      lookup?.product?.inventory_code || null,
+      socketId || null,
+      new Date().toISOString(),
+    );
+  } catch (err) {
+    console.warn("Failed to record mobile scan event", err?.message || err);
+  } finally {
+    db.close();
   }
 }
 
@@ -268,6 +328,7 @@ function init(httpServer, opts = {}) {
       }
 
       if (sessionCheck.isMobileSession) {
+        socket.join(sessionRoom(shopId, sessionId));
         publishChange({
           shopId,
           entity: "sessions",
@@ -351,14 +412,40 @@ function init(httpServer, opts = {}) {
           return;
         }
 
+        const value = normalizeBarcode(payload.value);
+        if (!value) {
+          if (typeof cb === "function") cb({ ok: false, error: "Barcode is required" });
+          return;
+        }
+
+        const eventSessionId = sessionId || payload.sessionId;
+        const eventSessionType = requestedSessionType || payload.sessionType;
+        const lookup = resolveBarcodeForShop(shopId, value, {
+          includeGlobal: eventSessionType === "barcode",
+        });
+        recordMobileScanEvent({
+          shopId,
+          sessionId: eventSessionId,
+          sessionType: eventSessionType,
+          barcode: value,
+          lookup,
+          socketId: socket.id,
+        });
+
         const event = {
           ...payload,
+          value,
           shopId,
-          sessionId: sessionId || payload.sessionId,
-          sessionType: requestedSessionType || payload.sessionType,
+          sessionId: eventSessionId,
+          sessionType: eventSessionType,
+          lookup,
+          serverTs: Date.now(),
         };
+        if (eventSessionId) {
+          io.to(sessionRoom(shopId, eventSessionId)).emit("mobile:barcode", event);
+        }
         io.to(room).emit("mobile:barcode", event);
-        if (typeof cb === "function") cb({ ok: true });
+        if (typeof cb === "function") cb({ ok: true, lookup });
       } catch (err) {
         console.error("mobile:barcode error", err);
         if (typeof cb === "function") cb({ ok: false, error: String(err) });

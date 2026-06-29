@@ -5,6 +5,8 @@ import { publishChange } from "../realtime/change-bus.js";
 import { memberCanAccessShop } from "../middleware/shop-auth.js";
 import { getMemberByEmail, normalizeEmail } from "../services/team-service.js";
 import { buildMemberScope, getShopPlanLimits, scopeAllows } from "../services/member-scope.js";
+import { upsertProducts } from "../services/inventory-service.js";
+import { lookupGlobalBarcodeProduct } from "../utils/global-barcode-database.js";
 
 const router = express.Router();
 
@@ -80,6 +82,65 @@ const resolveOrigin = (req) => {
 };
 
 const toIso = (value) => new Date(value).toISOString();
+
+const normalizeBarcode = (value) => String(value || "").replace(/\s+/g, "").trim();
+
+function getAuthorizedSession(db, { shopId, sessionId, token, sessionType, userEmail }) {
+  const auth = authorizeMobileSession(db, shopId, userEmail, sessionType);
+  if (!auth.ok) {
+    return { ok: false, status: 403, error: auth.error };
+  }
+
+  const session = db
+    .prepare(
+      `SELECT session_id, session_type, status, auth_token, expires_at
+       FROM mobile_sessions
+       WHERE session_id = ? AND shop_id = ?`
+    )
+    .get(sessionId, shopId);
+
+  if (!session) {
+    return { ok: false, status: 404, error: "Session not found" };
+  }
+  if (String(session.auth_token) !== String(token)) {
+    return { ok: false, status: 401, error: "Invalid session token" };
+  }
+  if (sessionType && String(session.session_type) !== String(sessionType)) {
+    return { ok: false, status: 400, error: "Session type mismatch" };
+  }
+  const expiresAtMs = Date.parse(session.expires_at);
+  if (Number.isFinite(expiresAtMs) && Date.now() > expiresAtMs) {
+    return { ok: false, status: 410, error: "Session expired" };
+  }
+
+  return { ok: true, session, auth };
+}
+
+function lookupBarcodeInDb(db, barcode, { includeGlobal = true } = {}) {
+  const clean = normalizeBarcode(barcode);
+  if (!clean) return null;
+
+  const inventory = db
+    .prepare(
+      `SELECT *
+       FROM inventory
+       WHERE barcode_id = ?
+       LIMIT 1`
+    )
+    .get(clean);
+  if (inventory) {
+    return { source: "inventory", product: inventory };
+  }
+
+  if (includeGlobal) {
+    const globalProduct = lookupGlobalBarcodeProduct(clean);
+    if (globalProduct) {
+      return { source: "global", product: globalProduct };
+    }
+  }
+
+  return null;
+}
 
 function authorizeMobileSession(db, shopId, userEmail, sessionType) {
   if (!memberCanAccessShop(db, shopId, userEmail)) {
@@ -268,6 +329,134 @@ router.post("/sessions/validate", (req, res) => {
   } catch (err) {
     console.error("/mobile/sessions/validate error", err);
     return res.status(500).json({ error: "Failed to validate session" });
+  }
+});
+
+router.post("/barcode/lookup", (req, res) => {
+  try {
+    const { sessionId, token, shopId, sessionType, userEmail, barcode } =
+      req.body || {};
+    const cleanBarcode = normalizeBarcode(barcode);
+    if (!sessionId || !token || !shopId || !userEmail || !cleanBarcode) {
+      return res.status(400).json({
+        error: "sessionId, token, shopId, userEmail, and barcode are required",
+      });
+    }
+    if (!shopDatabaseExists(shopId)) {
+      return res.status(404).json({ error: "Shop database not found" });
+    }
+
+    const db = openShopDatabase(shopId);
+    try {
+      const sessionCheck = getAuthorizedSession(db, {
+        shopId,
+        sessionId,
+        token,
+        sessionType,
+        userEmail,
+      });
+      if (!sessionCheck.ok) {
+        return res.status(sessionCheck.status).json({ error: sessionCheck.error });
+      }
+
+      const result = lookupBarcodeInDb(db, cleanBarcode, {
+        includeGlobal: sessionCheck.session.session_type === "barcode",
+      });
+      return res.json({
+        ok: true,
+        barcode: cleanBarcode,
+        found: Boolean(result),
+        source: result?.source || null,
+        product: result?.product || null,
+      });
+    } finally {
+      db.close();
+    }
+  } catch (err) {
+    console.error("/mobile/barcode/lookup error", err);
+    return res.status(500).json({ error: "Failed to lookup barcode" });
+  }
+});
+
+router.post("/import-product", (req, res) => {
+  try {
+    const {
+      sessionId,
+      token,
+      shopId,
+      sessionType = "barcode",
+      userEmail,
+      barcode,
+      product = {},
+    } = req.body || {};
+    const cleanBarcode = normalizeBarcode(barcode || product.barcode_id || product.barcode);
+    const name = String(product.name || "").trim();
+    if (!sessionId || !token || !shopId || !userEmail || !cleanBarcode || !name) {
+      return res.status(400).json({
+        error: "sessionId, token, shopId, userEmail, barcode, and product name are required",
+      });
+    }
+    if (!shopDatabaseExists(shopId)) {
+      return res.status(404).json({ error: "Shop database not found" });
+    }
+
+    const db = openShopDatabase(shopId);
+    try {
+      const sessionCheck = getAuthorizedSession(db, {
+        shopId,
+        sessionId,
+        token,
+        sessionType,
+        userEmail,
+      });
+      if (!sessionCheck.ok) {
+        return res.status(sessionCheck.status).json({ error: sessionCheck.error });
+      }
+      if (sessionCheck.session.session_type !== "barcode") {
+        return res.status(400).json({ error: "Only import sessions can save products" });
+      }
+
+      const existing = db
+        .prepare("SELECT inventory_code FROM inventory WHERE barcode_id = ? LIMIT 1")
+        .get(cleanBarcode);
+      const inventoryCode =
+        product.inventory_code ||
+        product.inventoryCode ||
+        existing?.inventory_code ||
+        `MOB-${cleanBarcode}`.slice(0, 64);
+
+      db.close();
+      const rows = upsertProducts(shopId, [
+        {
+          inventory_code: inventoryCode,
+          barcode_id: cleanBarcode,
+          name,
+          category: String(product.category || "Uncategorized").trim() || "Uncategorized",
+          sku: product.sku ? String(product.sku).trim() : null,
+          price:
+            product.price === "" || product.price === null || product.price === undefined
+              ? 0
+              : Number(product.price),
+          stock:
+            product.stock === "" || product.stock === null || product.stock === undefined
+              ? 0
+              : Number(product.stock),
+          image_url: product.image_url || product.imageUrl || null,
+        },
+      ], {
+        metadata: { source: "mobile-import", sessionId },
+        actor: userEmail,
+      });
+
+      return res.json({ ok: true, row: rows[0] || null });
+    } finally {
+      if (db.open) {
+        db.close();
+      }
+    }
+  } catch (err) {
+    console.error("/mobile/import-product error", err);
+    return res.status(500).json({ error: "Failed to save product" });
   }
 });
 

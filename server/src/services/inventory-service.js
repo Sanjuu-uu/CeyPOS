@@ -1,5 +1,6 @@
 import { openShopDatabase } from "../utils/shop-database.js";
 import { publishChange } from "../realtime/change-bus.js";
+import { upsertGlobalBarcodeProducts } from "../utils/global-barcode-database.js";
 
 function normalizeProduct(input = {}) {
   const now = new Date().toISOString();
@@ -136,6 +137,7 @@ function upsertProducts(shopId, products = [], options = {}) {
   const db = openShopDatabase(shopId);
   try {
     const updatedRows = upsertInventoryRows(db, normalized);
+    upsertGlobalBarcodeProducts(updatedRows, { shopId });
     publishChange({
       shopId,
       entity: "inventory",

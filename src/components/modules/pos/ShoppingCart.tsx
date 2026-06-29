@@ -775,7 +775,7 @@ export const ShoppingCart: React.FC = () => {
       }, 2000);
     } catch (error) {
       console.error("Checkout failed:", error);
-      alert("Transaction failed");
+      alert(error instanceof Error ? error.message : "Transaction failed");
       setSaving(false);
     }
   };
