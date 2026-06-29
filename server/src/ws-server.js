@@ -11,6 +11,74 @@ let ioInstance;
 const changeLatencySamples = [];
 const CHANGE_LATENCY_SAMPLE_LIMIT = 200;
 
+// ---------------------------------------------------------------------------
+// Cart stock reservations (ephemeral, in-memory).
+//
+// When a terminal puts items in its cart it "reserves" that stock so other
+// terminals stop seeing it as available. Reservations are NOT persisted and
+// never touch the real stock column — they only exist while a socket is
+// connected. On disconnect (close, crash, network drop) a socket's holds are
+// released automatically, so stock can never leak.
+//
+//   reservationsByShop: Map<shopId, Map<socketId, Map<inventoryCode, qty>>>
+// ---------------------------------------------------------------------------
+const reservationsByShop = new Map();
+
+function aggregateReservations(shopId) {
+  const perSocket = reservationsByShop.get(shopId);
+  const totals = {};
+  if (!perSocket) return totals;
+  for (const codes of perSocket.values()) {
+    for (const [code, qty] of codes.entries()) {
+      if (!qty || qty <= 0) continue;
+      totals[code] = (totals[code] || 0) + qty;
+    }
+  }
+  return totals;
+}
+
+function broadcastReservations(shopId) {
+  publishChange({
+    shopId,
+    entity: "reservations",
+    action: "update",
+    payload: { reservations: aggregateReservations(shopId) },
+  });
+}
+
+function setSocketReservations(shopId, socketId, items) {
+  let perSocket = reservationsByShop.get(shopId);
+  if (!perSocket) {
+    perSocket = new Map();
+    reservationsByShop.set(shopId, perSocket);
+  }
+  const codes = new Map();
+  if (Array.isArray(items)) {
+    for (const item of items) {
+      const code = item?.inventory_code ?? item?.code ?? item?.id;
+      const qty = Number(item?.quantity ?? 0);
+      if (code === undefined || code === null || !Number.isFinite(qty) || qty <= 0) {
+        continue;
+      }
+      const key = String(code);
+      codes.set(key, (codes.get(key) || 0) + qty);
+    }
+  }
+  if (codes.size > 0) {
+    perSocket.set(socketId, codes);
+  } else {
+    perSocket.delete(socketId);
+  }
+}
+
+function releaseSocketReservations(shopId, socketId) {
+  const perSocket = reservationsByShop.get(shopId);
+  if (!perSocket || !perSocket.has(socketId)) return false;
+  perSocket.delete(socketId);
+  if (perSocket.size === 0) reservationsByShop.delete(shopId);
+  return true;
+}
+
 function recordChangeLatency(event) {
   const publishedAt = Date.parse(event?.timestamp || "");
   if (!Number.isFinite(publishedAt)) return;
@@ -224,6 +292,16 @@ function init(httpServer, opts = {}) {
       if (typeof opts?.onInitialStateSent === "function") {
         opts.onInitialStateSent(shopId, socket.id);
       }
+      // Bring this terminal up to date with current cart reservations from
+      // every other connected terminal.
+      socket.emit("change", {
+        changeId: `reservations-snapshot-${Date.now()}`,
+        timestamp: new Date().toISOString(),
+        shopId,
+        entity: "reservations",
+        action: "update",
+        payload: { reservations: aggregateReservations(shopId) },
+      });
     } catch (snapshotErr) {
       console.error("Failed to send initial snapshot", snapshotErr);
       socket.emit("error", { message: "Failed to load initial data" });
@@ -291,8 +369,26 @@ function init(httpServer, opts = {}) {
       if (typeof cb === "function") cb({ ok: true, now: Date.now() });
     });
 
+    // A terminal reports the items currently held in its cart. We replace this
+    // socket's whole reservation set each time, then broadcast the new shop-wide
+    // aggregate so every terminal can recompute available stock.
+    socket.on("cart:reserve", (payload, cb) => {
+      try {
+        const items = Array.isArray(payload?.items) ? payload.items : [];
+        setSocketReservations(shopId, socket.id, items);
+        broadcastReservations(shopId);
+        if (typeof cb === "function") cb({ ok: true });
+      } catch (err) {
+        console.error("cart:reserve error", err);
+        if (typeof cb === "function") cb({ ok: false, error: String(err) });
+      }
+    });
+
     socket.on("disconnect", (reason) => {
       console.log(`Socket ${socket.id} disconnected: ${reason}`);
+      if (releaseSocketReservations(shopId, socket.id)) {
+        broadcastReservations(shopId);
+      }
       if (socket.data?.terminalId) {
         publishChange({
           shopId,

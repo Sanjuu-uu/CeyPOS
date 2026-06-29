@@ -19,8 +19,13 @@ const ProductCard = memo(
     onAdd: (p: Product) => void;
     onUpdate: (p: Product, change: number) => void;
   }) => {
-    const isOutOfStock = product.stock <= 0;
-    const isMaxStock = product.stock <= quantityInCart;
+    // availableStock = real stock minus what's held across ALL terminals' carts
+    // (including this one). Fall back to stock when reservation data isn't
+    // loaded yet. Since this terminal's own cart is already subtracted, both the
+    // "Add" and "+" buttons stop exactly when nothing is left.
+    const available = product.availableStock ?? product.stock;
+    const isOutOfStock = available <= 0;
+    const isMaxStock = available <= 0;
 
     if (viewMode === "row") {
       return (
@@ -45,7 +50,7 @@ const ProductCard = memo(
             </h3>
             <div className="flex items-center gap-2 mt-1">
               <span className="text-xs font-medium text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded">
-                {product.stock} in stock
+                {available} in stock
               </span>
             </div>
           </div>
@@ -117,7 +122,7 @@ const ProductCard = memo(
             {product.name}
           </h3>
           <p className="text-xs text-gray-500 mb-3">
-            {product.stock} available
+            {available} available
           </p>
           <div className="mt-auto">
             {quantityInCart === 0 ? (

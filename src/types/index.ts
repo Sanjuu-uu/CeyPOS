@@ -28,6 +28,12 @@ export interface Product {
   category: string;
   price: number;
   stock: number;
+  /**
+   * Stock still sellable right now = stock − quantity reserved in other
+   * terminals' open carts. Falls back to `stock` when no reservation data is
+   * available. The real `stock` only changes when a sale completes.
+   */
+  availableStock?: number;
   barcode: string;
   imageUrl?: string;
 }

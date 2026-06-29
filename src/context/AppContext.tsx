@@ -282,6 +282,20 @@ export const AppProvider: React.FC<AppProviderProps> = ({
     return () => window.removeEventListener('ceypos:terminal-updated', handler);
   }, [refreshShopContext]);
 
+  // Mirror the current cart to the server as stock reservations so every
+  // terminal (including this one) sees held items reduce immediately. Pushed
+  // synchronously on each cart change — no debounce — for the fastest possible
+  // propagation; releases automatically when the cart empties.
+  useEffect(() => {
+    if (!externalShopId) return;
+    db.reserveCart(
+      cart.map((item) => ({
+        inventory_code: item.id,
+        quantity: item.quantity,
+      })),
+    );
+  }, [cart, externalShopId]);
+
   const addToCart = (product: CartItem) => {
     setCart((prevCart) => {
       const existingItem = prevCart.find((item) => item.id === product.id);
