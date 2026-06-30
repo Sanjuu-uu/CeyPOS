@@ -37,7 +37,9 @@ export async function getJSON<T = unknown>(path: string): Promise<T> {
   const res = await authFetch(`${API_BASE}${path}`);
   const data = await res.json().catch(() => ({}));
   if (!res.ok || data?.ok === false) {
-    throw new Error(data?.error || `HTTP ${res.status}`);
+    const err = new Error(data?.error || `HTTP ${res.status}`);
+    (err as any).payload = data;
+    throw err;
   }
   return data as T;
 }
@@ -53,7 +55,9 @@ export async function patchJSON<T = unknown>(
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok || data?.ok === false) {
-    throw new Error(data?.error || `HTTP ${res.status}`);
+    const err = new Error(data?.error || `HTTP ${res.status}`);
+    (err as any).payload = data;
+    throw err;
   }
   return data as T;
 }
@@ -69,7 +73,9 @@ export async function postJSON<T = unknown>(
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok || data?.ok === false) {
-    throw new Error(data?.error || `HTTP ${res.status}`);
+    const err = new Error(data?.error || `HTTP ${res.status}`);
+    (err as any).payload = data;
+    throw err;
   }
   return data as T;
 }
