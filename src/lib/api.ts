@@ -30,7 +30,7 @@ export async function authFetch(
   init: RequestInit = {},
 ): Promise<Response> {
   const headers = await buildAuthHeaders(init.headers);
-  return fetch(input, { ...init, headers });
+  return fetch(input, { ...init, headers, credentials: "include" });
 }
 
 export async function getJSON<T = unknown>(path: string): Promise<T> {
