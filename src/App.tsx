@@ -30,10 +30,14 @@ import {
 import { authFetch, setAuthTokenGetter } from "./lib/api";
 
 // Get Clerk publishable key from environment
-const clerkPubKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
+const clerkPubKey =
+  import.meta.env.VITE_CLERK_PUBLISHABLE_KEY ||
+  import.meta.env.CLERK_PUBLISHABLE_KEY;
 
 if (!clerkPubKey) {
-  throw new Error("Missing Clerk Publishable Key");
+  throw new Error(
+    "Missing Clerk Publishable Key. Set VITE_CLERK_PUBLISHABLE_KEY or CLERK_PUBLISHABLE_KEY.",
+  );
 }
 
 // Pre-Authentication App (Marketing/Landing pages)
