@@ -46,11 +46,19 @@ export const EmployeeOnboardStep2: React.FC = () => {
     if (!sent && formData.phone && userEmail) {
       void sendCode();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [sent, formData.phone, userEmail]);
 
   const sendCode = async () => {
-    if (!userEmail || !formData.phone) return;
+    if (isBusy) return;
+    if (!formData.phone) {
+      setError("Phone number is missing. Go back and enter a valid phone number.");
+      return;
+    }
+    if (!userEmail) {
+      setError("Unable to resolve your authenticated email. Please sign in again.");
+      return;
+    }
+
     setIsBusy(true);
     setError(null);
     setInfo(null);
