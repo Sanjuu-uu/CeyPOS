@@ -24,7 +24,7 @@
 
 ### 1. Platform & Credential Readiness
 - Select the Gemini API surface (Vertex AI, Google AI Studio REST, or `@google/generative-ai` SDK) and provision access keys/service accounts.
-- Extend the deployment playbooks to distribute new credentials (e.g., `GEMINI_API_KEY` or `MCP_GEMINI_API_KEY`), and decide whether OpenAI keys remain for rollback.
+- Extend the deployment playbooks to distribute new credentials using `GEMINI_API_KEY`, and decide whether OpenAI keys remain for rollback.
 - Update security documentation covering key rotation, regional endpoints, and billing alerts.
 - Capture AntV chart service settings (`VIS_REQUEST_SERVER`, `VIS_SERVICE_ID`) alongside Gemini credentials so all services share the same configuration source.
 

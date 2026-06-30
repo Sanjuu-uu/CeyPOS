@@ -170,7 +170,7 @@ Create a `.env` file in the repository root (and reuse it for the MCP and server
 
 | Variable | Description |
 |----------|-------------|
-| `GEMINI_API_KEY` | Primary Gemini API key used by the MCP analytics server. `MCP_GEMINI_API_KEY` is also accepted. |
+| `GEMINI_API_KEY` | Primary Gemini API key used by the MCP analytics server. |
 | `GEMINI_MODEL` | Optional override for the Gemini model identifier (defaults to `gemini-1.5-flash`). |
 | `VIS_REQUEST_SERVER` | Base URL for the AntV MCP chart service (e.g., `https://antv-chart-service.example.com`). |
 | `VIS_SERVICE_ID` | Chart generation service identifier issued by the AntV MCP deployment. |

@@ -42,12 +42,7 @@ for (const envPath of envCandidates) {
 }
 
 const DEFAULT_GEMINI_MODEL = (process.env.GEMINI_MODEL || 'gemini-2.5-flash').trim();
-const GEMINI_API_KEY_ENV_PRIORITY = [
-  'MCP_GEMINI_API_KEY',
-  'GEMINI_API_KEY',
-  'GOOGLE_GENERATIVE_AI_API_KEY',
-  'GOOGLE_API_KEY',
-];
+const GEMINI_API_KEY_ENV_PRIORITY = ['GEMINI_API_KEY'];
 
 const VIS_REQUEST_SERVER_RAW = (process.env.VIS_REQUEST_SERVER ?? '').trim();
 const VIS_REQUEST_SERVER = VIS_REQUEST_SERVER_RAW.endsWith('/')
@@ -1228,7 +1223,7 @@ function toUserFacingModelError(error) {
     normalized.includes('api_key_invalid') ||
     (normalized.includes('400 bad request') && normalized.includes('generativelanguage.googleapis.com'))
   ) {
-    return 'Gemini API authentication failed. Please set a valid GEMINI_API_KEY or MCP_GEMINI_API_KEY, then restart the server.';
+    return 'Gemini API authentication failed. Please set a valid GEMINI_API_KEY, then restart the server.';
   }
 
   if (normalized.includes('429') || normalized.includes('quota') || normalized.includes('rate limit')) {
