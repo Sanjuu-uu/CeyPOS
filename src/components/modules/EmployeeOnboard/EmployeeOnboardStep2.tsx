@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { Mail } from "lucide-react";
+import { Mail, AlertCircle, CheckCircle } from "lucide-react";
 import { useUser } from "@clerk/clerk-react";
 import { useEmployeeOnboard } from "../../../context/EmployeeOnboardContext";
 import { postJSON } from "../../../lib/api";
@@ -11,6 +11,25 @@ const cardVariants = {
   animate: { y: 0, opacity: 1, transition: { duration: 0.4, ease: "easeOut" } },
 };
 
+interface VerificationError {
+  error: string;
+  code?: string;
+  attemptsRemaining?: number;
+  retryAfter?: number;
+}
+
+function parseErrorResponse(err: unknown): VerificationError {
+  if (err instanceof Error) {
+    try {
+      const parsed = JSON.parse(err.message);
+      return parsed;
+    } catch {
+      return { error: err.message };
+    }
+  }
+  return { error: "Verification failed" };
+}
+
 export const EmployeeOnboardStep2: React.FC = () => {
   const { user } = useUser();
   const { formData, updateFormData, setError, error, isBusy, setIsBusy } =
@@ -18,6 +37,8 @@ export const EmployeeOnboardStep2: React.FC = () => {
   const [code, setCode] = useState("");
   const [sent, setSent] = useState(false);
   const [info, setInfo] = useState<string | null>(null);
+  const [attemptsRemaining, setAttemptsRemaining] = useState<number | null>(null);
+  const [retryAfterSeconds, setRetryAfterSeconds] = useState<number | null>(null);
 
   const userEmail = user?.primaryEmailAddress?.emailAddress || "";
 
@@ -33,6 +54,7 @@ export const EmployeeOnboardStep2: React.FC = () => {
     setIsBusy(true);
     setError(null);
     setInfo(null);
+    setRetryAfterSeconds(null);
     try {
       const result = await postJSON<{ ok: boolean; devCode?: string }>(
         "/api/team/verify/send-code",
@@ -40,12 +62,18 @@ export const EmployeeOnboardStep2: React.FC = () => {
       );
       setSent(true);
       if (result.devCode) {
-        setInfo(`Development code: ${result.devCode}`);
+        setInfo(`🔧 Development mode - Code: ${result.devCode}`);
       } else {
-        setInfo("Verification code sent to your phone.");
+        setInfo("✓ Verification code sent to your phone.");
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to send code");
+      const errorData = parseErrorResponse(err);
+      if (errorData.retryAfter) {
+        setRetryAfterSeconds(errorData.retryAfter);
+        setError(`${errorData.error}\nPlease wait ${Math.ceil(errorData.retryAfter / 60)} minute(s).`);
+      } else {
+        setError(errorData.error || "Failed to send code");
+      }
     } finally {
       setIsBusy(false);
     }
@@ -53,11 +81,12 @@ export const EmployeeOnboardStep2: React.FC = () => {
 
   const verifyCode = async () => {
     if (!userEmail || !formData.phone || !code.trim()) {
-      setError("Please enter the verification code");
+      setError("Please enter the 6-digit verification code");
       return;
     }
     setIsBusy(true);
     setError(null);
+    setAttemptsRemaining(null);
     try {
       await postJSON("/api/team/verify/check-code", {
         userEmail,
@@ -65,14 +94,29 @@ export const EmployeeOnboardStep2: React.FC = () => {
         code: code.trim(),
       });
       updateFormData({ phoneVerified: true });
-      setInfo("Phone verified successfully.");
+      setInfo("✓ Phone verified successfully!");
     } catch (err) {
       updateFormData({ phoneVerified: false });
-      setError(err instanceof Error ? err.message : "Invalid verification code");
+      const errorData = parseErrorResponse(err);
+      
+      let errorMsg = errorData.error || "Invalid verification code";
+      
+      if (errorData.attemptsRemaining !== undefined) {
+        setAttemptsRemaining(errorData.attemptsRemaining);
+        if (errorData.attemptsRemaining === 0) {
+          errorMsg = "Too many failed attempts. Please request a new code.";
+        } else {
+          errorMsg += ` (${errorData.attemptsRemaining} ${errorData.attemptsRemaining === 1 ? "attempt" : "attempts"} remaining)`;
+        }
+      }
+      
+      setError(errorMsg);
     } finally {
       setIsBusy(false);
     }
   };
+
+  const canResend = !isBusy && !retryAfterSeconds;
 
   return (
     <div className="w-full flex justify-center">
@@ -92,7 +136,7 @@ export const EmployeeOnboardStep2: React.FC = () => {
         >
           <div className="text-center mb-6">
             <div className="inline-flex items-center bg-gradient-to-r from-gray-100 to-gray-200 text-gray-700 px-4 py-2 rounded-full text-xs font-medium mb-4">
-              Phone Verification
+              📱 Phone Verification
             </div>
             <h2 className="text-xl font-semibold text-gray-900 mb-2">
               Enter Verification Code
@@ -103,13 +147,15 @@ export const EmployeeOnboardStep2: React.FC = () => {
           </div>
 
           {info && !error && (
-            <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg text-green-700 text-sm">
-              {info}
+            <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg text-green-700 text-sm flex items-start gap-2">
+              <CheckCircle className="h-4 w-4 mt-0.5 flex-shrink-0" />
+              <span>{info}</span>
             </div>
           )}
           {error && (
-            <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-600 text-sm">
-              {error}
+            <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-600 text-sm flex items-start gap-2">
+              <AlertCircle className="h-4 w-4 mt-0.5 flex-shrink-0" />
+              <span className="whitespace-pre-line">{error}</span>
             </div>
           )}
 
@@ -140,29 +186,32 @@ export const EmployeeOnboardStep2: React.FC = () => {
             </div>
 
             {!formData.phoneVerified ? (
-              <button
-                type="button"
-                onClick={() => void verifyCode()}
-                disabled={isBusy || code.length < 6}
-                className="w-full bg-black hover:bg-gray-800 disabled:bg-gray-400 text-white py-3 rounded-full text-sm font-medium"
-              >
-                {isBusy ? "Verifying…" : "Verify Code"}
-              </button>
-            ) : (
-              <div className="p-3 bg-green-50 border border-green-200 rounded-lg text-green-700 text-sm text-center">
-                Phone verified — continue to connect your terminal.
-              </div>
-            )}
+              <>
+                <button
+                  type="button"
+                  onClick={() => void verifyCode()}
+                  disabled={isBusy || code.length < 6}
+                  className="w-full bg-black hover:bg-gray-800 disabled:bg-gray-400 text-white py-3 rounded-full text-sm font-medium transition-colors"
+                >
+                  {isBusy ? "Verifying…" : "Verify Code"}
+                </button>
 
-            {!formData.phoneVerified && (
-              <button
-                type="button"
-                onClick={() => void sendCode()}
-                disabled={isBusy}
-                className="w-full text-sm text-gray-900 hover:text-gray-700 font-medium"
-              >
-                Resend verification code
-              </button>
+                <button
+                  type="button"
+                  onClick={() => void sendCode()}
+                  disabled={!canResend}
+                  className="w-full text-sm text-gray-900 hover:text-gray-700 disabled:text-gray-400 font-medium transition-colors"
+                >
+                  {retryAfterSeconds
+                    ? `Resend in ${Math.ceil(retryAfterSeconds)} seconds`
+                    : "Resend verification code"}
+                </button>
+              </>
+            ) : (
+              <div className="p-3 bg-green-50 border border-green-200 rounded-lg text-green-700 text-sm text-center flex items-center justify-center gap-2">
+                <CheckCircle className="h-4 w-4" />
+                <span>Phone verified — continue to connect your terminal.</span>
+              </div>
             )}
           </div>
         </div>

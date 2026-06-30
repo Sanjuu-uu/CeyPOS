@@ -5,6 +5,7 @@ import {
   shopDatabaseExists,
   getShopDatabaseFileName,
 } from "../utils/shop-database.js";
+import { openGlobalVerificationDatabase } from "../utils/global-verification-database.js";
 import {
   requireShopBody,
   loadShopAuth,
@@ -21,43 +22,153 @@ import {
 } from "../services/team-service.js";
 import { ensurePrimaryTerminal, validateTerminalToken } from "../services/terminal-service.js";
 import {
-  sendEmployeePhoneCode,
-  verifyEmployeePhoneCode,
-} from "../services/employee-verification.js";
+  sendPhoneVerificationCode,
+  verifyPhoneCode,
+} from "../services/phone-verification-service.js";
 
 const router = Router();
 
 router.use(requireClerkSession);
 
+/**
+ * Send phone verification code (OTP)
+ *
+ * POST /api/team/verify/send-code
+ * Body: { phone: string }
+ * Returns: { ok: boolean, phone: string, devCode?: string }
+ */
 router.post("/verify/send-code", async (req, res) => {
+  let db = null;
   try {
     const phone = req.body?.phone;
     const userEmail = req.userEmail;
+
     if (!userEmail || !phone) {
-      return res.status(400).json({ error: "userEmail and phone are required" });
+      return res.status(400).json({
+        error: "Missing required fields",
+        details: "userEmail and phone are required",
+      });
     }
-    const result = await sendEmployeePhoneCode({ userEmail, phone });
+
+    db = openGlobalVerificationDatabase();
+
+    const result = await sendPhoneVerificationCode(db, {
+      shopId: null, // Not associated with a shop yet
+      userEmail,
+      phone,
+      ipAddress: req.ip,
+      userAgent: req.get("user-agent"),
+    });
+
     return res.json(result);
   } catch (err) {
-    const status =
-      err.code === "invalid_phone" || err.code === "invalid_request" ? 400 : 503;
-    return res.status(status).json({ error: err.message || "Failed to send code" });
+    // Map error codes to appropriate HTTP status codes
+    const statusMap = {
+      INVALID_EMAIL: 400,
+      INVALID_PHONE_FORMAT: 400,
+      RATE_LIMIT_EXCEEDED: 429,
+      SMS_PROVIDER_UNCONFIGURED: 503,
+      SMS_SENDING_FAILED: 503,
+      OTP_GENERATION_FAILED: 500,
+      UNKNOWN_ERROR: 500,
+    };
+
+    const status = statusMap[err.code] || 500;
+    const errorResponse = {
+      error: err.message || "Failed to send verification code",
+      code: err.code,
+    };
+
+    if (err.retryAfterSeconds) {
+      errorResponse.retryAfter = err.retryAfterSeconds;
+      res.set("Retry-After", String(Math.ceil(err.retryAfterSeconds)));
+    }
+
+    return res.status(status).json(errorResponse);
+  } finally {
+    if (db) {
+      try {
+        db.close();
+      } catch {
+        // ignore
+      }
+    }
   }
 });
 
-router.post("/verify/check-code", (req, res) => {
+/**
+ * Verify phone verification code
+ *
+ * POST /api/team/verify/check-code
+ * Body: { phone: string, code: string }
+ * Returns: { ok: boolean, phone: string }
+ */
+router.post("/verify/check-code", async (req, res) => {
+  let db = null;
   try {
     const { phone, code } = req.body || {};
     const userEmail = req.userEmail;
+
     if (!userEmail || !phone || !code) {
-      return res.status(400).json({ error: "userEmail, phone, and code are required" });
+      return res.status(400).json({
+        error: "Missing required fields",
+        details: "userEmail, phone, and code are required",
+      });
     }
-    const result = verifyEmployeePhoneCode({ userEmail, phone, code });
+
+    db = openGlobalVerificationDatabase();
+
+    const result = await verifyPhoneCode(db, {
+      shopId: null, // Not associated with a shop yet
+      userEmail,
+      phone,
+      code,
+      ipAddress: req.ip,
+      userAgent: req.get("user-agent"),
+    });
+
     return res.json(result);
   } catch (err) {
-    const status =
-      err.code === "invalid_code" || err.code === "invalid_request" ? 400 : 429;
-    return res.status(status).json({ error: err.message || "Verification failed" });
+    // Map error codes to appropriate HTTP status codes
+    const statusMap = {
+      INVALID_EMAIL: 400,
+      INVALID_PHONE_FORMAT: 400,
+      INVALID_CODE_FORMAT: 400,
+      OTP_NOT_FOUND: 404,
+      OTP_EXPIRED: 410,
+      ALREADY_VERIFIED: 200, // Not an error, already verified
+      INVALID_CODE: 400,
+      TOO_MANY_ATTEMPTS: 429,
+      UNKNOWN_ERROR: 500,
+    };
+
+    const status = statusMap[err.code] || 500;
+
+    if (err.code === "ALREADY_VERIFIED") {
+      return res.status(200).json({
+        ok: true,
+        message: "Phone number already verified",
+      });
+    }
+
+    const errorResponse = {
+      error: err.message || "Verification failed",
+      code: err.code,
+    };
+
+    if (err.attemptsRemaining !== undefined) {
+      errorResponse.attemptsRemaining = err.attemptsRemaining;
+    }
+
+    return res.status(status).json(errorResponse);
+  } finally {
+    if (db) {
+      try {
+        db.close();
+      } catch {
+        // ignore
+      }
+    }
   }
 });
 

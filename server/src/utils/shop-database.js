@@ -455,6 +455,47 @@ function initializeShopDatabaseSchema(db) {
     started_at DATETIME NOT NULL,
     ended_at DATETIME
   );
+
+  CREATE TABLE IF NOT EXISTS phone_verification_otps (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    shop_id TEXT NOT NULL,
+    user_email TEXT NOT NULL,
+    normalized_phone TEXT NOT NULL,
+    code TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending',
+    failed_attempts INTEGER DEFAULT 0,
+    created_at DATETIME NOT NULL,
+    expires_at DATETIME NOT NULL,
+    verified_at DATETIME,
+    rate_limit_expires_at DATETIME,
+    UNIQUE(user_email, normalized_phone)
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_phone_verification_expiry
+    ON phone_verification_otps (expires_at);
+
+  CREATE INDEX IF NOT EXISTS idx_phone_verification_user_email
+    ON phone_verification_otps (user_email);
+
+  CREATE TABLE IF NOT EXISTS phone_verification_audit (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    shop_id TEXT,
+    user_email TEXT NOT NULL,
+    normalized_phone TEXT NOT NULL,
+    action TEXT NOT NULL,
+    result TEXT NOT NULL,
+    error_code TEXT,
+    error_message TEXT,
+    ip_address TEXT,
+    user_agent TEXT,
+    created_at DATETIME NOT NULL
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_phone_verification_audit_user
+    ON phone_verification_audit (user_email, created_at);
+
+  CREATE INDEX IF NOT EXISTS idx_phone_verification_audit_phone
+    ON phone_verification_audit (normalized_phone, created_at);
   `;
 
   db.exec(ddl);
