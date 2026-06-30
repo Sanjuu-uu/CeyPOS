@@ -2,12 +2,33 @@ import path from "path";
 import fs from "fs";
 import Database from "better-sqlite3";
 
-const SHOP_DATABASE_DIRECTORY =
-  process.env.RAILWAY_VOLUME_MOUNT_PATH ||
-  (process.env.NODE_ENV === "production" && fs.existsSync("/data")
-    ? "/data"
-    : null) ||
-  path.resolve(process.cwd(), "../database");
+function resolveShopDatabaseDirectory() {
+  const explicitPath = process.env.RAILWAY_VOLUME_MOUNT_PATH || process.env.APP_DATABASE_PATH;
+  if (explicitPath) {
+    return path.resolve(explicitPath);
+  }
+
+  const cwd = process.cwd();
+  const appDatabaseDir = "/app/database";
+  const repoDatabaseDir = path.resolve(cwd, "database");
+  const serverParentDatabaseDir = path.resolve(cwd, "../database");
+
+  if (process.env.NODE_ENV === "production" && (fs.existsSync(appDatabaseDir) || cwd.startsWith("/app"))) {
+    return appDatabaseDir;
+  }
+
+  if (fs.existsSync("/data")) {
+    return "/data";
+  }
+
+  if (cwd.endsWith("/server") || cwd.endsWith("/mcp-server")) {
+    return serverParentDatabaseDir;
+  }
+
+  return repoDatabaseDir;
+}
+
+const SHOP_DATABASE_DIRECTORY = resolveShopDatabaseDirectory();
 
 function ensureShopDatabaseDirectory() {
   if (!fs.existsSync(SHOP_DATABASE_DIRECTORY)) {
