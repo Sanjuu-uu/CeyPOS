@@ -125,7 +125,9 @@ export function buildMemberScope(member, terminal, shopPlan) {
     modules: {
       pos: true,
       inventory: true,
-      sessions: plan.tier !== "free",
+      // Mobile sessions are core to employee workflows; allow import and
+      // checkout sessions for employee dashboards regardless of plan tier.
+      sessions: true,
       analytics: proTeamSeat,
       aiChat: proTeamSeat && plan.aiEnabled ? "self" : false,
       settings: false,
