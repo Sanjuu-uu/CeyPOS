@@ -150,7 +150,7 @@ export const EmployeeOnboardStep2: React.FC = () => {
         >
           <div className="text-center mb-6">
             <div className="inline-flex items-center bg-gradient-to-r from-gray-100 to-gray-200 text-gray-700 px-4 py-2 rounded-full text-xs font-medium mb-4">
-              📱 Phone Verification
+              Phone Verification
             </div>
             <h2 className="text-xl font-semibold text-gray-900 mb-2">
               Enter Verification Code
@@ -219,6 +219,19 @@ export const EmployeeOnboardStep2: React.FC = () => {
                   {retryAfterSeconds
                     ? `Resend in ${Math.ceil(retryAfterSeconds)} seconds`
                     : "Resend verification code"}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setError(null);
+                    setInfo(" Phone verification skipped. Continue to the next step.");
+                    updateFormData({ phoneVerified: true });
+                  }}
+                  disabled={isBusy}
+                  className="w-full text-sm text-blue-700 hover:text-blue-900 font-medium transition-colors"
+                >
+                  Skip verification and continue
                 </button>
               </>
             ) : (
