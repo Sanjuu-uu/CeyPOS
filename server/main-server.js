@@ -10,7 +10,8 @@ import { clerkMiddleware } from '@clerk/express';
 import { processUserQuestion } from '../mcp-server/mcp.js';
 
 const app = express();
-const PORT = process.env.PORT || 8080;
+const PORT = Number(process.env.PORT || 8080);
+const HOST = process.env.HOST || "0.0.0.0";
 
 app.set("trust proxy", 1);
 
@@ -276,8 +277,8 @@ init(server, {
   ],
 });
 
-server.listen(PORT, () => {
-  console.log(`CeyPos Main server running on port ${PORT}`);
+server.listen(PORT, HOST, () => {
+  console.log(`CeyPos Main server running on ${HOST}:${PORT}`);
 });
 
 process.on("uncaughtException", (err) => {

@@ -23,7 +23,7 @@ NIXPACKS_NODE_VERSION = "20.18.1"
 NPM_CONFIG_PRODUCTION = "false"
 
 [deploy]
-startCommand = "npm run start:railway"
+startCommand = "npm run server:start"
 healthcheckPath = "/api/health"
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 10
