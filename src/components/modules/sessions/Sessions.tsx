@@ -633,15 +633,6 @@ export const Sessions: React.FC = () => {
     features: string[];
   }> = [
     {
-      id: "register",
-      title: "Connect Register Terminal",
-      description:
-        "Pair an additional register terminal for multi-station checkout with owner approval",
-      icon: <MonitorSpeaker size={32} />,
-      color: "#c5f542",
-      features: ["Multi-terminal support", "Secure pairing code", "Real-time sync"],
-    },
-    {
       id: "barcode",
       title: "Start Import Session",
       description:
@@ -660,6 +651,18 @@ export const Sessions: React.FC = () => {
       features: ["Mobile checkout", "Customer management", "Receipt generation"],
     },
   ];
+
+  if (canManageTerminals) {
+    sessions.unshift({
+      id: "register",
+      title: "Connect Register Terminal",
+      description:
+        "Pair an additional register terminal for multi-station checkout with owner approval",
+      icon: <MonitorSpeaker size={32} />,
+      color: "#c5f542",
+      features: ["Multi-terminal support", "Secure pairing code", "Real-time sync"],
+    });
+  }
 
   return (
     <div className="space-y-6">

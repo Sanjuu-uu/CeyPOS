@@ -10,7 +10,12 @@ import { clerkMiddleware } from '@clerk/express';
 import { processUserQuestion } from '../mcp-server/mcp.js';
 
 const app = express();
-const PORT = process.env.PORT || 8080;
+const PORT = Number(process.env.PORT || 8080);
+const HOST = process.env.HOST || "0.0.0.0";
+const clerkSecretKey = String(process.env.CLERK_SECRET_KEY || "").trim();
+const clerkPublishableKey = String(
+  process.env.CLERK_PUBLISHABLE_KEY || process.env.VITE_CLERK_PUBLISHABLE_KEY || "",
+).trim();
 
 app.set("trust proxy", 1);
 
@@ -41,15 +46,16 @@ app.use(
 );
 app.use(express.json({ limit: "10mb" }));
 
-if (process.env.CLERK_SECRET_KEY) {
+if (clerkSecretKey && clerkPublishableKey) {
   app.use(
     clerkMiddleware({
-      secretKey: process.env.CLERK_SECRET_KEY,
+      secretKey: clerkSecretKey,
+      publishableKey: clerkPublishableKey,
     }),
   );
 } else if (process.env.NODE_ENV === "production") {
   console.warn(
-    "CLERK_SECRET_KEY is not set — authenticated API routes will reject requests in production.",
+    "Clerk auth disabled: missing CLERK_SECRET_KEY or CLERK_PUBLISHABLE_KEY; authenticated routes will return 503/401 as appropriate.",
   );
 }
 
@@ -276,8 +282,8 @@ init(server, {
   ],
 });
 
-server.listen(PORT, () => {
-  console.log(`CeyPos Main server running on port ${PORT}`);
+server.listen(PORT, HOST, () => {
+  console.log(`CeyPos Main server running on ${HOST}:${PORT}`);
 });
 
 process.on("uncaughtException", (err) => {

@@ -51,7 +51,10 @@ async function resolveSessionEmail(auth) {
 export async function requireClerkSession(req, res, next) {
   if (!isClerkAuthEnabled()) {
     if (process.env.NODE_ENV === "production") {
-      return res.status(503).json({ error: "Authentication service unavailable" });
+      return res.status(503).json({
+        error: "Authentication service unavailable",
+        detail: "CLERK_SECRET_KEY is not configured on the server",
+      });
     }
     const fallbackEmail = normalizeEmail(
       req.body?.userEmail || req.query?.userEmail || "",
