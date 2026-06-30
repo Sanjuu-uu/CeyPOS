@@ -95,17 +95,26 @@ export const ShopWizard: React.FC = () => {
 
   // Handles the final confirmation to delete the user account
   const handleCancelConfirm = async () => {
-    if (!user) return;
-
     setIsDeleting(true);
+    let deleteFailed = false;
+
+    if (user) {
+      try {
+        await user.delete();
+      } catch (error) {
+        console.error("Shop cancel: user.delete failed", error);
+        deleteFailed = true;
+      }
+    }
+
     try {
-      // Delete the user from Clerk
-      await user.delete();
-      // Sign out and redirect to the home page (or your sign-up page)
-      await signOut({ redirectUrl: "/" });
+      await signOut({ redirectUrl: `${window.location.origin}/` });
     } catch (error) {
-      console.error("Error deleting user:", error);
-      // Handle error, e.g., show a notification to the user
+      console.error("Shop cancel: signOut failed", error);
+      window.location.href = "/";
+    }
+
+    if (deleteFailed) {
       setIsDeleting(false);
     }
   };

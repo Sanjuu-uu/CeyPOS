@@ -3,7 +3,7 @@ import { motion } from "framer-motion";
 import { Mail, AlertCircle, CheckCircle } from "lucide-react";
 import { useUser } from "@clerk/clerk-react";
 import { useEmployeeOnboard } from "../../../context/EmployeeOnboardContext";
-import { postJSON } from "../../../lib/api";
+
 import "../ShopWizard/styles/ShopWizard.css";
 
 const cardVariants = {
@@ -30,6 +30,11 @@ function parseErrorResponse(err: unknown): VerificationError {
   return { error: "Verification failed" };
 }
 
+const getApiBase = () =>
+  (import.meta.env.VITE_API_URL as string | undefined) ||
+  (import.meta.env.VITE_API_BASE as string | undefined) ||
+  "";
+
 export const EmployeeOnboardStep2: React.FC = () => {
   const { user } = useUser();
   const { formData, updateFormData, setError, error, isBusy, setIsBusy } =
@@ -48,6 +53,25 @@ export const EmployeeOnboardStep2: React.FC = () => {
     }
   }, [sent, formData.phone, userEmail]);
 
+  const apiBase = getApiBase().replace(/\/+$|$/, "");
+
+  const postToApi = async <T = unknown>(path: string, body: unknown) => {
+    const response = await fetch(`${apiBase}${path}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify(body),
+    });
+
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || data?.ok === false) {
+      const error = new Error(data?.message || data?.error || `HTTP ${response.status}`);
+      (error as any).payload = data;
+      throw error;
+    }
+    return data as T;
+  };
+
   const sendCode = async () => {
     if (isBusy) return;
     if (!formData.phone) {
@@ -63,8 +87,9 @@ export const EmployeeOnboardStep2: React.FC = () => {
     setError(null);
     setInfo(null);
     setRetryAfterSeconds(null);
+
     try {
-      const result = await postJSON<{ ok: boolean; devCode?: string }>(
+      const result = await postToApi<{ ok: boolean; devCode?: string }>(
         "/api/team/verify/send-code",
         { userEmail, phone: formData.phone },
       );
@@ -75,10 +100,12 @@ export const EmployeeOnboardStep2: React.FC = () => {
         setInfo("✓ Verification code sent to your phone.");
       }
     } catch (err) {
+      const payload = (err as any)?.payload;
       const errorData = parseErrorResponse(err);
-      if (errorData.retryAfter) {
-        setRetryAfterSeconds(errorData.retryAfter);
-        setError(`${errorData.error}\nPlease wait ${Math.ceil(errorData.retryAfter / 60)} minute(s).`);
+      if (payload?.retryAfter || errorData.retryAfter) {
+        const retry = payload?.retryAfter || errorData.retryAfter;
+        setRetryAfterSeconds(retry);
+        setError(`${errorData.error || "Rate limited"}\nPlease wait ${Math.ceil(retry / 60)} minute(s).`);
       } else {
         setError(errorData.error || "Failed to send code");
       }
@@ -96,7 +123,7 @@ export const EmployeeOnboardStep2: React.FC = () => {
     setError(null);
     setAttemptsRemaining(null);
     try {
-      await postJSON("/api/team/verify/check-code", {
+      await postToApi("/api/team/verify/check-code", {
         userEmail,
         phone: formData.phone,
         code: code.trim(),
@@ -105,19 +132,20 @@ export const EmployeeOnboardStep2: React.FC = () => {
       setInfo("✓ Phone verified successfully!");
     } catch (err) {
       updateFormData({ phoneVerified: false });
+      const payload = (err as any)?.payload;
       const errorData = parseErrorResponse(err);
-      
+
       let errorMsg = errorData.error || "Invalid verification code";
-      
-      if (errorData.attemptsRemaining !== undefined) {
-        setAttemptsRemaining(errorData.attemptsRemaining);
-        if (errorData.attemptsRemaining === 0) {
+      if (payload?.attemptsRemaining || errorData.attemptsRemaining !== undefined) {
+        const remaining = payload?.attemptsRemaining ?? errorData.attemptsRemaining;
+        setAttemptsRemaining(remaining);
+        if (remaining === 0) {
           errorMsg = "Too many failed attempts. Please request a new code.";
         } else {
-          errorMsg += ` (${errorData.attemptsRemaining} ${errorData.attemptsRemaining === 1 ? "attempt" : "attempts"} remaining)`;
+          errorMsg += ` (${remaining} ${remaining === 1 ? "attempt" : "attempts"} remaining)`;
         }
       }
-      
+
       setError(errorMsg);
     } finally {
       setIsBusy(false);

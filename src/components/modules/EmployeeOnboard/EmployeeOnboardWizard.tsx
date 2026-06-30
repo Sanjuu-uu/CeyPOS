@@ -78,12 +78,26 @@ export const EmployeeOnboardWizard: React.FC = () => {
   };
 
   const handleCancelConfirm = async () => {
-    if (!user) return;
     setIsDeleting(true);
+    let deleteFailed = false;
+
+    if (user) {
+      try {
+        await user.delete();
+      } catch (error) {
+        console.error("Employee cancel: user.delete failed", error);
+        deleteFailed = true;
+      }
+    }
+
     try {
-      await user.delete();
-      await signOut({ redirectUrl: "/" });
-    } catch {
+      await signOut({ redirectUrl: `${window.location.origin}/` });
+    } catch (error) {
+      console.error("Employee cancel: signOut failed", error);
+      window.location.href = "/";
+    }
+
+    if (deleteFailed) {
       setIsDeleting(false);
     }
   };
