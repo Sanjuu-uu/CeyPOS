@@ -16,7 +16,6 @@ import {
 import { ShopWizard } from "./components/modules/ShopWizard";
 import Home from "./pages/home/home";
 import Login from "./pages/login/Login";
-import Register from "./pages/register/Register";
 import AboutUs from "./pages/aboutUs/AboutUs";
 import MobileScan from "./pages/mobilesessions/MobileScan";
 import TeamOnboard from "./pages/team/TeamOnboard";
@@ -31,6 +30,10 @@ import {
 import { authFetch, setAuthTokenGetter } from "./lib/api";
 import OAuthCallback from "./pages/auth/OAuthCallback";
 import PostOAuthRedirect from "./pages/auth/PostOAuthRedirect";
+import {
+  RegisterPageGate,
+  TeamOnboardGate,
+} from "./pages/auth/AuthRouteGates";
 
 // Get Clerk publishable key from environment
 const clerkPubKey =
@@ -52,7 +55,7 @@ function PreAuthApp() {
       <Route path="/" element={<Home />} />
       <Route path="/home" element={<Home />} />
       <Route path="/login" element={<Login />} />
-      <Route path="/register" element={<Register />} />
+      <Route path="/register" element={<RegisterPageGate />} />
       <Route path="/auth/sso-callback" element={<OAuthCallback />} />
       <Route path="/auth/post-oauth" element={<PostOAuthRedirect />} />
       <Route path="/about" element={<AboutUs />} />
@@ -734,8 +737,8 @@ function App() {
       publishableKey={clerkPubKey}
       signInUrl="/login"
       signUpUrl="/register"
-      signInFallbackRedirectUrl="/"
-      signUpFallbackRedirectUrl="/shop-wizard"
+      signInFallbackRedirectUrl="/auth/post-oauth"
+      signUpFallbackRedirectUrl="/auth/post-oauth"
       afterSignOutUrl="/"
     >
       <AuthApiBridge />
@@ -767,6 +770,8 @@ function AppRouter() {
       <Route path="/r/:token" element={<PublicReceiptView />} />
       <Route path="/auth/sso-callback" element={<OAuthCallback />} />
       <Route path="/auth/post-oauth" element={<PostOAuthRedirect />} />
+      <Route path="/register" element={<RegisterPageGate />} />
+      <Route path="/team-onboard" element={<TeamOnboardGate />} />
       <Route
         path="*"
         element={isSignedIn ? <PostAuthApp /> : <PreAuthApp />}

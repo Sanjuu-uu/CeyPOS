@@ -59,14 +59,6 @@ const Register = () => {
     clearAccountIntent();
   }, [accountIntent, user]);
 
-  useEffect(() => {
-    if (!isSignedIn || !user) return;
-    void (async () => {
-      await applyAccountMetadata();
-      navigate(postRegisterPath, { replace: true });
-    })();
-  }, [isSignedIn, user, applyAccountMetadata, navigate, postRegisterPath]);
-
   const startGoogleOAuth = async () => {
     if (!isLoaded || !signUp || isAuthLocked) return;
 
@@ -80,7 +72,7 @@ const Register = () => {
       buildOAuthCallbackUrl("register", accountIntent),
     );
     const completeUrl = buildOAuthRedirectCompleteUrl(
-      buildPostOAuthUrl(accountIntent),
+      buildPostOAuthUrl(accountIntent, postRegisterPath),
     );
 
     const redirectConfig = {
@@ -127,7 +119,7 @@ const Register = () => {
       buildOAuthCallbackUrl("register", accountIntent),
     );
     const completeUrl = buildOAuthRedirectCompleteUrl(
-      buildPostOAuthUrl(accountIntent),
+      buildPostOAuthUrl(accountIntent, postRegisterPath),
     );
 
     const redirectConfig = {

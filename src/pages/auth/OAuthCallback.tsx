@@ -5,13 +5,14 @@ import {
   parseAccountParam,
   persistAccountIntent,
   readAccountIntent,
-  buildRegisterHref,
   buildPostOAuthUrl,
+  buildOAuthCallbackUrl,
   buildOAuthRedirectCompleteUrl,
 } from "../../lib/authFlow";
 
 /**
- * Clerk OAuth return URL. Keeps users in our app — never on accounts.dev/sign-up.
+ * Clerk OAuth return URL.
+ * signInUrl/signUpUrl MUST point at this callback route — not /register.
  * @see https://clerk.com/docs/react/reference/components/control/authenticate-with-redirect-callback
  */
 export default function OAuthCallback() {
@@ -22,17 +23,18 @@ export default function OAuthCallback() {
     return fromUrl || readAccountIntent() || ("owner" as const);
   }, [params]);
 
+  const flow = params.get("flow") === "login" ? "login" : "register";
+  const redirectParam = params.get("redirect") || undefined;
+
   useEffect(() => {
     persistAccountIntent(intent);
   }, [intent]);
 
-  const redirectParam = params.get("redirect");
-  const registerPath = buildRegisterHref(intent);
-  const postOAuthPath = buildPostOAuthUrl(intent, redirectParam || undefined);
-
-  const loginUrl = buildOAuthRedirectCompleteUrl("/login");
-  const signUpUrl = buildOAuthRedirectCompleteUrl(registerPath);
-  const postOAuthUrl = buildOAuthRedirectCompleteUrl(postOAuthPath);
+  const callbackPath = buildOAuthCallbackUrl(flow, intent, redirectParam);
+  const callbackUrl = buildOAuthRedirectCompleteUrl(callbackPath);
+  const postOAuthUrl = buildOAuthRedirectCompleteUrl(
+    buildPostOAuthUrl(intent, redirectParam),
+  );
 
   return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -40,8 +42,8 @@ export default function OAuthCallback() {
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gray-900 mx-auto" />
         <p className="mt-4 text-gray-600">Completing sign in…</p>
         <AuthenticateWithRedirectCallback
-          signInUrl={loginUrl}
-          signUpUrl={signUpUrl}
+          signInUrl={callbackUrl}
+          signUpUrl={callbackUrl}
           signInForceRedirectUrl={postOAuthUrl}
           signUpForceRedirectUrl={postOAuthUrl}
           signInFallbackRedirectUrl={postOAuthUrl}

@@ -3,6 +3,7 @@
 export const ACCOUNT_INTENT_KEY = "ceypos::accountIntent";
 export const TEAM_SETUP_CACHE_KEY = "ceypos::teamSetup";
 export const PENDING_OAUTH_KEY = "ceypos::pendingOauth";
+export const OAUTH_JUST_COMPLETED_KEY = "ceypos::oauthJustCompleted";
 
 export type AccountIntent = "owner" | "employee";
 
@@ -33,6 +34,7 @@ export function clearAccountIntent(): void {
 export function clearAuthStorage(): void {
   sessionStorage.removeItem(ACCOUNT_INTENT_KEY);
   sessionStorage.removeItem(PENDING_OAUTH_KEY);
+  sessionStorage.removeItem(OAUTH_JUST_COMPLETED_KEY);
   localStorage.removeItem(TEAM_SETUP_CACHE_KEY);
   localStorage.removeItem("ceypos::rememberedEmail");
   try {
