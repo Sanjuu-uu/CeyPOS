@@ -14,6 +14,7 @@ import {
   readAccountIntent,
   buildOAuthRedirectCompleteUrl,
   buildOAuthCallbackUrl,
+  buildPostOAuthUrl,
 } from "../../lib/authFlow";
 
 type ClerkErrorEntry = {
@@ -503,7 +504,9 @@ const Login = () => {
         redirectUrl: buildOAuthRedirectCompleteUrl(
           buildOAuthCallbackUrl("login", accountIntent, redirectTo),
         ),
-        redirectUrlComplete: buildOAuthRedirectCompleteUrl(redirectTo),
+        redirectUrlComplete: buildOAuthRedirectCompleteUrl(
+          buildPostOAuthUrl(accountIntent, redirectTo),
+        ),
       });
     } catch (err: any) {
       console.error("Google login error:", err);
@@ -530,7 +533,9 @@ const Login = () => {
         redirectUrl: buildOAuthRedirectCompleteUrl(
           buildOAuthCallbackUrl("login", accountIntent, redirectTo),
         ),
-        redirectUrlComplete: buildOAuthRedirectCompleteUrl(redirectTo),
+        redirectUrlComplete: buildOAuthRedirectCompleteUrl(
+          buildPostOAuthUrl(accountIntent, redirectTo),
+        ),
       });
     } catch (err: any) {
       console.error("Apple login error:", err);

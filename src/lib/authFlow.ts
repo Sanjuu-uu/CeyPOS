@@ -149,6 +149,18 @@ export function buildOAuthRedirectUrl(
   return query ? `${basePath}?${query}` : basePath;
 }
 
+export function buildPostOAuthUrl(
+  accountIntent: AccountIntent,
+  redirectTo?: string,
+): string {
+  const params = new URLSearchParams();
+  params.set("account", accountIntent);
+  if (redirectTo) {
+    params.set("redirect", redirectTo);
+  }
+  return `/auth/post-oauth?${params.toString()}`;
+}
+
 export function buildOAuthRedirectCompleteUrl(path: string): string {
   return `${window.location.origin}${path}`;
 }

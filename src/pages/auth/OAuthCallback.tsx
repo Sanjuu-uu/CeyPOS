@@ -5,10 +5,9 @@ import {
   parseAccountParam,
   persistAccountIntent,
   readAccountIntent,
-  getPostRegisterPath,
   buildRegisterHref,
+  buildPostOAuthUrl,
   buildOAuthRedirectCompleteUrl,
-  sanitizeRedirectTarget,
 } from "../../lib/authFlow";
 
 /**
@@ -28,15 +27,12 @@ export default function OAuthCallback() {
   }, [intent]);
 
   const redirectParam = params.get("redirect");
-  const wizardPath = sanitizeRedirectTarget(
-    redirectParam,
-    getPostRegisterPath(intent),
-  );
   const registerPath = buildRegisterHref(intent);
+  const postOAuthPath = buildPostOAuthUrl(intent, redirectParam || undefined);
 
   const loginUrl = buildOAuthRedirectCompleteUrl("/login");
   const signUpUrl = buildOAuthRedirectCompleteUrl(registerPath);
-  const wizardUrl = buildOAuthRedirectCompleteUrl(wizardPath);
+  const postOAuthUrl = buildOAuthRedirectCompleteUrl(postOAuthPath);
 
   return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -46,11 +42,11 @@ export default function OAuthCallback() {
         <AuthenticateWithRedirectCallback
           signInUrl={loginUrl}
           signUpUrl={signUpUrl}
-          signInForceRedirectUrl={wizardUrl}
-          signUpForceRedirectUrl={wizardUrl}
-          signInFallbackRedirectUrl={wizardUrl}
-          signUpFallbackRedirectUrl={wizardUrl}
-          continueSignUpUrl={wizardUrl}
+          signInForceRedirectUrl={postOAuthUrl}
+          signUpForceRedirectUrl={postOAuthUrl}
+          signInFallbackRedirectUrl={postOAuthUrl}
+          signUpFallbackRedirectUrl={postOAuthUrl}
+          continueSignUpUrl={postOAuthUrl}
         />
       </div>
     </div>

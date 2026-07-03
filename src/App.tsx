@@ -30,6 +30,7 @@ import {
 } from "./lib/authFlow";
 import { authFetch, setAuthTokenGetter } from "./lib/api";
 import OAuthCallback from "./pages/auth/OAuthCallback";
+import PostOAuthRedirect from "./pages/auth/PostOAuthRedirect";
 
 // Get Clerk publishable key from environment
 const clerkPubKey =
@@ -52,11 +53,8 @@ function PreAuthApp() {
       <Route path="/home" element={<Home />} />
       <Route path="/login" element={<Login />} />
       <Route path="/register" element={<Register />} />
-      <Route
-        path="/team-onboard"
-        element={<Navigate to="/register?account=employee" replace />}
-      />
       <Route path="/auth/sso-callback" element={<OAuthCallback />} />
+      <Route path="/auth/post-oauth" element={<PostOAuthRedirect />} />
       <Route path="/about" element={<AboutUs />} />
       <Route
         path="/features"
@@ -768,6 +766,7 @@ function AppRouter() {
     <Routes>
       <Route path="/r/:token" element={<PublicReceiptView />} />
       <Route path="/auth/sso-callback" element={<OAuthCallback />} />
+      <Route path="/auth/post-oauth" element={<PostOAuthRedirect />} />
       <Route
         path="*"
         element={isSignedIn ? <PostAuthApp /> : <PreAuthApp />}

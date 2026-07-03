@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo, useCallback } from "react";
 import { Eye, EyeOff, Mail, Lock, User, ArrowRight } from "lucide-react";
-import { useSignUp, useSignIn, useUser } from "@clerk/clerk-react";
+import { useSignUp, useSignIn, useUser, useAuth } from "@clerk/clerk-react";
 import { useNavigate, useLocation } from "react-router-dom";
 import Navigation from "../components/Navigation";
 import Footer from "../components/Footer";
@@ -13,6 +13,7 @@ import {
   getAccountTypeLabel,
   buildOAuthRedirectCompleteUrl,
   buildOAuthCallbackUrl,
+  buildPostOAuthUrl,
   intentToMetadataAccountType,
   PENDING_OAUTH_KEY,
   clearAccountIntent,
@@ -23,6 +24,7 @@ type RegisterAction = "register" | "verify" | "resend" | null;
 const Register = () => {
   const { isLoaded, signUp, setActive } = useSignUp();
   const { signIn, isLoaded: isSignInLoaded } = useSignIn();
+  const { isSignedIn } = useAuth();
   const { user } = useUser();
   const navigate = useNavigate();
   const location = useLocation();
@@ -57,6 +59,14 @@ const Register = () => {
     clearAccountIntent();
   }, [accountIntent, user]);
 
+  useEffect(() => {
+    if (!isSignedIn || !user) return;
+    void (async () => {
+      await applyAccountMetadata();
+      navigate(postRegisterPath, { replace: true });
+    })();
+  }, [isSignedIn, user, applyAccountMetadata, navigate, postRegisterPath]);
+
   const startGoogleOAuth = async () => {
     if (!isLoaded || !signUp || isAuthLocked) return;
 
@@ -69,7 +79,9 @@ const Register = () => {
     const callbackUrl = buildOAuthRedirectCompleteUrl(
       buildOAuthCallbackUrl("register", accountIntent),
     );
-    const completeUrl = buildOAuthRedirectCompleteUrl(postRegisterPath);
+    const completeUrl = buildOAuthRedirectCompleteUrl(
+      buildPostOAuthUrl(accountIntent),
+    );
 
     const redirectConfig = {
       strategy: "oauth_google" as const,
@@ -114,7 +126,9 @@ const Register = () => {
     const callbackUrl = buildOAuthRedirectCompleteUrl(
       buildOAuthCallbackUrl("register", accountIntent),
     );
-    const completeUrl = buildOAuthRedirectCompleteUrl(postRegisterPath);
+    const completeUrl = buildOAuthRedirectCompleteUrl(
+      buildPostOAuthUrl(accountIntent),
+    );
 
     const redirectConfig = {
       strategy: "oauth_apple" as const,
