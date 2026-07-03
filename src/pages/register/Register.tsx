@@ -319,6 +319,14 @@ const Register = () => {
     const params = new URLSearchParams(window.location.search);
     const errorCode = params.get("__clerk_error") || params.get("clerk_error");
     const status = params.get("__clerk_status") || params.get("clerk_status");
+    const oauthStatus = params.get("oauth");
+
+    if (oauthStatus === "session_timeout") {
+      setError(
+        "Google sign-in timed out. Please try again or use email registration.",
+      );
+      setOauthProvider(null);
+    }
 
     if (errorCode) {
       if (
@@ -338,10 +346,21 @@ const Register = () => {
       setHumanChallengePending(true);
     }
 
-    if ((errorCode || status) && window.location.search) {
-      window.history.replaceState(null, "", window.location.pathname);
+    if ((errorCode || status || oauthStatus) && window.location.search) {
+      const clean = new URLSearchParams(location.search);
+      clean.delete("oauth");
+      clean.delete("__clerk_error");
+      clean.delete("clerk_error");
+      clean.delete("__clerk_status");
+      clean.delete("clerk_status");
+      const qs = clean.toString();
+      window.history.replaceState(
+        null,
+        "",
+        qs ? `${window.location.pathname}?${qs}` : window.location.pathname,
+      );
     }
-  }, []);
+  }, [location.search]);
 
   const handleVerifyCode = async (e: React.FormEvent) => {
     e.preventDefault();

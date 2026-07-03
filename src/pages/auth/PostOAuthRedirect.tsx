@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import { useLocation } from "react-router-dom";
-import { useAuth, useUser, useClerk } from "@clerk/clerk-react";
+import { useClerk } from "@clerk/clerk-react";
 import {
   parseAccountParam,
   persistAccountIntent,
@@ -11,33 +11,37 @@ import {
   sanitizeRedirectTarget,
   clearOAuthPending,
   OAUTH_JUST_COMPLETED_KEY,
+  buildRegisterHref,
   type AccountIntent,
 } from "../../lib/authFlow";
 
-const MAX_WAIT_MS = 20000;
-const POLL_MS = 250;
+const MAX_WAIT_MS = 12000;
+const POLL_MS = 200;
 
 /**
- * After OAuth, wait for Clerk session then hard-navigate to the wizard.
+ * Runs once after /auth/sso-callback activates the Clerk session.
+ * Employee destination: /team-onboard
+ * Owner destination:     /shop-wizard
  */
 export default function PostOAuthRedirect() {
-  const { isLoaded, isSignedIn } = useAuth();
-  const { user } = useUser();
   const clerk = useClerk();
   const location = useLocation();
   const finishedRef = useRef(false);
+  const intentRef = useRef<AccountIntent>("owner");
+  const destinationRef = useRef("/shop-wizard");
 
   const params = new URLSearchParams(location.search);
   const intent: AccountIntent =
     parseAccountParam(location.search) ||
     readAccountIntent() ||
     "owner";
-
-  const redirectParam = params.get("redirect");
   const destination = sanitizeRedirectTarget(
-    redirectParam,
+    params.get("redirect"),
     getPostRegisterPath(intent),
   );
+
+  intentRef.current = intent;
+  destinationRef.current = destination;
 
   useEffect(() => {
     persistAccountIntent(intent);
@@ -46,13 +50,17 @@ export default function PostOAuthRedirect() {
   useEffect(() => {
     if (finishedRef.current) return;
 
-    const complete = async (activeUser: NonNullable<typeof user>) => {
-      if (finishedRef.current) return;
+    let cancelled = false;
+    let timer: number | undefined;
+    const started = Date.now();
+
+    const finish = async (activeUser: NonNullable<typeof clerk.user>) => {
+      if (finishedRef.current || cancelled) return;
       finishedRef.current = true;
       clearOAuthPending();
 
       try {
-        const metaType = intentToMetadataAccountType(intent);
+        const metaType = intentToMetadataAccountType(intentRef.current);
         const existingType = activeUser.unsafeMetadata?.accountType;
         if (existingType !== "team" && existingType !== "owner") {
           await activeUser.update({
@@ -68,54 +76,49 @@ export default function PostOAuthRedirect() {
 
       clearAccountIntent();
       sessionStorage.setItem(OAUTH_JUST_COMPLETED_KEY, String(Date.now()));
-      window.location.replace(destination);
+      window.location.replace(destinationRef.current);
     };
 
-    const hasSession = () =>
-      Boolean(isSignedIn && user) || Boolean(clerk.session?.user);
+    const poll = () => {
+      if (finishedRef.current || cancelled) return;
 
-    if (isLoaded && hasSession()) {
-      const activeUser = user ?? clerk.user;
-      if (activeUser) {
-        void complete(activeUser);
-      }
-      return;
-    }
+      const activeUser = clerk.user;
+      const hasSession = Boolean(clerk.session && activeUser);
 
-    if (!isLoaded) return;
-
-    const started = Date.now();
-    const timer = window.setInterval(() => {
-      if (finishedRef.current) {
-        window.clearInterval(timer);
-        return;
-      }
-
-      const activeUser = clerk.user ?? user;
-      if (activeUser && (isSignedIn || clerk.session)) {
-        window.clearInterval(timer);
-        void complete(activeUser);
+      if (hasSession && activeUser) {
+        void finish(activeUser);
         return;
       }
 
       if (Date.now() - started >= MAX_WAIT_MS) {
-        window.clearInterval(timer);
         finishedRef.current = true;
         clearOAuthPending();
-        sessionStorage.setItem(OAUTH_JUST_COMPLETED_KEY, String(Date.now()));
-        window.location.replace(destination);
+        window.location.replace(
+          buildRegisterHref(intentRef.current) + "&oauth=session_timeout",
+        );
+        return;
       }
-    }, POLL_MS);
 
-    return () => window.clearInterval(timer);
-  }, [
-    clerk,
-    destination,
-    intent,
-    isLoaded,
-    isSignedIn,
-    user,
-  ]);
+      timer = window.setTimeout(poll, POLL_MS);
+    };
+
+    const boot = async () => {
+      if (!clerk.loaded) {
+        timer = window.setTimeout(() => void boot(), POLL_MS);
+        return;
+      }
+      poll();
+    };
+
+    void boot();
+
+    return () => {
+      cancelled = true;
+      if (timer !== undefined) {
+        window.clearTimeout(timer);
+      }
+    };
+  }, [clerk]);
 
   return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center">

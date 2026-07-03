@@ -76,8 +76,14 @@ export function clearAuthStorage(): void {
   }
 }
 
+/** Employee onboarding wizard — final destination after Google/email sign-up. */
+export const TEAM_ONBOARD_PATH = "/team-onboard";
+
+/** Owner shop setup wizard — final destination after Google/email sign-up. */
+export const SHOP_WIZARD_PATH = "/shop-wizard";
+
 export function getPostRegisterPath(intent: AccountIntent): string {
-  return intent === "employee" ? "/team-onboard" : "/shop-wizard";
+  return intent === "employee" ? TEAM_ONBOARD_PATH : SHOP_WIZARD_PATH;
 }
 
 export function getAccountTypeLabel(intent: AccountIntent): string {

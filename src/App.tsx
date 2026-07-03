@@ -32,6 +32,7 @@ import OAuthCallback from "./pages/auth/OAuthCallback";
 import PostOAuthRedirect from "./pages/auth/PostOAuthRedirect";
 import {
   RegisterPageGate,
+  PreAuthWizardRedirect,
 } from "./pages/auth/AuthRouteGates";
 
 // Get Clerk publishable key from environment
@@ -67,8 +68,8 @@ function PreAuthApp() {
       <Route path="/contact" element={<div>Contact Page - Coming Soon</div>} />
       {/* Redirect any authenticated routes back to home */}
       <Route path="/dashboard/*" element={<Navigate to="/" replace />} />
-      <Route path="/shop-wizard" element={<Navigate to="/register?account=owner" replace />} />
-      <Route path="/team-onboard" element={<Navigate to="/register?account=employee" replace />} />
+      <Route path="/shop-wizard" element={<PreAuthWizardRedirect intent="owner" />} />
+      <Route path="/team-onboard" element={<PreAuthWizardRedirect intent="employee" />} />
       {/* Catch-all route for 404 */}
       <Route path="*" element={<div>Page Not Found - 404</div>} />
     </Routes>
