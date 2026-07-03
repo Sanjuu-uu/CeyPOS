@@ -732,7 +732,14 @@ function App() {
   }, []);
 
   return (
-    <ClerkProvider publishableKey={clerkPubKey}>
+    <ClerkProvider
+      publishableKey={clerkPubKey}
+      signInUrl="/login"
+      signUpUrl="/register"
+      signInFallbackRedirectUrl="/"
+      signUpFallbackRedirectUrl="/shop-wizard"
+      afterSignOutUrl="/"
+    >
       <AuthApiBridge />
       <Router>
         <AppRouter />
