@@ -48,6 +48,9 @@ router.post(
   (req, res) => {
     try {
       const { code, deviceMeta } = req.body || {};
+      if (!code || String(code).trim().length === 0) {
+        return res.status(400).json({ error: "Pairing code is required" });
+      }
       const result = requestTerminalPairing(req.db, req.shopId, {
         code,
         memberId: req.shopAuth.member.memberId,

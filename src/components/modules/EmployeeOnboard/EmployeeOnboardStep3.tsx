@@ -29,7 +29,10 @@ export const EmployeeOnboardStep3: React.FC = () => {
   >("idle");
   const [registerError, setRegisterError] = useState<string | null>(null);
 
-  const userEmail = user?.primaryEmailAddress?.emailAddress || "";
+  const userEmail =
+    user?.primaryEmailAddress?.emailAddress ||
+    user?.emailAddresses?.[0]?.emailAddress ||
+    "";
 
   const finalizeOnboarding = useCallback(
     async (resolvedShopId: string, dbFileName: string) => {

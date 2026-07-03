@@ -3,18 +3,31 @@ import { resolveShopContext, normalizeEmail, getMemberByEmail } from "../service
 import { scopeAllows, scopeAllowsAi } from "../services/member-scope.js";
 import { validateTerminalToken } from "../services/terminal-service.js";
 
+function getHeaderValue(req, key) {
+  const value = req.headers[key.toLowerCase()];
+  if (Array.isArray(value)) return value[0];
+  return typeof value === "string" ? value : undefined;
+}
+
 export function requireShopBody(req, res, next) {
   const shopId =
     req.body?.shopId ||
     req.query?.shopId ||
-    req.headers["x-shop-id"] ||
-    resolveShopIdByOwnerEmail(req.body?.ownerEmail || req.query?.ownerEmail || req.headers["x-owner-email"])?.shopId;
+    getHeaderValue(req, "x-shop-id") ||
+    getHeaderValue(req, "x-shopid") ||
+    resolveShopIdByOwnerEmail(
+      req.body?.ownerEmail ||
+        req.query?.ownerEmail ||
+        getHeaderValue(req, "x-owner-email") ||
+        getHeaderValue(req, "x-owneremail"),
+    )?.shopId;
   const userEmail =
     req.userEmail ||
     req.verifiedUserEmail ||
     req.body?.userEmail ||
     req.query?.userEmail ||
-    req.headers["x-user-email"];
+    getHeaderValue(req, "x-user-email") ||
+    getHeaderValue(req, "x-useremail");
 
   if (!shopId || !userEmail) {
     return res.status(400).json({ error: "shopId and userEmail are required" });

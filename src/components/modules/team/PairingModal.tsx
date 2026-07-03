@@ -15,7 +15,10 @@ export const PairingModal: React.FC = () => {
   const [status, setStatus] = useState<"idle" | "pending" | "approved" | "error">("idle");
   const [error, setError] = useState<string | null>(null);
 
-  const userEmail = user?.primaryEmailAddress?.emailAddress || "";
+  const userEmail =
+    user?.primaryEmailAddress?.emailAddress ||
+    user?.emailAddresses?.[0]?.emailAddress ||
+    "";
 
   useEffect(() => {
     if (!requestId || status !== "pending" || !activeShopId) return;
