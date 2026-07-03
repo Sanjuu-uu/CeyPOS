@@ -6,7 +6,7 @@ import { EmployeeOnboardStep1 } from "./EmployeeOnboardStep1";
 import { EmployeeOnboardStep2 } from "./EmployeeOnboardStep2";
 import { EmployeeOnboardStep3 } from "./EmployeeOnboardStep3";
 import { EmployeeOnboardProgressBar } from "./EmployeeOnboardProgressBar";
-import { clearAuthStorage } from "../../../lib/authFlow";
+import { cancelClerkUserAndSignOut } from "../../../lib/authFlow";
 import { postJSON } from "../../../lib/api";
 import backgroundImage from "../ShopWizard/assets/blog-20background-1.png";
 import "../ShopWizard/styles/ShopWizard.css";
@@ -96,28 +96,19 @@ export const EmployeeOnboardWizard: React.FC = () => {
       }
     }
 
-    if (user) {
-      try {
-        await user.delete();
-      } catch (error) {
-        console.error("Employee cancel: user.delete failed", error);
-        // Don't block sign-out — proceed with local cleanup and sign-out even
-        // if Clerk self-deletion is disabled. Inform the user they may need
-        // to remove the account from the Clerk dashboard manually.
+    await cancelClerkUserAndSignOut({
+      user,
+      signOut,
+      redirectUrl: `${window.location.origin}/`,
+      onDeleteError: () => {
         setCancelError(
           "Could not delete your Clerk account automatically. You may need to remove it from Clerk Dashboard → Users. Proceeding to sign out.",
         );
-      }
-    }
-
-    clearAuthStorage();
-
-    try {
-      await signOut({ redirectUrl: `${window.location.origin}/` });
-    } catch (error) {
-      console.error("Employee cancel: signOut failed", error);
-      window.location.href = "/";
-    }
+      },
+      onSignOutError: (error) => {
+        console.error("Employee cancel: signOut failed", error);
+      },
+    });
   };
 
   return (

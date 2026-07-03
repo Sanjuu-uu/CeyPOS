@@ -75,6 +75,41 @@ export function clearAuthStorage(): void {
   }
 }
 
+export async function cancelClerkUserAndSignOut(options: {
+  user?: { delete: () => Promise<unknown> } | null;
+  signOut?: (options?: { redirectUrl?: string }) => Promise<unknown>;
+  redirectUrl?: string;
+  onDeleteError?: (error: unknown) => void | Promise<void>;
+  onSignOutError?: (error: unknown) => void | Promise<void>;
+}): Promise<void> {
+  if (options.user) {
+    try {
+      await options.user.delete();
+    } catch (error) {
+      if (options.onDeleteError) {
+        await options.onDeleteError(error);
+      } else {
+        console.error("Clerk account deletion failed", error);
+      }
+    }
+  }
+
+  clearAuthStorage();
+
+  try {
+    await options.signOut?.({ redirectUrl: options.redirectUrl });
+  } catch (error) {
+    if (options.onSignOutError) {
+      await options.onSignOutError(error);
+    } else {
+      console.error("Clerk sign-out failed", error);
+    }
+    if (typeof window !== "undefined") {
+      window.location.href = options.redirectUrl || "/";
+    }
+  }
+}
+
 /** Employee onboarding wizard — final destination after Google/email sign-up. */
 export const TEAM_ONBOARD_PATH = "/team-onboard";
 

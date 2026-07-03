@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useShopWizard } from "../../../context/ShopWizardContext";
 import { useClerk, useUser } from "@clerk/clerk-react";
-import { clearAuthStorage } from "../../../lib/authFlow";
+import { cancelClerkUserAndSignOut } from "../../../lib/authFlow";
 import { ShopWizardStep1 } from "./ShopWizardStep1";
 import { ShopWizardStep2 } from "./ShopWizardStep2";
 import { ShopWizardStep3 } from "./ShopWizardStep3";
@@ -98,24 +98,19 @@ export const ShopWizard: React.FC = () => {
   const handleCancelConfirm = async () => {
     setIsDeleting(true);
 
-    if (user) {
-      try {
-        await user.delete();
-      } catch (error) {
+    await cancelClerkUserAndSignOut({
+      user,
+      signOut,
+      redirectUrl: `${window.location.origin}/`,
+      onDeleteError: (error) => {
         console.error("Shop cancel: user.delete failed", error);
-        setIsDeleting(false);
-        return;
-      }
-    }
+      },
+      onSignOutError: (error) => {
+        console.error("Shop cancel: signOut failed", error);
+      },
+    });
 
-    clearAuthStorage();
-
-    try {
-      await signOut({ redirectUrl: `${window.location.origin}/` });
-    } catch (error) {
-      console.error("Shop cancel: signOut failed", error);
-      window.location.href = "/";
-    }
+    setIsDeleting(false);
   };
 
   // Handles confirmation to skip the current step
