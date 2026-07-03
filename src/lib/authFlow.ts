@@ -30,6 +30,27 @@ export function clearAccountIntent(): void {
   sessionStorage.removeItem(ACCOUNT_INTENT_KEY);
 }
 
+/** Resolve owner vs employee from URL query, preserving explicit employee in URL. */
+export function resolveAccountIntent(search: string): AccountIntent {
+  const urlIntent = parseAccountParam(search);
+  if (search.includes("account=employee")) {
+    return urlIntent;
+  }
+  return readAccountIntent() || urlIntent;
+}
+
+export function markOAuthPending(source: string): void {
+  sessionStorage.setItem(PENDING_OAUTH_KEY, source);
+}
+
+export function clearOAuthPending(): void {
+  sessionStorage.removeItem(PENDING_OAUTH_KEY);
+}
+
+export function readOAuthPending(): string | null {
+  return sessionStorage.getItem(PENDING_OAUTH_KEY);
+}
+
 /** Clear all client-side auth/onboarding state (call before wizard cancel sign-out). */
 export function clearAuthStorage(): void {
   sessionStorage.removeItem(ACCOUNT_INTENT_KEY);
@@ -103,10 +124,33 @@ export function buildOAuthCallbackUrl(
   const params = new URLSearchParams();
   params.set("account", accountIntent);
   params.set("flow", flow);
-  if (redirectTo) {
-    params.set("redirect", redirectTo);
-  }
+  const destination = redirectTo ?? getPostRegisterPath(accountIntent);
+  params.set("redirect", destination);
   return `${OAUTH_CALLBACK_PATH}?${params.toString()}`;
+}
+
+export type RegisterOAuthUrls = {
+  callbackPath: string;
+  callbackUrl: string;
+  completePath: string;
+  completeUrl: string;
+  destination: string;
+};
+
+/** OAuth redirect URLs for register-page Google/Apple buttons (owner + employee). */
+export function buildRegisterOAuthUrls(
+  accountIntent: AccountIntent,
+): RegisterOAuthUrls {
+  const destination = getPostRegisterPath(accountIntent);
+  const callbackPath = buildOAuthCallbackUrl("register", accountIntent, destination);
+  const completePath = buildPostOAuthUrl(accountIntent, destination);
+  return {
+    callbackPath,
+    callbackUrl: buildOAuthRedirectCompleteUrl(callbackPath),
+    completePath,
+    completeUrl: buildOAuthRedirectCompleteUrl(completePath),
+    destination,
+  };
 }
 
 export function resolvePostAuthDestination(options: {
@@ -157,9 +201,8 @@ export function buildPostOAuthUrl(
 ): string {
   const params = new URLSearchParams();
   params.set("account", accountIntent);
-  if (redirectTo) {
-    params.set("redirect", redirectTo);
-  }
+  const destination = redirectTo ?? getPostRegisterPath(accountIntent);
+  params.set("redirect", destination);
   return `/auth/post-oauth?${params.toString()}`;
 }
 

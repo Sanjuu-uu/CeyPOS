@@ -6,7 +6,8 @@ import Navigation from "../components/Navigation";
 import Footer from "../components/Footer";
 import {
   sanitizeRedirectTarget,
-  PENDING_OAUTH_KEY,
+  markOAuthPending,
+  clearOAuthPending,
   buildRegisterHref,
   parseAccountParam,
   getPostRegisterPath,
@@ -495,7 +496,7 @@ const Login = () => {
     setHumanChallengePending(false);
     deactivateRegisterPrompt();
     setOauthProvider("google");
-    sessionStorage.setItem(PENDING_OAUTH_KEY, "google-login");
+    markOAuthPending("google-login");
     persistAccountIntent(accountIntent);
 
     try {
@@ -513,7 +514,7 @@ const Login = () => {
       setError("Failed to continue with Google. Please try again.");
       deactivateRegisterPrompt();
       setOauthProvider(null);
-      sessionStorage.removeItem(PENDING_OAUTH_KEY);
+      clearOAuthPending();
     }
   };
 
@@ -524,7 +525,7 @@ const Login = () => {
     setHumanChallengePending(false);
     deactivateRegisterPrompt();
     setOauthProvider("apple");
-    sessionStorage.setItem(PENDING_OAUTH_KEY, "apple-login");
+    markOAuthPending("apple-login");
     persistAccountIntent(accountIntent);
 
     try {
@@ -542,7 +543,7 @@ const Login = () => {
       setError("Failed to continue with Apple. Please try again.");
       deactivateRegisterPrompt();
       setOauthProvider(null);
-      sessionStorage.removeItem(PENDING_OAUTH_KEY);
+      clearOAuthPending();
     }
   };
 
@@ -697,18 +698,6 @@ const Login = () => {
       window.history.replaceState(null, "", window.location.pathname);
     }
   }, []);
-
-  // ... (useEffect for pendingOauth remains unchanged) ...
-  useEffect(() => {
-    const pendingOauth = sessionStorage.getItem(PENDING_OAUTH_KEY);
-    if (!pendingOauth) {
-      return;
-    }
-
-    if (oauthProvider === null && step === "login") {
-      sessionStorage.removeItem(PENDING_OAUTH_KEY);
-    }
-  }, [oauthProvider, step]);
 
   // ... (Email verification step "login-verify" remains unchanged) ...
   if (step === "login-verify") {

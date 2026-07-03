@@ -9,7 +9,7 @@ import {
   intentToMetadataAccountType,
   clearAccountIntent,
   sanitizeRedirectTarget,
-  PENDING_OAUTH_KEY,
+  clearOAuthPending,
   OAUTH_JUST_COMPLETED_KEY,
   type AccountIntent,
 } from "../../lib/authFlow";
@@ -49,7 +49,7 @@ export default function PostOAuthRedirect() {
     const complete = async (activeUser: NonNullable<typeof user>) => {
       if (finishedRef.current) return;
       finishedRef.current = true;
-      sessionStorage.removeItem(PENDING_OAUTH_KEY);
+      clearOAuthPending();
 
       try {
         const metaType = intentToMetadataAccountType(intent);
@@ -101,7 +101,7 @@ export default function PostOAuthRedirect() {
       if (Date.now() - started >= MAX_WAIT_MS) {
         window.clearInterval(timer);
         finishedRef.current = true;
-        sessionStorage.removeItem(PENDING_OAUTH_KEY);
+        clearOAuthPending();
         sessionStorage.setItem(OAUTH_JUST_COMPLETED_KEY, String(Date.now()));
         window.location.replace(destination);
       }

@@ -32,7 +32,6 @@ import OAuthCallback from "./pages/auth/OAuthCallback";
 import PostOAuthRedirect from "./pages/auth/PostOAuthRedirect";
 import {
   RegisterPageGate,
-  TeamOnboardGate,
 } from "./pages/auth/AuthRouteGates";
 
 // Get Clerk publishable key from environment
@@ -68,7 +67,8 @@ function PreAuthApp() {
       <Route path="/contact" element={<div>Contact Page - Coming Soon</div>} />
       {/* Redirect any authenticated routes back to home */}
       <Route path="/dashboard/*" element={<Navigate to="/" replace />} />
-      <Route path="/shop-wizard" element={<Navigate to="/" replace />} />
+      <Route path="/shop-wizard" element={<Navigate to="/register?account=owner" replace />} />
+      <Route path="/team-onboard" element={<Navigate to="/register?account=employee" replace />} />
       {/* Catch-all route for 404 */}
       <Route path="*" element={<div>Page Not Found - 404</div>} />
     </Routes>
@@ -771,7 +771,6 @@ function AppRouter() {
       <Route path="/auth/sso-callback" element={<OAuthCallback />} />
       <Route path="/auth/post-oauth" element={<PostOAuthRedirect />} />
       <Route path="/register" element={<RegisterPageGate />} />
-      <Route path="/team-onboard" element={<TeamOnboardGate />} />
       <Route
         path="*"
         element={isSignedIn ? <PostAuthApp /> : <PreAuthApp />}

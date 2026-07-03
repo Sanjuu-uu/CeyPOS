@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo, useCallback } from "react";
 import { Eye, EyeOff, Mail, Lock, User, ArrowRight } from "lucide-react";
-import { useSignUp, useSignIn, useUser, useAuth } from "@clerk/clerk-react";
+import { useSignUp, useSignIn, useUser } from "@clerk/clerk-react";
 import { useNavigate, useLocation } from "react-router-dom";
 import Navigation from "../components/Navigation";
 import Footer from "../components/Footer";
@@ -11,11 +11,10 @@ import {
   readAccountIntent,
   getPostRegisterPath,
   getAccountTypeLabel,
-  buildOAuthRedirectCompleteUrl,
-  buildOAuthCallbackUrl,
-  buildPostOAuthUrl,
+  buildRegisterOAuthUrls,
+  markOAuthPending,
+  clearOAuthPending,
   intentToMetadataAccountType,
-  PENDING_OAUTH_KEY,
   clearAccountIntent,
 } from "../../lib/authFlow";
 
@@ -24,7 +23,6 @@ type RegisterAction = "register" | "verify" | "resend" | null;
 const Register = () => {
   const { isLoaded, signUp, setActive } = useSignUp();
   const { signIn, isLoaded: isSignInLoaded } = useSignIn();
-  const { isSignedIn } = useAuth();
   const { user } = useUser();
   const navigate = useNavigate();
   const location = useLocation();
@@ -65,16 +63,10 @@ const Register = () => {
     setError("");
     setHumanChallengePending(false);
     setOauthProvider("google");
-    sessionStorage.setItem(PENDING_OAUTH_KEY, "google-register");
+    markOAuthPending("google-register");
     persistAccountIntent(accountIntent);
 
-    const callbackUrl = buildOAuthRedirectCompleteUrl(
-      buildOAuthCallbackUrl("register", accountIntent),
-    );
-    const completeUrl = buildOAuthRedirectCompleteUrl(
-      buildPostOAuthUrl(accountIntent, postRegisterPath),
-    );
-
+    const { callbackUrl, completeUrl } = buildRegisterOAuthUrls(accountIntent);
     const redirectConfig = {
       strategy: "oauth_google" as const,
       redirectUrl: callbackUrl,
@@ -92,7 +84,7 @@ const Register = () => {
         code === "session_exists";
 
       if (shouldTrySignIn && isSignInLoaded && signIn) {
-        sessionStorage.setItem(PENDING_OAUTH_KEY, "google-login");
+        markOAuthPending("google-login");
         await signIn.authenticateWithRedirect(redirectConfig);
         return;
       }
@@ -102,7 +94,7 @@ const Register = () => {
         "Could not continue with Google. If you already have an account, try Sign In instead.",
       );
       setOauthProvider(null);
-      sessionStorage.removeItem(PENDING_OAUTH_KEY);
+      clearOAuthPending();
     }
   };
 
@@ -112,16 +104,10 @@ const Register = () => {
     setError("");
     setHumanChallengePending(false);
     setOauthProvider("apple");
-    sessionStorage.setItem(PENDING_OAUTH_KEY, "apple-register");
+    markOAuthPending("apple-register");
     persistAccountIntent(accountIntent);
 
-    const callbackUrl = buildOAuthRedirectCompleteUrl(
-      buildOAuthCallbackUrl("register", accountIntent),
-    );
-    const completeUrl = buildOAuthRedirectCompleteUrl(
-      buildPostOAuthUrl(accountIntent, postRegisterPath),
-    );
-
+    const { callbackUrl, completeUrl } = buildRegisterOAuthUrls(accountIntent);
     const redirectConfig = {
       strategy: "oauth_apple" as const,
       redirectUrl: callbackUrl,
@@ -145,7 +131,7 @@ const Register = () => {
       console.error("Apple signup error:", signUpErr);
       setError("Failed to sign up with Apple. Please check configuration.");
       setOauthProvider(null);
-      sessionStorage.removeItem(PENDING_OAUTH_KEY);
+      clearOAuthPending();
     }
   };
 
@@ -356,17 +342,6 @@ const Register = () => {
       window.history.replaceState(null, "", window.location.pathname);
     }
   }, []);
-
-  useEffect(() => {
-    const pendingOauth = sessionStorage.getItem(PENDING_OAUTH_KEY);
-    if (!pendingOauth) {
-      return;
-    }
-
-    if (oauthProvider === null && step === "register") {
-      sessionStorage.removeItem(PENDING_OAUTH_KEY);
-    }
-  }, [oauthProvider, step]);
 
   const handleVerifyCode = async (e: React.FormEvent) => {
     e.preventDefault();

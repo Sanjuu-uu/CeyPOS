@@ -5,15 +5,16 @@ import {
   parseAccountParam,
   persistAccountIntent,
   readAccountIntent,
+  getPostRegisterPath,
   buildPostOAuthUrl,
   buildOAuthCallbackUrl,
   buildOAuthRedirectCompleteUrl,
+  sanitizeRedirectTarget,
 } from "../../lib/authFlow";
 
 /**
- * Clerk OAuth return URL.
- * signInUrl/signUpUrl MUST point at this callback route — not /register.
- * @see https://clerk.com/docs/react/reference/components/control/authenticate-with-redirect-callback
+ * Clerk OAuth return URL — identical path for owner and employee.
+ * Always forwards to /auth/post-oauth with the correct wizard destination.
  */
 export default function OAuthCallback() {
   const [params] = useSearchParams();
@@ -24,16 +25,19 @@ export default function OAuthCallback() {
   }, [params]);
 
   const flow = params.get("flow") === "login" ? "login" : "register";
-  const redirectParam = params.get("redirect") || undefined;
+  const destination = sanitizeRedirectTarget(
+    params.get("redirect"),
+    getPostRegisterPath(intent),
+  );
 
   useEffect(() => {
     persistAccountIntent(intent);
   }, [intent]);
 
-  const callbackPath = buildOAuthCallbackUrl(flow, intent, redirectParam);
+  const callbackPath = buildOAuthCallbackUrl(flow, intent, destination);
   const callbackUrl = buildOAuthRedirectCompleteUrl(callbackPath);
   const postOAuthUrl = buildOAuthRedirectCompleteUrl(
-    buildPostOAuthUrl(intent, redirectParam),
+    buildPostOAuthUrl(intent, destination),
   );
 
   return (
