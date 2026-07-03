@@ -3,6 +3,7 @@ import { randomUUID } from "crypto";
 import { openShopDatabase, shopDatabaseExists } from "../utils/shop-database.js";
 import { publishChange } from "../realtime/change-bus.js";
 import { memberCanAccessShop } from "../middleware/shop-auth.js";
+import { requireClerkSession } from "../middleware/clerk-auth.js";
 import { getMemberByEmail, normalizeEmail } from "../services/team-service.js";
 import { buildMemberScope, getShopPlanLimits, scopeAllows } from "../services/member-scope.js";
 import { upsertProducts } from "../services/inventory-service.js";
@@ -10,7 +11,12 @@ import { lookupGlobalBarcodeProduct } from "../utils/global-barcode-database.js"
 
 const router = express.Router();
 
-const SESSION_TTL_MS = 5 * 60 * 1000;
+router.use(requireClerkSession);
+
+/** Time allowed to scan QR and link a mobile device. */
+const SESSION_PENDING_TTL_MS = 15 * 60 * 1000;
+/** Active import/checkout session lifetime after the phone links. */
+const SESSION_ACTIVE_TTL_MS = 2 * 60 * 60 * 1000;
 
 const normalizeOrigin = (value) => {
   if (typeof value !== "string") {
@@ -63,6 +69,18 @@ const resolveOrigin = (req) => {
   const originHeader = req.get("origin");
   if (originHeader) {
     return normalizeOrigin(originHeader);
+  }
+
+  const referer = req.get("referer");
+  if (referer) {
+    try {
+      const refererOrigin = new URL(referer).origin;
+      if (refererOrigin) {
+        return normalizeOrigin(refererOrigin);
+      }
+    } catch {
+      // ignore invalid referer
+    }
   }
 
   const forwardedProto = req.get("x-forwarded-proto");
@@ -164,13 +182,31 @@ function authorizeMobileSession(db, shopId, userEmail, sessionType) {
   return { ok: true, member, scope };
 }
 
+function resolveRequestEmail(req) {
+  const claimed = normalizeEmail(req.body?.userEmail || req.query?.userEmail || "");
+  if (req.userEmail && claimed && claimed !== req.userEmail) {
+    return { ok: false, error: "userEmail does not match authenticated session" };
+  }
+  const email = req.userEmail || claimed;
+  if (!email) {
+    return { ok: false, error: "userEmail is required" };
+  }
+  return { ok: true, email };
+}
+
 router.post("/sessions/create", (req, res) => {
   try {
-    const { shopId, sessionType, userEmail, userId, deviceMeta } = req.body || {};
-    if (!shopId || !sessionType || !userEmail) {
+    const emailResult = resolveRequestEmail(req);
+    if (!emailResult.ok) {
+      return res.status(403).json({ error: emailResult.error });
+    }
+    const userEmail = emailResult.email;
+
+    const { shopId, sessionType, userId, deviceMeta } = req.body || {};
+    if (!shopId || !sessionType) {
       return res
         .status(400)
-        .json({ error: "shopId, sessionType, and userEmail are required" });
+        .json({ error: "shopId and sessionType are required" });
     }
 
     if (!shopDatabaseExists(shopId)) {
@@ -187,7 +223,7 @@ router.post("/sessions/create", (req, res) => {
       const now = Date.now();
       const sessionId = randomUUID();
       const authToken = randomUUID().replace(/-/g, "");
-      const expiresAt = now + SESSION_TTL_MS;
+      const expiresAt = now + SESSION_PENDING_TTL_MS;
       const origin = resolveOrigin(req);
       const scanUrl = origin
         ? `${origin}/mobilesessions/scan?session=${encodeURIComponent(
@@ -248,12 +284,18 @@ router.post("/sessions/create", (req, res) => {
 
 router.post("/sessions/validate", (req, res) => {
   try {
-    const { sessionId, token, shopId, sessionType, userEmail, userId, deviceMeta } =
+    const emailResult = resolveRequestEmail(req);
+    if (!emailResult.ok) {
+      return res.status(403).json({ error: emailResult.error });
+    }
+    const userEmail = emailResult.email;
+
+    const { sessionId, token, shopId, sessionType, userId, deviceMeta } =
       req.body || {};
-    if (!sessionId || !token || !shopId || !userEmail) {
+    if (!sessionId || !token || !shopId) {
       return res
         .status(400)
-        .json({ error: "sessionId, token, shopId, and userEmail are required" });
+        .json({ error: "sessionId, token, and shopId are required" });
     }
 
     if (!shopDatabaseExists(shopId)) {
@@ -291,12 +333,15 @@ router.post("/sessions/validate", (req, res) => {
         return res.status(410).json({ error: "Session expired" });
       }
 
+      const activeExpiresAt = now + SESSION_ACTIVE_TTL_MS;
+
       db.prepare(
         `UPDATE mobile_sessions
-         SET status = ?, last_seen_at = ?, last_seen_email = ?, last_seen_user_id = ?, device_meta = ?
+         SET status = ?, expires_at = ?, last_seen_at = ?, last_seen_email = ?, last_seen_user_id = ?, device_meta = ?
          WHERE session_id = ?`
       ).run(
         "active",
+        toIso(activeExpiresAt),
         toIso(now),
         userEmail,
         userId || null,
@@ -312,6 +357,7 @@ router.post("/sessions/validate", (req, res) => {
           sessionId,
           sessionType: session.session_type,
           linkedBy: userEmail,
+          expiresAt: toIso(activeExpiresAt),
         },
       });
 
@@ -321,7 +367,7 @@ router.post("/sessions/validate", (req, res) => {
         shopId,
         sessionType: session.session_type,
         status: "active",
-        expiresAt: session.expires_at,
+        expiresAt: toIso(activeExpiresAt),
       });
     } finally {
       db.close();

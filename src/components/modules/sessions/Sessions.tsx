@@ -485,7 +485,7 @@ export const Sessions: React.FC = () => {
           };
         }
       }
-      setSessionScanUrls((prev) => ({ ...scanMap, ...prev }));
+      setSessionScanUrls((prev) => ({ ...prev, ...scanMap }));
     } catch {
       // keep current UI state on transient failures
     }

@@ -6,6 +6,8 @@ import { EmployeeOnboardStep1 } from "./EmployeeOnboardStep1";
 import { EmployeeOnboardStep2 } from "./EmployeeOnboardStep2";
 import { EmployeeOnboardStep3 } from "./EmployeeOnboardStep3";
 import { EmployeeOnboardProgressBar } from "./EmployeeOnboardProgressBar";
+import { clearAuthStorage } from "../../../lib/authFlow";
+import { postJSON } from "../../../lib/api";
 import backgroundImage from "../ShopWizard/assets/blog-20background-1.png";
 import "../ShopWizard/styles/ShopWizard.css";
 
@@ -77,28 +79,43 @@ export const EmployeeOnboardWizard: React.FC = () => {
     nextStep();
   };
 
+  const [cancelError, setCancelError] = useState<string | null>(null);
+
   const handleCancelConfirm = async () => {
     setIsDeleting(true);
-    let deleteFailed = false;
+    setCancelError(null);
+
+    if (formData.shopId) {
+      try {
+        await postJSON("/api/team/cancel-onboard", {
+          shopId: formData.shopId,
+          ownerEmail: formData.mainTerminalEmail.trim(),
+        });
+      } catch (error) {
+        console.warn("Employee cancel: shop cleanup failed", error);
+      }
+    }
 
     if (user) {
       try {
         await user.delete();
       } catch (error) {
         console.error("Employee cancel: user.delete failed", error);
-        deleteFailed = true;
+        setCancelError(
+          "Could not delete your account. Enable user self-deletion in Clerk Dashboard → Settings, then try again.",
+        );
+        setIsDeleting(false);
+        return;
       }
     }
+
+    clearAuthStorage();
 
     try {
       await signOut({ redirectUrl: `${window.location.origin}/` });
     } catch (error) {
       console.error("Employee cancel: signOut failed", error);
       window.location.href = "/";
-    }
-
-    if (deleteFailed) {
-      setIsDeleting(false);
     }
   };
 
@@ -216,7 +233,10 @@ export const EmployeeOnboardWizard: React.FC = () => {
           }}
         >
           <div className="max-w-5xl mx-auto">
-            <EmployeeOnboardProgressBar onNext={handleStepNext} />
+            <EmployeeOnboardProgressBar
+              onNext={handleStepNext}
+              hideNext={currentStep < 3}
+            />
           </div>
         </motion.div>
       </motion.div>
@@ -260,6 +280,11 @@ export const EmployeeOnboardWizard: React.FC = () => {
                   This will permanently delete your account. You can sign up again
                   later as an Employee or Owner / Manager.
                 </p>
+                {cancelError && (
+                  <p style={{ fontSize: "13px", color: "#dc2626", marginTop: "12px" }}>
+                    {cancelError}
+                  </p>
+                )}
               </div>
               <div
                 style={{

@@ -114,6 +114,27 @@ export function registerTeamMember(db, shopId, { email, displayName, clerkUserId
   return getMemberById(db, shopId, memberId);
 }
 
+export function removeTeamMemberByEmail(db, shopId, email) {
+  const normalized = normalizeEmail(email);
+  if (!normalized) {
+    throw new Error("email is required");
+  }
+
+  const member = getMemberByEmail(db, shopId, normalized);
+  if (!member) {
+    return { removed: false };
+  }
+  if (member.role === "owner") {
+    throw new Error("Cannot remove shop owner");
+  }
+
+  db.prepare(`DELETE FROM shop_members WHERE shop_id = ? AND member_id = ?`).run(
+    shopId,
+    member.member_id,
+  );
+  return { removed: true, memberId: member.member_id };
+}
+
 export function resolveShopContext(db, shopId, email, terminalId = null) {
   const shopMeta = db.prepare("SELECT * FROM shop_meta WHERE shop_id = ?").get(shopId);
   if (!shopMeta) {

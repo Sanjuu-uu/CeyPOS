@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { useEmployeeOnboard } from "../../../context/EmployeeOnboardContext";
 import { postJSON } from "../../../lib/api";
@@ -26,11 +26,26 @@ const countryCodes = [
 ];
 
 export const EmployeeOnboardStep1: React.FC = () => {
-  const { formData, updateFormData, setError } = useEmployeeOnboard();
+  const { formData, updateFormData, setError, nextStep, canProceed } =
+    useEmployeeOnboard();
   const [countryCode, setCountryCode] = useState("+94");
   const [localPhone, setLocalPhone] = useState("");
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [checkingOwner, setCheckingOwner] = useState(false);
+  const autoAdvancedRef = useRef(false);
+
+  useEffect(() => {
+    if (!canProceed) {
+      autoAdvancedRef.current = false;
+      return;
+    }
+    if (autoAdvancedRef.current) return;
+    autoAdvancedRef.current = true;
+    const timer = window.setTimeout(() => {
+      nextStep();
+    }, 700);
+    return () => window.clearTimeout(timer);
+  }, [canProceed, nextStep]);
 
   useEffect(() => {
     if (formData.phone) {
@@ -44,10 +59,9 @@ export const EmployeeOnboardStep1: React.FC = () => {
   }, [formData.phone]);
 
   useEffect(() => {
+    const localDigits = localPhone.replace(/\D/g, "").replace(/^0+/, "");
     const combinedPhone =
-      localPhone.trim().length >= 7
-        ? `${countryCode} ${localPhone}`.trim()
-        : "";
+      localDigits.length >= 7 ? `${countryCode} ${localDigits}`.trim() : "";
     updateFormData({
       displayName: formData.displayName,
       mainTerminalEmail: formData.mainTerminalEmail,
@@ -74,8 +88,8 @@ export const EmployeeOnboardStep1: React.FC = () => {
         return "";
       case "localPhone":
         if (!value.trim()) return "Phone number is required.";
-        if (!/^[0-9\s-]{7,10}$/.test(value)) {
-          return "Enter a valid phone number (7–10 digits).";
+        if (!/^[0-9\s-]{7,12}$/.test(value)) {
+          return "Enter a valid phone number (7–12 digits).";
         }
         return "";
       default:
@@ -92,7 +106,9 @@ export const EmployeeOnboardStep1: React.FC = () => {
       setError(null);
       try {
         await postJSON("/api/team/lookup-owner", { ownerEmail: value.trim() });
+        updateFormData({ ownerVerified: true });
       } catch {
+        updateFormData({ ownerVerified: false });
         setErrors((prev) => ({
           ...prev,
           mainTerminalEmail:
@@ -188,6 +204,7 @@ export const EmployeeOnboardStep1: React.FC = () => {
                   updateFormData({
                     mainTerminalEmail: e.target.value,
                     phoneVerified: false,
+                    ownerVerified: false,
                   });
                   if (errors.mainTerminalEmail) {
                     setErrors((p) => ({ ...p, mainTerminalEmail: "" }));

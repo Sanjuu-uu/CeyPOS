@@ -1,8 +1,9 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { Mail, AlertCircle, CheckCircle } from "lucide-react";
 import { useUser } from "@clerk/clerk-react";
-import { useEmployeeOnboard } from "../../../context/EmployeeOnboardContext";import { postJSON } from "../../../lib/api";
+import { useEmployeeOnboard } from "../../../context/EmployeeOnboardContext";
+import { postJSON } from "../../../lib/api";
 import "../ShopWizard/styles/ShopWizard.css";
 
 const cardVariants = {
@@ -40,23 +41,24 @@ function parseErrorResponse(err: unknown): VerificationError {
 
 export const EmployeeOnboardStep2: React.FC = () => {
   const { user } = useUser();
-  const { formData, updateFormData, setError, error, isBusy, setIsBusy } =
-    useEmployeeOnboard();
+  const {
+    formData,
+    updateFormData,
+    setError,
+    error,
+    isBusy,
+    setIsBusy,
+    nextStep,
+  } = useEmployeeOnboard();
   const [code, setCode] = useState("");
   const [sent, setSent] = useState(false);
   const [info, setInfo] = useState<string | null>(null);
   const [attemptsRemaining, setAttemptsRemaining] = useState<number | null>(null);
   const [retryAfterSeconds, setRetryAfterSeconds] = useState<number | null>(null);
+  const sendInitiatedRef = useRef(false);
+  const autoAdvancedRef = useRef(false);
 
   const userEmail = user?.primaryEmailAddress?.emailAddress || "";
-
-  useEffect(() => {
-    if (!sent && formData.phone && userEmail) {
-      void sendCode();
-    }
-  }, [sent, formData.phone, userEmail]);
-
-  const postToApi = postJSON;
 
   const sendCode = async () => {
     if (isBusy) return;
@@ -77,15 +79,17 @@ export const EmployeeOnboardStep2: React.FC = () => {
       );
       setSent(true);
       if ((result as any).devCode) {
-        setInfo(`🔧 Development mode - Code: ${(result as any).devCode}`);
+        setInfo(`Development mode — your code is ${(result as any).devCode}`);
       } else {
-        setInfo("✓ Verification code sent to your phone.");
+        setInfo("Verification code sent to your phone.");
       }
     } catch (err) {
       const errorData = parseErrorResponse(err);
       if (errorData.retryAfter) {
         setRetryAfterSeconds(errorData.retryAfter);
-        setError(`${errorData.error || "Rate limited"}\nPlease wait ${Math.ceil(errorData.retryAfter / 60)} minute(s).`);
+        setError(
+          `${errorData.error || "Rate limited"}\nPlease wait ${Math.ceil(errorData.retryAfter / 60)} minute(s).`,
+        );
       } else {
         setError(errorData.error || "Failed to send code");
       }
@@ -94,8 +98,35 @@ export const EmployeeOnboardStep2: React.FC = () => {
     }
   };
 
-  const verifyCode = async () => {
-    if (!formData.phone || !code.trim()) {
+  useEffect(() => {
+    if (sendInitiatedRef.current || !formData.phone || !userEmail) return;
+    sendInitiatedRef.current = true;
+    void sendCode();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [formData.phone, userEmail]);
+
+  useEffect(() => {
+    if (retryAfterSeconds === null || retryAfterSeconds <= 0) return;
+    const timer = window.setInterval(() => {
+      setRetryAfterSeconds((prev) => {
+        if (prev === null || prev <= 1) return null;
+        return prev - 1;
+      });
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [retryAfterSeconds]);
+
+  useEffect(() => {
+    if (!formData.phoneVerified || autoAdvancedRef.current) return;
+    autoAdvancedRef.current = true;
+    const timer = window.setTimeout(() => {
+      nextStep();
+    }, 900);
+    return () => window.clearTimeout(timer);
+  }, [formData.phoneVerified, nextStep]);
+
+  const verifyCode = async (codeValue: string) => {
+    if (!formData.phone || !codeValue.trim()) {
       setError("Please enter the 6-digit verification code");
       return;
     }
@@ -105,10 +136,10 @@ export const EmployeeOnboardStep2: React.FC = () => {
     try {
       await postJSON("/api/team/verify/check-code", {
         phone: formData.phone,
-        code: code.trim(),
+        code: codeValue.trim(),
       });
       updateFormData({ phoneVerified: true });
-      setInfo("✓ Phone verified successfully!");
+      setInfo("Phone verified — connecting your terminal…");
     } catch (err) {
       updateFormData({ phoneVerified: false });
       const errorData = parseErrorResponse(err);
@@ -184,26 +215,37 @@ export const EmployeeOnboardStep2: React.FC = () => {
                 </div>
                 <input
                   type="text"
+                  inputMode="numeric"
                   value={code}
                   onChange={(e) => {
-                    setCode(e.target.value.replace(/\D/g, "").slice(0, 6));
+                    const next = e.target.value.replace(/\D/g, "").slice(0, 6);
+                    setCode(next);
                     setError(null);
+                    if (next.length === 6 && !formData.phoneVerified && !isBusy) {
+                      void verifyCode(next);
+                    }
                   }}
                   maxLength={6}
                   autoComplete="one-time-code"
-                  disabled={formData.phoneVerified}
+                  autoFocus
+                  disabled={formData.phoneVerified || isBusy}
                   className="block w-full px-4 py-3 border border-gray-300 rounded-full text-xl text-center tracking-[0.75em] font-mono bg-gray-50"
                   placeholder="123456"
                   style={{ letterSpacing: "0.75em", paddingLeft: "0.375em" }}
                 />
               </div>
+              {attemptsRemaining !== null && attemptsRemaining > 0 && (
+                <p className="text-xs text-gray-500 mt-2 text-center">
+                  {attemptsRemaining} attempt(s) remaining
+                </p>
+              )}
             </div>
 
             {!formData.phoneVerified ? (
               <>
                 <button
                   type="button"
-                  onClick={() => void verifyCode()}
+                  onClick={() => void verifyCode(code)}
                   disabled={isBusy || code.length < 6}
                   className="w-full bg-black hover:bg-gray-800 disabled:bg-gray-400 text-white py-3 rounded-full text-sm font-medium transition-colors"
                 >
@@ -212,32 +254,24 @@ export const EmployeeOnboardStep2: React.FC = () => {
 
                 <button
                   type="button"
-                  onClick={() => void sendCode()}
+                  onClick={() => {
+                    sendInitiatedRef.current = false;
+                    void sendCode();
+                  }}
                   disabled={!canResend}
                   className="w-full text-sm text-gray-900 hover:text-gray-700 disabled:text-gray-400 font-medium transition-colors"
                 >
                   {retryAfterSeconds
                     ? `Resend in ${Math.ceil(retryAfterSeconds)} seconds`
-                    : "Resend verification code"}
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setError(null);
-                    setInfo(" Phone verification skipped. Continue to the next step.");
-                    updateFormData({ phoneVerified: true });
-                  }}
-                  disabled={isBusy}
-                  className="w-full text-sm text-blue-700 hover:text-blue-900 font-medium transition-colors"
-                >
-                  Skip verification and continue
+                    : sent
+                      ? "Resend verification code"
+                      : "Sending code…"}
                 </button>
               </>
             ) : (
               <div className="p-3 bg-green-50 border border-green-200 rounded-lg text-green-700 text-sm text-center flex items-center justify-center gap-2">
                 <CheckCircle className="h-4 w-4" />
-                <span>Phone verified — continue to connect your terminal.</span>
+                <span>Phone verified — continuing to terminal setup…</span>
               </div>
             )}
           </div>

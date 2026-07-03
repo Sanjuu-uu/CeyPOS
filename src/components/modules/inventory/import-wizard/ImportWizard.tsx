@@ -1,5 +1,4 @@
 import React, { useMemo, useState } from 'react';
-import axios, { isAxiosError } from 'axios';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowLeftIcon, ArrowRightIcon, CheckIcon, X } from 'lucide-react';
 import { WizardStepIndicator } from './WizardStepIndicator';
@@ -9,6 +8,7 @@ import { DataValidation, type ValidationSummary } from './DataValidation';
 import { ImportConfirmation } from './ImportConfirmation';
 import { useShopWizard } from '../../../../context/ShopWizardContext';
 import { useApp } from '../../../../context/AppContext';
+import { authFetch } from '../../../../lib/api';
 
 interface ImportWizardProps {
   onClose?: () => void;
@@ -56,43 +56,50 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ onClose, onImportCom
       backendError: null,
       validationIssues: [],
     });
+    if (!shopId) {
+      setValidationData((prev) => ({
+        ...prev,
+        backendError: 'Shop is not ready. Complete setup or reload the dashboard.',
+      }));
+      return;
+    }
     try {
       const formData = new FormData();
       formData.append('file', file);
       formData.append('shopId', shopId);
       setUploadProgress(10);
-      const response = await axios.post('/api/inventory/upload', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-        onUploadProgress: (progressEvent) => {
-          if (progressEvent.total) {
-            setUploadProgress(Math.round((progressEvent.loaded * 100) / progressEvent.total));
-          }
-        },
+      const response = await authFetch('/api/inventory/upload', {
+        method: 'POST',
+        body: formData,
       });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw Object.assign(new Error(data?.error || 'Upload failed'), { payload: data });
+      }
       setUploadProgress(100);
       setValidationData({
-        total: response.data.total || response.data.inserted || 0,
-        successful: response.data.successful || response.data.inserted || 0,
-        errors: response.data.errors || 0,
-        warnings: response.data.warnings || 0,
+        total: data.total || data.inserted || 0,
+        successful: data.successful || data.inserted || 0,
+        errors: data.errors || 0,
+        warnings: data.warnings || 0,
         backendError: null,
-        validationIssues: response.data.validationIssues || [],
+        validationIssues: data.validationIssues || [],
       });
     } catch (error) {
       setUploadProgress(100);
       let backendError: string | null = 'Upload failed';
       let validationIssues: ValidationSummary['validationIssues'] = [];
 
-      if (isAxiosError(error)) {
-        const data = error.response?.data as
-          | (Partial<ValidationSummary> & { error?: string })
-          | undefined;
-        if (typeof data?.error === 'string') {
-          backendError = data.error;
+      const payload = (error as { payload?: Partial<ValidationSummary> & { error?: string } })?.payload;
+      if (payload) {
+        if (typeof payload.error === 'string') {
+          backendError = payload.error;
         }
-        if (Array.isArray(data?.validationIssues)) {
-          validationIssues = data.validationIssues as ValidationSummary['validationIssues'];
+        if (Array.isArray(payload.validationIssues)) {
+          validationIssues = payload.validationIssues as ValidationSummary['validationIssues'];
         }
+      } else if (error instanceof Error && error.message) {
+        backendError = error.message;
       }
 
       setValidationData({
@@ -242,11 +249,18 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ onClose, onImportCom
           {currentStep < 4 ? (
             <button
               onClick={nextStep}
-              disabled={currentStep === 2 && !uploadedFile}
+              disabled={
+                (currentStep === 2 && !uploadedFile) ||
+                (currentStep === 3 && validationData.errors > 0)
+              }
               className="flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
               style={{ 
                 borderRadius: 'var(--radius--40px)',
-                backgroundColor: currentStep === 2 && !uploadedFile ? 'var(--gray--300)' : '#c5f542',
+                backgroundColor:
+                  (currentStep === 2 && !uploadedFile) ||
+                  (currentStep === 3 && validationData.errors > 0)
+                    ? 'var(--gray--300)'
+                    : '#c5f542',
                 color: '#000000',
                 border: 'none',
                 padding: '9px 23px',

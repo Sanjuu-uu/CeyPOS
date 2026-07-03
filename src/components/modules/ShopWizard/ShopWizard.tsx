@@ -1,7 +1,8 @@
 import React, { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useShopWizard } from "../../../context/ShopWizardContext";
-import { useUser, useClerk } from "@clerk/clerk-react";
+import { useClerk, useUser } from "@clerk/clerk-react";
+import { clearAuthStorage } from "../../../lib/authFlow";
 import { ShopWizardStep1 } from "./ShopWizardStep1";
 import { ShopWizardStep2 } from "./ShopWizardStep2";
 import { ShopWizardStep3 } from "./ShopWizardStep3";
@@ -96,26 +97,24 @@ export const ShopWizard: React.FC = () => {
   // Handles the final confirmation to delete the user account
   const handleCancelConfirm = async () => {
     setIsDeleting(true);
-    let deleteFailed = false;
 
     if (user) {
       try {
         await user.delete();
       } catch (error) {
         console.error("Shop cancel: user.delete failed", error);
-        deleteFailed = true;
+        setIsDeleting(false);
+        return;
       }
     }
+
+    clearAuthStorage();
 
     try {
       await signOut({ redirectUrl: `${window.location.origin}/` });
     } catch (error) {
       console.error("Shop cancel: signOut failed", error);
       window.location.href = "/";
-    }
-
-    if (deleteFailed) {
-      setIsDeleting(false);
     }
   };
 

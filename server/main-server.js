@@ -74,6 +74,8 @@ import smsReceiptRoutes from "./src/routes/sms-receipts.js";
 import receiptRoutes from "./src/routes/receipts.js";
 import { ensureAllShopDatabasesSchema } from "./src/utils/shop-database.js";
 import { migrateLegacyReceiptTokensDb } from "./src/services/receipt-tokens.js";
+import { openGlobalVerificationDatabase } from "./src/utils/global-verification-database.js";
+import { openGlobalBarcodeDatabase } from "./src/utils/global-barcode-database.js";
 
 try {
   const initialized = ensureAllShopDatabasesSchema();
@@ -96,6 +98,16 @@ try {
   }
 } catch (err) {
   console.warn("receipt-tokens migration failed:", err?.message || err);
+}
+
+try {
+  const verificationDb = openGlobalVerificationDatabase();
+  verificationDb.close();
+  const barcodeDb = openGlobalBarcodeDatabase();
+  barcodeDb.close();
+  console.log("global-databases: verification.db and import-catalog.db ready");
+} catch (err) {
+  console.warn("global-databases bootstrap failed:", err?.message || err);
 }
 
 app.get("/api/health", (req, res) => {

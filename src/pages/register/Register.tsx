@@ -41,21 +41,28 @@ const Register = () => {
   }, [accountIntent]);
 
   useEffect(() => {
-    if (!isSignedIn) return;
-    navigate(postRegisterPath, { replace: true });
-  }, [isSignedIn, navigate, postRegisterPath]);
+    if (!isSignedIn || !user) return;
+
+    void (async () => {
+      await applyAccountMetadata();
+      navigate(postRegisterPath, { replace: true });
+    })();
+  }, [isSignedIn, user, navigate, postRegisterPath, applyAccountMetadata]);
 
   const applyAccountMetadata = useCallback(async () => {
     if (!user) return;
     const metaType = intentToMetadataAccountType(accountIntent);
-    if (metaType === "team") {
-      await user.update({
-        unsafeMetadata: {
-          ...(user.unsafeMetadata || {}),
-          accountType: "team",
-        },
-      });
+    const existingType = user.unsafeMetadata?.accountType;
+    if (existingType === "team" || existingType === "owner") {
+      clearAccountIntent();
+      return;
     }
+    await user.update({
+      unsafeMetadata: {
+        ...(user.unsafeMetadata || {}),
+        accountType: metaType,
+      },
+    });
     clearAccountIntent();
   }, [accountIntent, user]);
 

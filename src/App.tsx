@@ -125,15 +125,14 @@ function PostAuthApp() {
     }
 
     const metaType = intentToMetadataAccountType(intent);
-    if (metaType === "team") {
-      void user.update({
+    void user
+      .update({
         unsafeMetadata: {
           ...(user.unsafeMetadata || {}),
-          accountType: "team",
+          accountType: metaType,
         },
-      });
-    }
-    clearAccountIntent();
+      })
+      .finally(() => clearAccountIntent());
   }, [user]);
 
   const rawMetadata = user?.unsafeMetadata;
@@ -301,80 +300,6 @@ function PostAuthApp() {
       ? ("team" as const)
       : ("owner" as const);
 
-  useEffect(() => {
-    if (accountType !== "team" || metadataShopId || !userEmail || !user) {
-      return;
-    }
-
-    const mainTerminalEmail =
-      typeof metadata.mainTerminalEmail === "string"
-        ? metadata.mainTerminalEmail.trim()
-        : "";
-    if (!mainTerminalEmail) return;
-
-    const displayName =
-      (typeof metadata.displayName === "string" && metadata.displayName.trim()) ||
-      user.fullName ||
-      userEmail.split("@")[0] ||
-      "Employee";
-
-    let cancelled = false;
-    (async () => {
-      try {
-        const response = await authFetch("/api/team/register", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            ownerEmail: mainTerminalEmail,
-            userEmail,
-            displayName,
-            clerkUserId: user.id,
-            accountType: "team",
-          }),
-        });
-        const result = await response.json();
-        if (!response.ok || !result?.shopId || !result?.dbFileName || cancelled) {
-          return;
-        }
-
-        localStorage.setItem(
-          TEAM_SETUP_CACHE_KEY,
-          JSON.stringify({
-            accountType: "team",
-            teamOnboarded: true,
-            userEmail,
-            mainTerminalEmail,
-            displayName,
-            shopId: result.shopId,
-            dbFileName: result.dbFileName,
-          }),
-        );
-        setShopStatus({
-          shopId: result.shopId,
-          dbFileName: result.dbFileName,
-          isCompleted: true,
-        });
-        await user.update({
-          unsafeMetadata: {
-            ...(user.unsafeMetadata || {}),
-            accountType: "team",
-            teamOnboarded: true,
-            mainTerminalEmail,
-            displayName,
-            shopId: result.shopId,
-            dbFileName: result.dbFileName,
-            shopCompleted: true,
-          },
-        });
-      } catch {
-        // The team onboarding screen remains the fallback.
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [accountType, metadata, metadataShopId, user, userEmail]);
 
   return (
     <AppProvider

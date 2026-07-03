@@ -1095,7 +1095,7 @@ const Login = () => {
                       <div className="font-medium">{registerMessage}</div>
                       <button
                         type="button"
-                        onClick={() => navigate("/register")}
+                        onClick={() => navigate(buildRegisterHref(accountIntent))}
                         className="inline-flex items-center justify-center rounded-full bg-black px-4 py-2 text-xs font-semibold text-white hover:bg-gray-800 transition-colors"
                       >
                         Register here

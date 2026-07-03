@@ -21,7 +21,11 @@ function resolveShopDatabaseDirectory() {
     return "/data";
   }
 
-  if (cwd.endsWith("/server") || cwd.endsWith("/mcp-server")) {
+  const normalizedCwd = cwd.replace(/\\/g, "/");
+  if (
+    normalizedCwd.endsWith("/server") ||
+    normalizedCwd.endsWith("/mcp-server")
+  ) {
     return serverParentDatabaseDir;
   }
 

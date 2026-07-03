@@ -16,6 +16,7 @@ import { requireClerkSession } from "../middleware/clerk-auth.js";
 import {
   listMembers,
   registerTeamMember,
+  removeTeamMemberByEmail,
   resolveShopContext,
   updateMember,
   ensureOwnerMember,
@@ -24,6 +25,7 @@ import { ensurePrimaryTerminal, validateTerminalToken } from "../services/termin
 import {
   sendPhoneVerificationCode,
   verifyPhoneCode,
+  isPhoneVerified,
 } from "../services/phone-verification-service.js";
 
 const router = Router();
@@ -221,13 +223,27 @@ router.get("/context", requireShopBody, (req, res) => {
 });
 
 router.post("/register", requireShopBody, (req, res) => {
+  let verificationDb = null;
   try {
-    const { ownerEmail, displayName, accountType } = req.body || {};
+    const { ownerEmail, displayName, accountType, phone } = req.body || {};
     const userEmail = req.userEmail;
     const clerkUserId = req.clerkUserId || req.body?.clerkUserId;
 
     if (!displayName) {
       return res.status(400).json({ error: "displayName is required" });
+    }
+
+    if (accountType === "team") {
+      if (!phone) {
+        return res.status(400).json({ error: "phone is required" });
+      }
+      verificationDb = openGlobalVerificationDatabase();
+      if (!isPhoneVerified(verificationDb, userEmail, phone)) {
+        return res.status(403).json({
+          error: "Phone number must be verified before completing registration",
+          code: "PHONE_NOT_VERIFIED",
+        });
+      }
     }
 
     const resolvedShopId =
@@ -273,6 +289,30 @@ router.post("/register", requireShopBody, (req, res) => {
     }
   } catch (err) {
     return res.status(400).json({ error: err.message || "Registration failed" });
+  } finally {
+    if (verificationDb) {
+      try {
+        verificationDb.close();
+      } catch {
+        // ignore
+      }
+    }
+  }
+});
+
+router.post("/cancel-onboard", requireShopBody, (req, res) => {
+  try {
+    const userEmail = req.userEmail;
+    const shopId = req.shopId;
+    const db = openShopDatabase(shopId);
+    try {
+      const result = removeTeamMemberByEmail(db, shopId, userEmail);
+      return res.json({ ok: true, ...result });
+    } finally {
+      db.close();
+    }
+  } catch (err) {
+    return res.status(400).json({ error: err.message || "Cancel failed" });
   }
 });
 

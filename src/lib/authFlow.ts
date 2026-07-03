@@ -29,6 +29,30 @@ export function clearAccountIntent(): void {
   sessionStorage.removeItem(ACCOUNT_INTENT_KEY);
 }
 
+/** Clear all client-side auth/onboarding state (call before wizard cancel sign-out). */
+export function clearAuthStorage(): void {
+  sessionStorage.removeItem(ACCOUNT_INTENT_KEY);
+  sessionStorage.removeItem(PENDING_OAUTH_KEY);
+  localStorage.removeItem(TEAM_SETUP_CACHE_KEY);
+  localStorage.removeItem("ceypos::rememberedEmail");
+  try {
+    const keysToRemove: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (
+        key &&
+        (key.startsWith("ceypos:mobile-session:") ||
+          key.startsWith("ceypos:terminal:"))
+      ) {
+        keysToRemove.push(key);
+      }
+    }
+    keysToRemove.forEach((key) => localStorage.removeItem(key));
+  } catch {
+    // ignore
+  }
+}
+
 export function getPostRegisterPath(intent: AccountIntent): string {
   return intent === "employee" ? "/team-onboard" : "/shop-wizard";
 }

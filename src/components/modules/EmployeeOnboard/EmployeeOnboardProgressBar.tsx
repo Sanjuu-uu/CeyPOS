@@ -7,11 +7,12 @@ interface EmployeeOnboardProgressBarProps {
   className?: string;
   onNext?: () => void | Promise<void>;
   nextLabel?: string;
+  hideNext?: boolean;
 }
 
 export const EmployeeOnboardProgressBar: React.FC<
   EmployeeOnboardProgressBarProps
-> = ({ className = "", onNext, nextLabel = "Next" }) => {
+> = ({ className = "", onNext, nextLabel = "Next", hideNext = false }) => {
   const { currentStep, totalSteps, nextStep, previousStep, canProceed, isBusy } =
     useEmployeeOnboard();
 
@@ -107,7 +108,7 @@ export const EmployeeOnboardProgressBar: React.FC<
           </div>
         </div>
         <div className="flex-1 flex justify-end gap-3">
-          {currentStep < totalSteps && (
+          {currentStep < totalSteps && !hideNext && (
             <motion.button
               whileHover={{ scale: canProceed && !isBusy ? 1.02 : 1 }}
               whileTap={{ scale: canProceed && !isBusy ? 0.98 : 1 }}

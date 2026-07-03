@@ -12,6 +12,9 @@ export type EmployeeOnboardFormData = {
   phone: string;
   phoneVerified: boolean;
   terminalPaired: boolean;
+  ownerVerified: boolean;
+  shopId: string;
+  dbFileName: string;
 };
 
 type EmployeeOnboardContextValue = {
@@ -36,6 +39,9 @@ const defaultFormData: EmployeeOnboardFormData = {
   phone: "",
   phoneVerified: false,
   terminalPaired: false,
+  ownerVerified: false,
+  shopId: "",
+  dbFileName: "",
 };
 
 const EmployeeOnboardContext = createContext<EmployeeOnboardContextValue | null>(
@@ -48,6 +54,7 @@ function validateStep(step: number, data: EmployeeOnboardFormData): boolean {
       return (
         data.displayName.trim().length > 0 &&
         /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(data.mainTerminalEmail.trim()) &&
+        data.ownerVerified &&
         data.phone.trim().length >= 7
       );
     case 2:

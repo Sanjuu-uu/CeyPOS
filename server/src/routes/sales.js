@@ -3,9 +3,12 @@ import { openShopDatabase, shopDatabaseExists } from "../utils/shop-database.js"
 import { adjustStockLevels, normalizeProduct } from "../services/inventory-service.js";
 import { publishChange } from "../realtime/change-bus.js";
 import { recordMemberSaleStats } from "../services/member-stats-service.js";
+import { requireClerkSession } from "../middleware/clerk-auth.js";
 import crypto from "crypto";
 
 const router = Router();
+
+router.use(requireClerkSession);
 
 // --- 1) SECURITY: Validate inputs ---
 const validatePayload = (body) => {
