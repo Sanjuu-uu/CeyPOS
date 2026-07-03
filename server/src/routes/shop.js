@@ -11,6 +11,7 @@ import {
   shopDatabaseExists,
   getShopDatabaseFileName,
   sanitizeShopIdentifier,
+  resolveShopIdByOwnerEmail,
 } from "../utils/shop-database.js";
 import { getShopSnapshot } from "../services/shop-snapshot.js";
 import { ensureOwnerMember, normalizeEmail } from "../services/team-service.js";
@@ -83,6 +84,8 @@ router.post("/setup", requireClerkSession, (req, res) => {
     }
 
     const sanitizedEmail = sanitizeShopIdentifier(ownerEmail);
+    const existingShopMatch = !existingShopId ? resolveShopIdByOwnerEmail(ownerEmail) : null;
+    const preferredShopId = existingShopId || existingShopMatch?.shopId;
 
     // Map frontend fields -> DB columns
     const meta = {

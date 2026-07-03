@@ -115,11 +115,12 @@ function openShopDatabaseIfExists(shopId) {
   return db;
 }
 
-function resolveShopIdByOwnerEmail(ownerEmail) {
+function selectPreferredShopDatabaseForOwnerEmail(ownerEmail) {
   const normalizedEmail = String(ownerEmail || "").trim().toLowerCase();
   if (!normalizedEmail) return null;
 
   ensureShopDatabaseDirectory();
+  const matches = [];
   const entries = fs.readdirSync(SHOP_DATABASE_DIRECTORY, { withFileTypes: true });
   for (const entry of entries) {
     if (!entry.isFile() || !entry.name.toLowerCase().endsWith(".db")) continue;
@@ -131,14 +132,19 @@ function resolveShopIdByOwnerEmail(ownerEmail) {
       db.pragma("journal_mode = WAL");
       initializeShopDatabaseSchema(db);
       const row = db
-        .prepare("SELECT shop_id, owner_email FROM shop_meta WHERE lower(owner_email) = lower(?) LIMIT 1")
+        .prepare(
+          "SELECT shop_id, owner_email, created_at FROM shop_meta WHERE lower(owner_email) = lower(?) LIMIT 1",
+        )
         .get(normalizedEmail);
       if (row?.shop_id) {
-        return {
+        const stat = fs.statSync(fullPath);
+        matches.push({
           shopId: row.shop_id,
           ownerEmail: row.owner_email || normalizedEmail,
           dbFileName: entry.name,
-        };
+          createdAt: row.created_at || null,
+          mtimeMs: Number(stat?.mtimeMs || 0),
+        });
       }
     } catch {
       // ignore unreadable databases while searching by owner email
@@ -153,7 +159,32 @@ function resolveShopIdByOwnerEmail(ownerEmail) {
     }
   }
 
-  return null;
+  if (matches.length === 0) {
+    return null;
+  }
+
+  matches.sort((a, b) => {
+    const mtimeDelta = (b.mtimeMs || 0) - (a.mtimeMs || 0);
+    if (mtimeDelta !== 0) return mtimeDelta;
+
+    const createdDelta = (Date.parse(b.createdAt || "0") || 0) - (Date.parse(a.createdAt || "0") || 0);
+    if (createdDelta !== 0) return createdDelta;
+
+    return (a.dbFileName || "").localeCompare(b.dbFileName || "");
+  });
+
+  return matches[0];
+}
+
+function resolveShopIdByOwnerEmail(ownerEmail) {
+  const match = selectPreferredShopDatabaseForOwnerEmail(ownerEmail);
+  if (!match) return null;
+
+  return {
+    shopId: match.shopId,
+    ownerEmail: match.ownerEmail || String(ownerEmail || "").trim().toLowerCase(),
+    dbFileName: match.dbFileName,
+  };
 }
 
 function initializeShopDatabaseSchema(db) {
@@ -755,6 +786,7 @@ export {
   createShopDatabase,
   initializeShopDatabaseSchema,
   ensureAllShopDatabasesSchema,
+  selectPreferredShopDatabaseForOwnerEmail,
   upsertShopMetadata,
   upsertShopOperatingHours,
   replaceShopPaymentMethods,
