@@ -40,6 +40,12 @@ export default function OAuthCallback() {
     buildPostOAuthUrl(intent, destination),
   );
 
+  // Diagnostic logging for OAuth callback flow
+  try {
+    // eslint-disable-next-line no-console
+    console.debug("OAuthCallback: flow=", flow, "intent=", intent, "destination=", destination, "callbackUrl=", callbackUrl, "postOAuthUrl=", postOAuthUrl);
+  } catch {}
+
   return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center">
       <div className="text-center max-w-sm px-6">

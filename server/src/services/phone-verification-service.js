@@ -240,21 +240,23 @@ export async function sendPhoneVerificationCode(db, {
     const code = generateOTP();
     const now = new Date();
     const expiresAt = new Date(now.getTime() + OTP_TTL_SECONDS * 1000);
+    const createdAtIso = now.toISOString();
+    const expiresAtIso = expiresAt.toISOString();
 
-    // Store OTP in database
+    // Store OTP in database using ISO timestamps (avoid SQLite datetime parsing/timezone issues)
     try {
       db.prepare(`
         INSERT INTO phone_verification_otps
         (shop_id, user_email, normalized_phone, code, status, failed_attempts, created_at, expires_at)
-        VALUES (?, ?, ?, ?, 'pending', 0, datetime('now'), datetime(?, 'unixepoch'))
+        VALUES (?, ?, ?, ?, 'pending', 0, ?, ?)
         ON CONFLICT(user_email, normalized_phone) DO UPDATE SET
           code = excluded.code,
           status = 'pending',
           failed_attempts = 0,
-          created_at = datetime('now'),
+          created_at = excluded.created_at,
           expires_at = excluded.expires_at,
           rate_limit_expires_at = NULL
-      `).run(shopId, userEmail, normalizedPhone, code, Math.floor(expiresAt.getTime() / 1000));
+      `).run(shopId, userEmail, normalizedPhone, code, createdAtIso, expiresAtIso);
     } catch (err) {
       console.error("[PhoneVerification] Database insert failed:", err.message);
       const error = new Error("Failed to generate verification code");
@@ -273,65 +275,8 @@ export async function sendPhoneVerificationCode(db, {
       throw error;
     }
 
-    // Send SMS if configured
-    let devCode = null;
-    if (isFitSmsConfigured()) {
-      try {
-        await sendFitSmsMessage({
-          recipient: normalizedPhone,
-          message: `Your CeyPOS verification code is ${code}. Valid for ${OTP_TTL_SECONDS / 60} minutes. Do not share this code.`,
-          expirySeconds: OTP_TTL_SECONDS,
-        });
-        logAudit(db, {
-          shopId,
-          userEmail,
-          normalizedPhone,
-          action,
-          result: "SUCCESS_SMS_SENT",
-          ipAddress,
-          userAgent,
-        });
-      } catch (smsErr) {
-        console.error("[PhoneVerification] SMS sending failed:", smsErr.message);
-        // Mark OTP as failed if SMS fails in production
-        if (process.env.NODE_ENV === "production") {
-          db.prepare(`
-            UPDATE phone_verification_otps
-            SET status = 'failed'
-            WHERE user_email = ? AND normalized_phone = ?
-          `).run(userEmail, normalizedPhone);
-          
-          const error = new Error("Failed to send verification code. Please try again.");
-          error.code = "SMS_SENDING_FAILED";
-          logAudit(db, {
-            shopId,
-            userEmail,
-            normalizedPhone,
-            action,
-            result: "FAILED",
-            errorCode: "SMS_SENDING_FAILED",
-            errorMessage: `SMS Provider: ${smsErr.message}`,
-            ipAddress,
-            userAgent,
-          });
-          throw error;
-        } else {
-          // In development, log the code for testing
-          console.info(`[dev-otp] Email: ${userEmail}, Code: ${code}`);
-          devCode = code;
-          logAudit(db, {
-            shopId,
-            userEmail,
-            normalizedPhone,
-            action,
-            result: "SUCCESS_DEV_MODE",
-            ipAddress,
-            userAgent,
-          });
-        }
-      }
-    } else if (process.env.NODE_ENV === "production") {
-      // SMS not configured in production
+    // Send SMS via FitSMS. Actual SMS delivery is required for production workflows.
+    if (!isFitSmsConfigured()) {
       const error = new Error("Phone verification service not configured. Please contact support.");
       error.code = "SMS_PROVIDER_UNCONFIGURED";
       logAudit(db, {
@@ -346,25 +291,53 @@ export async function sendPhoneVerificationCode(db, {
         userAgent,
       });
       throw error;
-    } else {
-      // Development mode without SMS configured
-      console.info(`[dev-otp] Email: ${userEmail}, Code: ${code}`);
-      devCode = code;
+    }
+
+    try {
+      await sendFitSmsMessage({
+        recipient: normalizedPhone,
+        message: `Your CeyPOS verification code is ${code}. Valid for ${OTP_TTL_SECONDS / 60} minutes. Do not share this code.`,
+        expirySeconds: OTP_TTL_SECONDS,
+      });
       logAudit(db, {
         shopId,
         userEmail,
         normalizedPhone,
         action,
-        result: "SUCCESS_DEV_MODE",
+        result: "SUCCESS_SMS_SENT",
         ipAddress,
         userAgent,
       });
+    } catch (smsErr) {
+      console.error("[PhoneVerification] SMS sending failed:", smsErr?.message || smsErr, smsErr?.providerBody || null);
+      db.prepare(`
+        UPDATE phone_verification_otps
+        SET status = 'failed'
+        WHERE user_email = ? AND normalized_phone = ?
+      `).run(userEmail, normalizedPhone);
+
+      const error = new Error("Failed to send verification code. Please try again.");
+      error.code =
+        smsErr?.code === "sms_provider_auth_failed"
+          ? "SMS_PROVIDER_AUTH_FAILED"
+          : "SMS_SENDING_FAILED";
+      logAudit(db, {
+        shopId,
+        userEmail,
+        normalizedPhone,
+        action,
+        result: "FAILED",
+        errorCode: error.code,
+        errorMessage: `SMS Provider: ${smsErr?.message || String(smsErr)}`,
+        ipAddress,
+        userAgent,
+      });
+      throw error;
     }
 
     return {
       ok: true,
       phone: normalizedPhone,
-      ...(devCode && { devCode }), // Only in development
     };
   } catch (err) {
     // Re-throw with original code if already set

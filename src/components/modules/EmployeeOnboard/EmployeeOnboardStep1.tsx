@@ -1,7 +1,7 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { useEmployeeOnboard } from "../../../context/EmployeeOnboardContext";
-import { postJSON } from "../../../lib/api";
+import { postJSON, waitForApiReady } from "../../../lib/api";
 import "../ShopWizard/styles/ShopWizard.css";
 
 const cardVariants = {
@@ -32,20 +32,6 @@ export const EmployeeOnboardStep1: React.FC = () => {
   const [localPhone, setLocalPhone] = useState("");
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [checkingOwner, setCheckingOwner] = useState(false);
-  const autoAdvancedRef = useRef(false);
-
-  useEffect(() => {
-    if (!canProceed) {
-      autoAdvancedRef.current = false;
-      return;
-    }
-    if (autoAdvancedRef.current) return;
-    autoAdvancedRef.current = true;
-    const timer = window.setTimeout(() => {
-      nextStep();
-    }, 700);
-    return () => window.clearTimeout(timer);
-  }, [canProceed, nextStep]);
 
   useEffect(() => {
     if (formData.phone) {
@@ -67,6 +53,7 @@ export const EmployeeOnboardStep1: React.FC = () => {
       mainTerminalEmail: formData.mainTerminalEmail,
       phone: combinedPhone,
       phoneVerified: false,
+      phoneVerificationSkipped: false,
     });
   }, [
     countryCode,
@@ -105,6 +92,7 @@ export const EmployeeOnboardStep1: React.FC = () => {
       setCheckingOwner(true);
       setError(null);
       try {
+        await waitForApiReady();
         await postJSON("/api/team/lookup-owner", { ownerEmail: value.trim() });
         updateFormData({ ownerVerified: true });
       } catch {
@@ -173,7 +161,11 @@ export const EmployeeOnboardStep1: React.FC = () => {
                 type="text"
                 value={formData.displayName}
                 onChange={(e) => {
-                  updateFormData({ displayName: e.target.value, phoneVerified: false });
+                  updateFormData({
+                    displayName: e.target.value,
+                    phoneVerified: false,
+                    phoneVerificationSkipped: false,
+                  });
                   if (errors.displayName) setErrors((p) => ({ ...p, displayName: "" }));
                 }}
                 onBlur={(e) => void handleBlur("displayName", e.target.value)}
@@ -204,6 +196,7 @@ export const EmployeeOnboardStep1: React.FC = () => {
                   updateFormData({
                     mainTerminalEmail: e.target.value,
                     phoneVerified: false,
+                    phoneVerificationSkipped: false,
                     ownerVerified: false,
                   });
                   if (errors.mainTerminalEmail) {
@@ -259,7 +252,7 @@ export const EmployeeOnboardStep1: React.FC = () => {
                   value={localPhone}
                   onChange={(e) => {
                     setLocalPhone(e.target.value);
-                    updateFormData({ phoneVerified: false });
+                    updateFormData({ phoneVerified: false, phoneVerificationSkipped: false });
                     if (errors.localPhone) setErrors((p) => ({ ...p, localPhone: "" }));
                   }}
                   onBlur={(e) => void handleBlur("localPhone", e.target.value)}
@@ -278,6 +271,42 @@ export const EmployeeOnboardStep1: React.FC = () => {
                 <p className="text-xs text-red-500 mt-1">{errors.localPhone}</p>
               )}
             </motion.div>
+          </div>
+          <div className="mt-6 flex justify-end">
+            <motion.button
+              whileHover={{ scale: canProceed ? 1.02 : 1 }}
+              whileTap={{ scale: canProceed ? 0.98 : 1 }}
+              type="button"
+              onClick={nextStep}
+              disabled={!canProceed}
+              className={canProceed ? "button-primary" : "button-outline"}
+              style={{
+                height: '32px',
+                minWidth: '110px',
+                padding: '0 14px',
+                fontSize: '12px',
+                fontWeight: 500,
+                backgroundColor: canProceed ? '#c5f542' : 'var(--gray--200)',
+                color: canProceed ? '#000000' : 'var(--gray--500)',
+                border: '1px solid var(--gray--300)',
+                cursor: canProceed ? 'pointer' : 'not-allowed',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '6px',
+                borderRadius: '12px',
+              }}
+            >
+              Next
+              <svg
+                style={{ width: '14px', height: '14px' }}
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+              </svg>
+            </motion.button>
           </div>
         </div>
       </motion.div>

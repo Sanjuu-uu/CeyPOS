@@ -11,6 +11,7 @@ export type EmployeeOnboardFormData = {
   mainTerminalEmail: string;
   phone: string;
   phoneVerified: boolean;
+  phoneVerificationSkipped: boolean;
   terminalPaired: boolean;
   ownerVerified: boolean;
   shopId: string;
@@ -38,6 +39,7 @@ const defaultFormData: EmployeeOnboardFormData = {
   mainTerminalEmail: "",
   phone: "",
   phoneVerified: false,
+  phoneVerificationSkipped: false,
   terminalPaired: false,
   ownerVerified: false,
   shopId: "",
@@ -58,7 +60,7 @@ function validateStep(step: number, data: EmployeeOnboardFormData): boolean {
         data.phone.trim().length >= 7
       );
     case 2:
-      return data.phoneVerified;
+      return data.phoneVerified || data.phoneVerificationSkipped;
     case 3:
       return data.terminalPaired;
     default:

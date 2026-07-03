@@ -49,6 +49,7 @@ const cardVariants = {
   animate: {
     y: 0,
     opacity: 1,
+    scale: 1,
     transition: {
       duration: 0.4,
       ease: 'easeOut',
@@ -158,7 +159,7 @@ export const ShopWizardStep2: React.FC = () => {
     if (Object.keys(errors).length > 0) {
         validateForm(); 
     }
-  }, [localData, updateFormData, validateForm, errors]);
+  }, [localData, updateFormData, validateForm]);
 
   return (
     <div className="w-full flex justify-center">

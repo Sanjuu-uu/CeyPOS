@@ -488,15 +488,29 @@ export default function MobileScan() {
     const reader = new BrowserMultiFormatReader();
     zxingReaderRef.current = reader;
 
-    reader.decodeFromVideoDevice(undefined, video, (result) => {
-      if (result) {
-        publishBarcode(result.getText());
+    let controlsStarted = false;
+    reader
+      .decodeFromVideoDevice(undefined, video, (result) => {
+        if (result) {
+          publishBarcode(result.getText());
+        }
+      })
+      .then((controls) => {
+        controlsStarted = true;
+        zxingControlsRef.current = controls as ScannerControls;
+      })
+      .catch((err) => {
+        console.warn("ZXing decode failed", err);
+      });
+
+    // If ZXing didn't start within a short window, surface a helpful message.
+    setTimeout(() => {
+      if (!controlsStarted) {
+        console.warn("ZXing fallback did not start");
+        setScanStatus("error");
+        setStatusMessage("Scanner unavailable: no supported decoding available on this device.");
       }
-    }).then((controls) => {
-      zxingControlsRef.current = controls as ScannerControls;
-    }).catch((err) => {
-      console.warn("ZXing decode failed", err);
-    });
+    }, 2000);
   };
 
   const startCamera = async () => {

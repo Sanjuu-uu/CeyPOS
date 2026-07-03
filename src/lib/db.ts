@@ -534,6 +534,9 @@ function buildSale(
 
 async function fetchShopMeta(rawShopId: string) {
   const res = await authFetch(`${API_BASE}/api/shop/${rawShopId}/meta`);
+  if (res.status === 404) {
+    return false;
+  }
   if (!res.ok) throw new Error(`Failed to load shop metadata (${res.status})`);
   const body = await res.json();
   const meta = body.meta || body;
@@ -547,6 +550,7 @@ async function fetchShopMeta(rawShopId: string) {
     currency: meta.currency || "$", // Map currency
   } as Shop;
   emit("shopMeta", { shopId: key, meta });
+  return true;
 }
 
 function applyInventoryRows(shopKey: string, rows: InventoryRow[]) {
@@ -786,10 +790,14 @@ function applySnapshot(
 async function fetchSnapshot(shopKey: string) {
   const rawShopId = normalizeShopId(shopKey);
   const res = await authFetch(`${API_BASE}/api/shop/${rawShopId}/snapshot`);
+  if (res.status === 404) {
+    return false;
+  }
   if (!res.ok) throw new Error(`Failed to load snapshot (${res.status})`);
   const data = await res.json();
-  if (!data?.snapshot) return;
+  if (!data?.snapshot) return true;
   applySnapshot(shopKey, data.snapshot);
+  return true;
 }
 
 function handleChange(event: ChangeEventPayload | null | undefined) {
@@ -1040,9 +1048,18 @@ async function connectWebSocket(
 ) {
   const rawShopId = normalizeShopId(shopId);
   const shopKey = toShopKey(shopId);
-  await fetchShopMeta(rawShopId);
-  await fetchSnapshot(shopKey);
+  const metaLoaded = await fetchShopMeta(rawShopId);
+  if (!metaLoaded) {
+    console.warn(`connectWebSocket: shop not found for ${rawShopId}`);
+    return false;
+  }
+  const snapshotLoaded = await fetchSnapshot(shopKey);
+  if (!snapshotLoaded) {
+    console.warn(`connectWebSocket: snapshot not found for ${rawShopId}`);
+    return false;
+  }
   ensureSocket(shopKey, terminal);
+  return true;
 }
 
 // Report this terminal's current cart to the server so other terminals see the

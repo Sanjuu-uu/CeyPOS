@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import { useLocation } from "react-router-dom";
-import { useClerk } from "@clerk/clerk-react";
+import { useAuth, useUser } from "@clerk/clerk-react";
 import {
   parseAccountParam,
   persistAccountIntent,
@@ -15,8 +15,8 @@ import {
   type AccountIntent,
 } from "../../lib/authFlow";
 
-const MAX_WAIT_MS = 12000;
-const POLL_MS = 200;
+// Poll interval while waiting for Clerk session activation
+const POLL_MS = 250;
 
 /**
  * Runs once after /auth/sso-callback activates the Clerk session.
@@ -24,7 +24,8 @@ const POLL_MS = 200;
  * Owner destination:     /shop-wizard
  */
 export default function PostOAuthRedirect() {
-  const clerk = useClerk();
+  const { isLoaded, isSignedIn } = useAuth();
+  const { user } = useUser();
   const location = useLocation();
   const finishedRef = useRef(false);
   const intentRef = useRef<AccountIntent>("owner");
@@ -32,9 +33,7 @@ export default function PostOAuthRedirect() {
 
   const params = new URLSearchParams(location.search);
   const intent: AccountIntent =
-    parseAccountParam(location.search) ||
-    readAccountIntent() ||
-    "owner";
+    parseAccountParam(location.search) || readAccountIntent() || "owner";
   const destination = sanitizeRedirectTarget(
     params.get("redirect"),
     getPostRegisterPath(intent),
@@ -52,9 +51,8 @@ export default function PostOAuthRedirect() {
 
     let cancelled = false;
     let timer: number | undefined;
-    const started = Date.now();
 
-    const finish = async (activeUser: NonNullable<typeof clerk.user>) => {
+    const finish = async (activeUser: NonNullable<typeof user>) => {
       if (finishedRef.current || cancelled) return;
       finishedRef.current = true;
       clearOAuthPending();
@@ -82,20 +80,10 @@ export default function PostOAuthRedirect() {
     const poll = () => {
       if (finishedRef.current || cancelled) return;
 
-      const activeUser = clerk.user;
-      const hasSession = Boolean(clerk.session && activeUser);
+      const hasSession = Boolean(isSignedIn && user);
 
-      if (hasSession && activeUser) {
-        void finish(activeUser);
-        return;
-      }
-
-      if (Date.now() - started >= MAX_WAIT_MS) {
-        finishedRef.current = true;
-        clearOAuthPending();
-        window.location.replace(
-          buildRegisterHref(intentRef.current) + "&oauth=session_timeout",
-        );
+      if (hasSession && user) {
+        void finish(user as NonNullable<typeof user>);
         return;
       }
 
@@ -103,7 +91,7 @@ export default function PostOAuthRedirect() {
     };
 
     const boot = async () => {
-      if (!clerk.loaded) {
+      if (!isLoaded) {
         timer = window.setTimeout(() => void boot(), POLL_MS);
         return;
       }
@@ -112,13 +100,14 @@ export default function PostOAuthRedirect() {
 
     void boot();
 
+
     return () => {
       cancelled = true;
       if (timer !== undefined) {
         window.clearTimeout(timer);
       }
     };
-  }, [clerk]);
+  }, [isLoaded, isSignedIn, user]);
 
   return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center">

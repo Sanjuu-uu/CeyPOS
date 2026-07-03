@@ -12,8 +12,9 @@ import {
   intentToMetadataAccountType,
   buildRegisterHref,
 } from "../../lib/authFlow";
+import { OAUTH_JUST_COMPLETED_KEY } from "../../lib/authFlow";
 
-const OAUTH_WAIT_MS = 15000;
+// No auto timeout for pending OAuth — wait until Clerk session activates
 
 function AuthLoading({ message = "Loading…" }: { message?: string }) {
   return (
@@ -57,12 +58,9 @@ export function RegisterPageGate() {
       setOauthWaitDone(true);
       return;
     }
+    // Keep waiting until Clerk activates the session; do not auto-clear.
     setOauthWaitDone(false);
-    const timer = window.setTimeout(() => {
-      clearOAuthPending();
-      setOauthWaitDone(true);
-    }, OAUTH_WAIT_MS);
-    return () => window.clearTimeout(timer);
+    return () => {};
   }, [oauthPending, isSignedIn]);
 
   useEffect(() => {
@@ -110,5 +108,12 @@ export function RegisterPageGate() {
 
 /** Pre-auth redirect when an unsigned user hits a wizard URL directly. */
 export function PreAuthWizardRedirect({ intent }: { intent: "employee" | "owner" }) {
+  try {
+    const justCompleted = typeof window !== "undefined" && Boolean(sessionStorage.getItem(OAUTH_JUST_COMPLETED_KEY));
+    if (justCompleted) {
+      return <Navigate to={getPostRegisterPath(intent === "employee" ? "employee" : "owner")} replace />;
+    }
+  } catch {}
+
   return <Navigate to={buildRegisterHref(intent === "employee" ? "employee" : "owner")} replace />;
 }

@@ -70,6 +70,7 @@ router.post("/verify/send-code", async (req, res) => {
       INVALID_PHONE_FORMAT: 400,
       RATE_LIMIT_EXCEEDED: 429,
       SMS_PROVIDER_UNCONFIGURED: 503,
+      SMS_PROVIDER_AUTH_FAILED: 503,
       SMS_SENDING_FAILED: 503,
       OTP_GENERATION_FAILED: 500,
       UNKNOWN_ERROR: 500,
@@ -237,8 +238,9 @@ router.post("/register", requireShopBody, (req, res) => {
       if (!phone) {
         return res.status(400).json({ error: "phone is required" });
       }
+      const { phoneVerificationSkipped } = req.body || {};
       verificationDb = openGlobalVerificationDatabase();
-      if (!isPhoneVerified(verificationDb, userEmail, phone)) {
+      if (!phoneVerificationSkipped && !isPhoneVerified(verificationDb, userEmail, phone)) {
         return res.status(403).json({
           error: "Phone number must be verified before completing registration",
           code: "PHONE_NOT_VERIFIED",

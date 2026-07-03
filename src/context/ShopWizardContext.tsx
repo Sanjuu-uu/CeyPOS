@@ -9,7 +9,7 @@ import React, {
   useRef,
 } from 'react';
 import { useClerk, useUser } from '@clerk/clerk-react';
-import { authFetch } from '../lib/api';
+import { authFetch, waitForApiReady } from '../lib/api';
 
 // Define the complete shop form data interface
 export interface ShopFormData {
@@ -380,8 +380,12 @@ export const ShopWizardProvider: React.FC<ShopWizardProviderProps> = ({
       setCompletionError(null);
 
       try {
+        await waitForApiReady();
+        const shouldUpdateExistingShop = Boolean(
+          isCompleted && shopId && shopDbFileName,
+        );
         const payload = {
-          shopId: shopId || undefined,
+          shopId: shouldUpdateExistingShop ? shopId : undefined,
           formData: {
             ...formData,
             email: ownerEmail,
@@ -492,7 +496,7 @@ export const ShopWizardProvider: React.FC<ShopWizardProviderProps> = ({
     };
 
     return execution;
-  }, [clerk.user, formData, onStatusChange, shopId, user, userEmail]);
+  }, [clerk.user, formData, isCompleted, onStatusChange, shopDbFileName, shopId, user, userEmail]);
 
   // Add function to reset wizard (for testing)
   const resetWizard = useCallback(() => {

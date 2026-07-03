@@ -114,6 +114,37 @@ function loadTeamSetupCache(userEmail?: string | null): TeamSetupCache | null {
   }
 }
 
+function removeShopStateFromMetadata(metadata: Record<string, unknown>) {
+  const nextMetadata = { ...metadata };
+  delete nextMetadata.shopCompleted;
+  delete nextMetadata.shopId;
+  delete nextMetadata.dbFileName;
+  delete nextMetadata.shopName;
+  delete nextMetadata.ownerName;
+  delete nextMetadata.ownerEmail;
+  delete nextMetadata.phone;
+  delete nextMetadata.shopType;
+  delete nextMetadata.address;
+  delete nextMetadata.city;
+  delete nextMetadata.state;
+  delete nextMetadata.zipCode;
+  delete nextMetadata.country;
+  delete nextMetadata.businessLicense;
+  delete nextMetadata.taxId;
+  delete nextMetadata.registrationNumber;
+  delete nextMetadata.currency;
+  delete nextMetadata.timezone;
+  delete nextMetadata.paymentMethods;
+  delete nextMetadata.operatingHours;
+  delete nextMetadata.lastShopSetupAt;
+  delete nextMetadata.teamOnboarded;
+  delete nextMetadata.terminalPaired;
+  delete nextMetadata.mainTerminalEmail;
+  delete nextMetadata.displayName;
+  delete nextMetadata.userEmail;
+  return nextMetadata;
+}
+
 function PostAuthApp() {
   const { user } = useUser();
   const userEmail = user?.primaryEmailAddress?.emailAddress || "";
@@ -362,6 +393,20 @@ function PostAuthContent({
       : "owner";
   const teamOnboarded =
     metadata.teamOnboarded === true || teamSetupCache?.teamOnboarded === true;
+  const validationOwnerEmail = useMemo(() => {
+    const ownerEmailCandidate =
+      accountType === "team"
+        ? (typeof metadata.mainTerminalEmail === "string"
+            ? metadata.mainTerminalEmail
+            : teamSetupCache?.mainTerminalEmail)
+        : (typeof metadata.ownerEmail === "string"
+            ? metadata.ownerEmail
+            : userEmail);
+
+    return typeof ownerEmailCandidate === "string"
+      ? ownerEmailCandidate.trim().toLowerCase()
+      : "";
+  }, [accountType, metadata, teamSetupCache, userEmail]);
   const {
     isCompleted: wizardCompleted,
     shopId: wizardShopId,
@@ -380,6 +425,26 @@ function PostAuthContent({
     dbFileName: string;
   } | null>(null);
   const validationReadyRef = useRef(false);
+
+  const clearInvalidShopState = useCallback(async () => {
+    try {
+      localStorage.removeItem(TEAM_SETUP_CACHE_KEY);
+    } catch {
+      // ignore local cache cleanup failures
+    }
+
+    if (!user) {
+      return;
+    }
+
+    try {
+      await user.update({
+        unsafeMetadata: removeShopStateFromMetadata(user.unsafeMetadata ?? {}),
+      });
+    } catch {
+      // ignore metadata cleanup failures; validation state still resets locally
+    }
+  }, [user]);
 
   const effectiveShopData = useMemo(() => {
     const metadata = user?.unsafeMetadata ?? {};
@@ -440,8 +505,11 @@ function PostAuthContent({
 
     (async () => {
       try {
+        const validationUrl = validationOwnerEmail
+          ? `/api/shop/${encodeURIComponent(shopId)}/exists?ownerEmail=${encodeURIComponent(validationOwnerEmail)}`
+          : `/api/shop/${encodeURIComponent(shopId)}/exists`;
         const response = await authFetch(
-          `/api/shop/${encodeURIComponent(shopId)}/exists`,
+          validationUrl,
           {
             signal: controller.signal,
           },
@@ -456,10 +524,10 @@ function PostAuthContent({
 
         if (!payload.exists || !payload.hasMetadata) {
           if (!cancelled) {
-            setValidationMessage(
-              "Shop validation failed. Please contact CeyPOS administration."
-            );
-            setValidationState("error");
+            await clearInvalidShopState();
+            onShopStatusChange({ isCompleted: false, shopId: "", dbFileName: "" });
+            setValidationMessage(null);
+            setValidationState("needs-setup");
             setLastValidated(null);
           }
           return;
@@ -475,11 +543,16 @@ function PostAuthContent({
         if (!cancelled) {
           const isAbort =
             error instanceof DOMException && error.name === "AbortError";
-          const message = isAbort
-            ? "Shop validation timed out. Please retry or contact CeyPOS administration."
-            : "Shop validation failed. Please contact CeyPOS administration.";
-          setValidationMessage(message);
-          setValidationState("error");
+          if (!isAbort) {
+            await clearInvalidShopState();
+            onShopStatusChange({ isCompleted: false, shopId: "", dbFileName: "" });
+            setValidationMessage(null);
+            setValidationState("needs-setup");
+          } else {
+            const message = "Shop validation timed out. Please retry or contact CeyPOS administration.";
+            setValidationMessage(message);
+            setValidationState("error");
+          }
           setLastValidated(null);
         }
       } finally {

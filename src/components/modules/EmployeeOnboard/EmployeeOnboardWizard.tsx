@@ -101,11 +101,12 @@ export const EmployeeOnboardWizard: React.FC = () => {
         await user.delete();
       } catch (error) {
         console.error("Employee cancel: user.delete failed", error);
+        // Don't block sign-out — proceed with local cleanup and sign-out even
+        // if Clerk self-deletion is disabled. Inform the user they may need
+        // to remove the account from the Clerk dashboard manually.
         setCancelError(
-          "Could not delete your account. Enable user self-deletion in Clerk Dashboard → Settings, then try again.",
+          "Could not delete your Clerk account automatically. You may need to remove it from Clerk Dashboard → Users. Proceeding to sign out.",
         );
-        setIsDeleting(false);
-        return;
       }
     }
 

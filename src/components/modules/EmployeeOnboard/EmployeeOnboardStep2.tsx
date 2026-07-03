@@ -3,12 +3,16 @@ import { motion } from "framer-motion";
 import { Mail, AlertCircle, CheckCircle } from "lucide-react";
 import { useUser } from "@clerk/clerk-react";
 import { useEmployeeOnboard } from "../../../context/EmployeeOnboardContext";
-import { postJSON } from "../../../lib/api";
+import { postJSON, waitForApiReady } from "../../../lib/api";
 import "../ShopWizard/styles/ShopWizard.css";
 
 const cardVariants = {
   initial: { y: 20, opacity: 0 },
-  animate: { y: 0, opacity: 1, transition: { duration: 0.4, ease: "easeOut" } },
+  animate: {
+    y: 0,
+    opacity: 1,
+    transition: { duration: 0.4, ease: [0.22, 1, 0.36, 1] },
+  },
 };
 
 interface VerificationError {
@@ -49,6 +53,7 @@ export const EmployeeOnboardStep2: React.FC = () => {
     isBusy,
     setIsBusy,
     nextStep,
+    goToStep,
   } = useEmployeeOnboard();
   const [code, setCode] = useState("");
   const [sent, setSent] = useState(false);
@@ -73,16 +78,13 @@ export const EmployeeOnboardStep2: React.FC = () => {
     setRetryAfterSeconds(null);
 
     try {
-      const result = await postJSON<{ ok: boolean; devCode?: string }>(
+      await waitForApiReady();
+      await postJSON<{ ok: boolean }>(
         "/api/team/verify/send-code",
-        { phone: formData.phone },
+        { phone: formData.phone, userEmail },
       );
       setSent(true);
-      if ((result as any).devCode) {
-        setInfo(`Development mode — your code is ${(result as any).devCode}`);
-      } else {
-        setInfo("Verification code sent to your phone.");
-      }
+      setInfo("Verification code sent to your phone.");
     } catch (err) {
       const errorData = parseErrorResponse(err);
       if (errorData.retryAfter) {
@@ -134,6 +136,7 @@ export const EmployeeOnboardStep2: React.FC = () => {
     setError(null);
     setAttemptsRemaining(null);
     try {
+      await waitForApiReady();
       await postJSON("/api/team/verify/check-code", {
         phone: formData.phone,
         code: codeValue.trim(),
@@ -266,6 +269,26 @@ export const EmployeeOnboardStep2: React.FC = () => {
                     : sent
                       ? "Resend verification code"
                       : "Sending code…"}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setError(null);
+                    setAttemptsRemaining(null);
+                    setRetryAfterSeconds(null);
+                    setInfo("Phone verification skipped. You can complete it later.");
+                    updateFormData({
+                      phoneVerified: true,
+                      phoneVerificationSkipped: true,
+                    });
+                    window.requestAnimationFrame(() => {
+                      goToStep(3);
+                    });
+                  }}
+                  className="w-full mt-2 border border-gray-300 bg-white text-gray-900 hover:bg-gray-50 py-3 rounded-full text-sm font-medium transition-colors"
+                >
+                  Skip verification for now
                 </button>
               </>
             ) : (

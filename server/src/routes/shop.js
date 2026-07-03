@@ -58,6 +58,13 @@ router.post("/register", (req, res) => {
 });
 
 // Persist full ShopWizard payload, creating or updating the dedicated shop database
+router.get("/setup", (req, res) => {
+  return res.status(405).json({
+    error: "Method not allowed",
+    message: "Use POST /api/shop/setup to create or update a shop.",
+  });
+});
+
 router.post("/setup", requireClerkSession, (req, res) => {
   try {
     const { formData, shopId: existingShopId } = req.body || {};
@@ -178,6 +185,10 @@ router.get("/:shopId/meta", (req, res) => {
       return res.status(400).json({ error: "shopId is required" });
     }
 
+    if (!shopDatabaseExists(shopId)) {
+      return res.status(404).json({ error: "Shop database not found" });
+    }
+
     const db = openShopDatabase(shopId);
     const meta = db
       .prepare("SELECT * FROM shop_meta WHERE shop_id = ?")
@@ -235,6 +246,7 @@ router.get("/:shopId/snapshot", (req, res) => {
 router.get("/:shopId/exists", (req, res) => {
   try {
     const { shopId } = req.params;
+    const expectedOwnerEmail = normalizeEmail(req.query.ownerEmail || "");
     if (!shopId) {
       return res.status(400).json({ error: "shopId is required" });
     }
@@ -253,6 +265,17 @@ router.get("/:shopId/exists", (req, res) => {
       .prepare("SELECT * FROM shop_meta WHERE shop_id = ?")
       .get(shopId);
     db.close();
+
+    const actualOwnerEmail = normalizeEmail(meta?.owner_email || "");
+    if (expectedOwnerEmail && actualOwnerEmail && expectedOwnerEmail !== actualOwnerEmail) {
+      return res.json({
+        exists: false,
+        hasMetadata: false,
+        meta: null,
+        dbFileName: getShopDatabaseFileName(shopId),
+        reason: "owner-email-mismatch",
+      });
+    }
 
     res.json({
       exists: true,

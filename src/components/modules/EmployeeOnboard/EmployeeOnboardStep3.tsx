@@ -3,7 +3,7 @@ import { motion } from "framer-motion";
 import { Loader2, MonitorSpeaker, ShieldCheck } from "lucide-react";
 import { useUser } from "@clerk/clerk-react";
 import { useEmployeeOnboard } from "../../../context/EmployeeOnboardContext";
-import { postJSON, authFetch } from "../../../lib/api";
+import { postJSON, authFetch, waitForApiReady } from "../../../lib/api";
 import {
   saveTerminalSession,
 } from "../../../lib/shopContext";
@@ -148,6 +148,7 @@ export const EmployeeOnboardStep3: React.FC = () => {
       setPairStatus("registering");
       setRegisterError(null);
       try {
+        await waitForApiReady();
         const result = await postJSON<{
           ok: boolean;
           shopId: string;
@@ -159,6 +160,7 @@ export const EmployeeOnboardStep3: React.FC = () => {
           clerkUserId: user.id,
           accountType: "team",
           phone: formData.phone,
+          phoneVerificationSkipped: formData.phoneVerificationSkipped,
         });
 
         if (cancelled) return;
@@ -220,6 +222,7 @@ export const EmployeeOnboardStep3: React.FC = () => {
     setPairStatus("registering");
 
     try {
+      await waitForApiReady();
       const pairing = await postJSON<{ ok: boolean; requestId: string; error?: string }>(
         "/api/terminals/pairing/request",
         {
@@ -243,6 +246,12 @@ export const EmployeeOnboardStep3: React.FC = () => {
   const goToDashboard = () => {
     window.location.replace("/dashboard");
   };
+
+  React.useEffect(() => {
+    if (pairStatus === "approved") {
+      window.location.replace("/dashboard");
+    }
+  }, [pairStatus]);
 
   if (registerError) {
     return (

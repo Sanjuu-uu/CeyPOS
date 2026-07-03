@@ -120,7 +120,11 @@ export async function sendFitSmsMessage({ recipient, message, expirySeconds }) {
       body?.error ||
       `FitSMS HTTP ${response.status}`;
     const err = new Error(message);
-    err.code = "sms_provider_error";
+    const isAuthError =
+      response.status === 401 ||
+      response.status === 403 ||
+      String(message).toLowerCase().includes("unauthenticated");
+    err.code = isAuthError ? "sms_provider_auth_failed" : "sms_provider_error";
     err.status = response.status;
     err.providerBody = body;
     throw err;

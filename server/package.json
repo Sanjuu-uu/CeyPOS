@@ -9,7 +9,8 @@
   },
   "scripts": {
     "start": "node main-server.js",
-    "dev": "cross-env PORT=8080 node main-server.js"
+    "dev": "cross-env PORT=8080 node main-server.js",
+    "test": "node --test --test-reporter=spec"
   },
   "dependencies": {
     "@clerk/express": "^1.7.81",
