@@ -40,15 +40,6 @@ const Register = () => {
     persistAccountIntent(accountIntent);
   }, [accountIntent]);
 
-  useEffect(() => {
-    if (!isSignedIn || !user) return;
-
-    void (async () => {
-      await applyAccountMetadata();
-      navigate(postRegisterPath, { replace: true });
-    })();
-  }, [isSignedIn, user, navigate, postRegisterPath, applyAccountMetadata]);
-
   const applyAccountMetadata = useCallback(async () => {
     if (!user) return;
     const metaType = intentToMetadataAccountType(accountIntent);
@@ -65,6 +56,15 @@ const Register = () => {
     });
     clearAccountIntent();
   }, [accountIntent, user]);
+
+  useEffect(() => {
+    if (!isSignedIn || !user) return;
+
+    void (async () => {
+      await applyAccountMetadata();
+      navigate(postRegisterPath, { replace: true });
+    })();
+  }, [isSignedIn, user, navigate, postRegisterPath, applyAccountMetadata]);
 
   const [showPassword, setShowPassword] = useState(false);
   const [fullName, setFullName] = useState("");
