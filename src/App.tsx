@@ -26,8 +26,10 @@ import {
   readAccountIntent,
   clearAccountIntent,
   intentToMetadataAccountType,
+  resolvePostAuthDestination,
 } from "./lib/authFlow";
 import { authFetch, setAuthTokenGetter } from "./lib/api";
+import OAuthCallback from "./pages/auth/OAuthCallback";
 
 // Get Clerk publishable key from environment
 const clerkPubKey =
@@ -50,6 +52,11 @@ function PreAuthApp() {
       <Route path="/home" element={<Home />} />
       <Route path="/login" element={<Login />} />
       <Route path="/register" element={<Register />} />
+      <Route
+        path="/team-onboard"
+        element={<Navigate to="/register?account=employee" replace />}
+      />
+      <Route path="/auth/sso-callback" element={<OAuthCallback />} />
       <Route path="/about" element={<AboutUs />} />
       <Route
         path="/features"
@@ -295,8 +302,11 @@ function PostAuthApp() {
 
   const activeShopId = shopStatus.shopId || metadataShopId;
 
+  const sessionIntent = readAccountIntent();
   const accountType =
-    metadata.accountType === "team" || teamSetupCache?.accountType === "team"
+    metadata.accountType === "team" ||
+    teamSetupCache?.accountType === "team" ||
+    sessionIntent === "employee"
       ? ("team" as const)
       : ("owner" as const);
 
@@ -341,8 +351,11 @@ function PostAuthContent({
     [userEmail],
   );
   const metadata = user?.unsafeMetadata ?? {};
+  const sessionIntent = readAccountIntent();
   const accountType =
-    metadata.accountType === "team" || teamSetupCache?.accountType === "team"
+    metadata.accountType === "team" ||
+    teamSetupCache?.accountType === "team" ||
+    sessionIntent === "employee"
       ? "team"
       : "owner";
   const teamOnboarded =
@@ -544,27 +557,27 @@ function PostAuthContent({
       ? validationState !== "ready"
       : !teamOnboarded || validationState !== "ready";
 
+  const postAuthHome = resolvePostAuthDestination({
+    metadataAccountType: metadata.accountType,
+    sessionIntent,
+    teamOnboarded,
+    shopReady: validationState === "ready",
+  });
+
   return (
     <Routes>
+      <Route path="/auth/sso-callback" element={<OAuthCallback />} />
       <Route path="/mobilesessions" element={<Navigate to="/mobilesessions/scan" replace />} />
       <Route path="/mobilesessions/scan" element={<MobileScan />} />
       <Route path="/team-onboard" element={<TeamOnboard />} />
       <Route
+        path="/register"
+        element={<Navigate to={postAuthHome} replace />}
+      />
+      <Route path="/login" element={<Navigate to={postAuthHome} replace />} />
+      <Route
         path="/"
-        element={
-          <Navigate
-            to={
-              accountType === "team" && !teamOnboarded
-                ? "/team-onboard"
-                : forceWizard
-                  ? accountType === "team"
-                    ? "/team-onboard"
-                    : "/shop-wizard"
-                  : "/dashboard"
-            }
-            replace
-          />
-        }
+        element={<Navigate to={postAuthHome} replace />}
       />
       <Route
         path="/home"
@@ -747,6 +760,7 @@ function AppRouter() {
   return (
     <Routes>
       <Route path="/r/:token" element={<PublicReceiptView />} />
+      <Route path="/auth/sso-callback" element={<OAuthCallback />} />
       <Route
         path="*"
         element={isSignedIn ? <PostAuthApp /> : <PreAuthApp />}

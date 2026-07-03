@@ -90,6 +90,45 @@ export function buildRegisterHref(intent: AccountIntent): string {
   return intent === "employee" ? "/register?account=employee" : "/register?account=owner";
 }
 
+/** Clerk OAuth must return to this route so the session can be activated. */
+export const OAUTH_CALLBACK_PATH = "/auth/sso-callback";
+
+export function buildOAuthCallbackUrl(
+  flow: "login" | "register",
+  accountIntent: AccountIntent,
+  redirectTo?: string,
+): string {
+  const params = new URLSearchParams();
+  params.set("account", accountIntent);
+  params.set("flow", flow);
+  if (redirectTo) {
+    params.set("redirect", redirectTo);
+  }
+  return `${OAUTH_CALLBACK_PATH}?${params.toString()}`;
+}
+
+export function resolvePostAuthDestination(options: {
+  metadataAccountType?: unknown;
+  sessionIntent?: AccountIntent | null;
+  teamOnboarded?: boolean;
+  shopReady?: boolean;
+}): string {
+  const intent = options.sessionIntent ?? null;
+  const isTeam =
+    options.metadataAccountType === "team" || intent === "employee";
+  const isOwner =
+    options.metadataAccountType === "owner" ||
+    (!isTeam && (intent === "owner" || intent === null));
+
+  if (isTeam && !options.teamOnboarded) {
+    return "/team-onboard";
+  }
+  if (isOwner && !options.shopReady) {
+    return "/shop-wizard";
+  }
+  return "/dashboard";
+}
+
 export function buildOAuthRedirectUrl(
   basePath: "/login" | "/register",
   redirectTo: string,

@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo, useCallback } from "react";
 import { Eye, EyeOff, Mail, Lock, User, ArrowRight } from "lucide-react";
-import { useAuth, useSignUp, useUser } from "@clerk/clerk-react";
+import { useSignUp, useSignIn, useUser } from "@clerk/clerk-react";
 import { useNavigate, useLocation } from "react-router-dom";
 import Navigation from "../components/Navigation";
 import Footer from "../components/Footer";
@@ -11,8 +11,8 @@ import {
   readAccountIntent,
   getPostRegisterPath,
   getAccountTypeLabel,
-  buildOAuthRedirectUrl,
   buildOAuthRedirectCompleteUrl,
+  buildOAuthCallbackUrl,
   intentToMetadataAccountType,
   PENDING_OAUTH_KEY,
   clearAccountIntent,
@@ -22,7 +22,7 @@ type RegisterAction = "register" | "verify" | "resend" | null;
 
 const Register = () => {
   const { isLoaded, signUp, setActive } = useSignUp();
-  const { isSignedIn } = useAuth();
+  const { signIn, isLoaded: isSignInLoaded } = useSignIn();
   const { user } = useUser();
   const navigate = useNavigate();
   const location = useLocation();
@@ -57,14 +57,91 @@ const Register = () => {
     clearAccountIntent();
   }, [accountIntent, user]);
 
-  useEffect(() => {
-    if (!isSignedIn || !user) return;
+  const startGoogleOAuth = async () => {
+    if (!isLoaded || !signUp || isAuthLocked) return;
 
-    void (async () => {
-      await applyAccountMetadata();
-      navigate(postRegisterPath, { replace: true });
-    })();
-  }, [isSignedIn, user, navigate, postRegisterPath, applyAccountMetadata]);
+    setError("");
+    setHumanChallengePending(false);
+    setOauthProvider("google");
+    sessionStorage.setItem(PENDING_OAUTH_KEY, "google-register");
+    persistAccountIntent(accountIntent);
+
+    const callbackUrl = buildOAuthRedirectCompleteUrl(
+      buildOAuthCallbackUrl("register", accountIntent),
+    );
+    const completeUrl = buildOAuthRedirectCompleteUrl(postRegisterPath);
+
+    const redirectConfig = {
+      strategy: "oauth_google" as const,
+      redirectUrl: callbackUrl,
+      redirectUrlComplete: completeUrl,
+    };
+
+    try {
+      await signUp.authenticateWithRedirect(redirectConfig);
+    } catch (signUpErr: unknown) {
+      const code = (signUpErr as { errors?: { code?: string }[] })?.errors?.[0]
+        ?.code;
+      const shouldTrySignIn =
+        code === "form_identifier_exists" ||
+        code === "identifier_already_signed_in" ||
+        code === "session_exists";
+
+      if (shouldTrySignIn && isSignInLoaded && signIn) {
+        sessionStorage.setItem(PENDING_OAUTH_KEY, "google-login");
+        await signIn.authenticateWithRedirect(redirectConfig);
+        return;
+      }
+
+      console.error("Google signup error:", signUpErr);
+      setError(
+        "Could not continue with Google. If you already have an account, try Sign In instead.",
+      );
+      setOauthProvider(null);
+      sessionStorage.removeItem(PENDING_OAUTH_KEY);
+    }
+  };
+
+  const startAppleOAuth = async () => {
+    if (!isLoaded || !signUp || isAuthLocked) return;
+
+    setError("");
+    setHumanChallengePending(false);
+    setOauthProvider("apple");
+    sessionStorage.setItem(PENDING_OAUTH_KEY, "apple-register");
+    persistAccountIntent(accountIntent);
+
+    const callbackUrl = buildOAuthRedirectCompleteUrl(
+      buildOAuthCallbackUrl("register", accountIntent),
+    );
+    const completeUrl = buildOAuthRedirectCompleteUrl(postRegisterPath);
+
+    const redirectConfig = {
+      strategy: "oauth_apple" as const,
+      redirectUrl: callbackUrl,
+      redirectUrlComplete: completeUrl,
+    };
+
+    try {
+      await signUp.authenticateWithRedirect(redirectConfig);
+    } catch (signUpErr: unknown) {
+      const code = (signUpErr as { errors?: { code?: string }[] })?.errors?.[0]
+        ?.code;
+      if (
+        (code === "form_identifier_exists" ||
+          code === "identifier_already_signed_in") &&
+        isSignInLoaded &&
+        signIn
+      ) {
+        await signIn.authenticateWithRedirect(redirectConfig);
+        return;
+      }
+      console.error("Apple signup error:", signUpErr);
+      setError("Failed to sign up with Apple. Please check configuration.");
+      setOauthProvider(null);
+      sessionStorage.removeItem(PENDING_OAUTH_KEY);
+    }
+  };
 
   const [showPassword, setShowPassword] = useState(false);
   const [fullName, setFullName] = useState("");
@@ -411,49 +488,11 @@ const Register = () => {
   };
 
   const handleGoogleSignUp = async () => {
-    if (!isLoaded || !signUp || isAuthLocked) return;
-
-    setError("");
-    setHumanChallengePending(false);
-    setOauthProvider("google");
-    sessionStorage.setItem(PENDING_OAUTH_KEY, "google-register");
-    persistAccountIntent(accountIntent);
-
-    try {
-      await signUp.authenticateWithRedirect({
-        strategy: "oauth_google",
-        redirectUrl: buildOAuthRedirectUrl("/register", postRegisterPath, accountIntent),
-        redirectUrlComplete: buildOAuthRedirectCompleteUrl(postRegisterPath),
-      });
-    } catch (err: any) {
-      console.error("Google signup error:", err);
-      setError("Failed to sign up with Google. Please try again.");
-      setOauthProvider(null);
-      sessionStorage.removeItem(PENDING_OAUTH_KEY);
-    }
+    await startGoogleOAuth();
   };
 
   const handleAppleSignUp = async () => {
-    if (!isLoaded || !signUp || isAuthLocked) return;
-
-    setError("");
-    setHumanChallengePending(false);
-    setOauthProvider("apple");
-    sessionStorage.setItem(PENDING_OAUTH_KEY, "apple-register");
-    persistAccountIntent(accountIntent);
-
-    try {
-      await signUp.authenticateWithRedirect({
-        strategy: "oauth_apple",
-        redirectUrl: buildOAuthRedirectUrl("/register", postRegisterPath, accountIntent),
-        redirectUrlComplete: buildOAuthRedirectCompleteUrl(postRegisterPath),
-      });
-    } catch (err: any) {
-      console.error("Apple signup error:", err);
-      setError("Failed to sign up with Apple. Please check configuration.");
-      setOauthProvider(null);
-      sessionStorage.removeItem(PENDING_OAUTH_KEY);
-    }
+    await startAppleOAuth();
   };
 
   // Email verification step

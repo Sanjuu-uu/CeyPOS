@@ -12,8 +12,8 @@ import {
   getPostRegisterPath,
   persistAccountIntent,
   readAccountIntent,
-  buildOAuthRedirectUrl,
   buildOAuthRedirectCompleteUrl,
+  buildOAuthCallbackUrl,
 } from "../../lib/authFlow";
 
 type ClerkErrorEntry = {
@@ -495,14 +495,13 @@ const Login = () => {
     deactivateRegisterPrompt();
     setOauthProvider("google");
     sessionStorage.setItem(PENDING_OAUTH_KEY, "google-login");
+    persistAccountIntent(accountIntent);
 
     try {
       await signIn.authenticateWithRedirect({
         strategy: "oauth_google",
-        redirectUrl: buildOAuthRedirectUrl(
-          "/login",
-          redirectTo,
-          accountIntent,
+        redirectUrl: buildOAuthRedirectCompleteUrl(
+          buildOAuthCallbackUrl("login", accountIntent, redirectTo),
         ),
         redirectUrlComplete: buildOAuthRedirectCompleteUrl(redirectTo),
       });
@@ -523,14 +522,13 @@ const Login = () => {
     deactivateRegisterPrompt();
     setOauthProvider("apple");
     sessionStorage.setItem(PENDING_OAUTH_KEY, "apple-login");
+    persistAccountIntent(accountIntent);
 
     try {
       await signIn.authenticateWithRedirect({
         strategy: "oauth_apple",
-        redirectUrl: buildOAuthRedirectUrl(
-          "/login",
-          redirectTo,
-          accountIntent,
+        redirectUrl: buildOAuthRedirectCompleteUrl(
+          buildOAuthCallbackUrl("login", accountIntent, redirectTo),
         ),
         redirectUrlComplete: buildOAuthRedirectCompleteUrl(redirectTo),
       });
