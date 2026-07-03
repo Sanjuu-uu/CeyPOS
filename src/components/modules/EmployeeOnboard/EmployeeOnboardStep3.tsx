@@ -8,7 +8,6 @@ import {
   saveTerminalSession,
 } from "../../../lib/shopContext";
 import { db } from "../../../lib/db";
-import { TEAM_SETUP_CACHE_KEY } from "../../../lib/authFlow";
 import "../ShopWizard/styles/ShopWizard.css";
 
 const cardVariants = {
@@ -37,20 +36,6 @@ export const EmployeeOnboardStep3: React.FC = () => {
   const finalizeOnboarding = useCallback(
     async (resolvedShopId: string, dbFileName: string) => {
       if (!user) return;
-
-      localStorage.setItem(
-        TEAM_SETUP_CACHE_KEY,
-        JSON.stringify({
-          accountType: "team",
-          teamOnboarded: true,
-          userEmail,
-          mainTerminalEmail: formData.mainTerminalEmail.trim(),
-          displayName: formData.displayName.trim(),
-          phone: formData.phone,
-          shopId: resolvedShopId,
-          dbFileName,
-        }),
-      );
 
       await user.update({
         unsafeMetadata: {
@@ -85,6 +70,7 @@ export const EmployeeOnboardStep3: React.FC = () => {
           `/api/terminals/pairing/status/${encodeURIComponent(requestId)}?shopId=${encodeURIComponent(shopId)}`,
         );
         const body = await res.json();
+        console.debug("[ceypos:pairing] status poll", { requestId, shopId, body });
         if (body.status === "approved") {
           const claim = await postJSON<{
             ok: boolean;
@@ -97,6 +83,7 @@ export const EmployeeOnboardStep3: React.FC = () => {
             userEmail,
             requestId,
           });
+          console.log("[ceypos:pairing] claim response", claim);
           if (!claim.ok || !claim.terminalId) {
             setError(claim.error || "Failed to claim terminal session");
             setPairStatus("error");
@@ -225,20 +212,25 @@ export const EmployeeOnboardStep3: React.FC = () => {
     setPairStatus("registering");
 
     try {
+      const trimmedCode = code.trim().toUpperCase();
+      const payload = {
+        shopId,
+        userEmail,
+        code: trimmedCode,
+        deviceMeta: { userAgent: navigator.userAgent },
+      };
+      console.log("[ceypos:pairing] submit", payload);
       await waitForApiReady();
       const pairing = await postJSON<{ ok: boolean; requestId: string; error?: string }>(
         "/api/terminals/pairing/request",
-        {
-          shopId,
-          userEmail,
-          code: code.trim().toUpperCase(),
-          deviceMeta: { userAgent: navigator.userAgent },
-        },
+        payload,
       );
+      console.log("[ceypos:pairing] request success", pairing);
 
       setRequestId(pairing.requestId);
       setPairStatus("pending");
     } catch (err) {
+      console.error("[ceypos:pairing] request failed", err, { shopId, userEmail, code: code.trim().toUpperCase() });
       setPairStatus("error");
       setError(err instanceof Error ? err.message : "Connection failed");
     } finally {

@@ -30,7 +30,20 @@ export async function authFetch(
   init: RequestInit = {},
 ): Promise<Response> {
   const headers = await buildAuthHeaders(init.headers);
-  return fetch(input, { ...init, headers, credentials: "include" });
+  const requestInfo = typeof input === "string" ? input : input instanceof URL ? input.toString() : String(input);
+  console.debug("[ceypos:api] request", {
+    method: init.method || "GET",
+    url: requestInfo,
+    body: init.body ? String(init.body).slice(0, 2000) : undefined,
+  });
+  const response = await fetch(input, { ...init, headers, credentials: "include" });
+  console.debug("[ceypos:api] response", {
+    method: init.method || "GET",
+    url: requestInfo,
+    status: response.status,
+    ok: response.ok,
+  });
+  return response;
 }
 
 async function sleep(ms: number): Promise<void> {
@@ -65,9 +78,11 @@ export async function waitForApiReady(options: {
 export async function getJSON<T = unknown>(path: string): Promise<T> {
   const res = await authFetch(`${API_BASE}${path}`);
   const data = await res.json().catch(() => ({}));
+  console.debug("[ceypos:api] parsed", { path, status: res.status, data });
   if (!res.ok || data?.ok === false) {
     const err = new Error(data?.error || `HTTP ${res.status}`);
     (err as any).payload = data;
+    console.error("[ceypos:api] error", { path, status: res.status, data });
     throw err;
   }
   return data as T;
@@ -83,9 +98,11 @@ export async function patchJSON<T = unknown>(
     body: JSON.stringify(body),
   });
   const data = await res.json().catch(() => ({}));
+  console.debug("[ceypos:api] parsed", { path, status: res.status, data });
   if (!res.ok || data?.ok === false) {
     const err = new Error(data?.error || `HTTP ${res.status}`);
     (err as any).payload = data;
+    console.error("[ceypos:api] error", { path, status: res.status, data });
     throw err;
   }
   return data as T;
@@ -101,9 +118,11 @@ export async function postJSON<T = unknown>(
     body: JSON.stringify(body),
   });
   const data = await res.json().catch(() => ({}));
+  console.debug("[ceypos:api] parsed", { path, status: res.status, data });
   if (!res.ok || data?.ok === false) {
     const err = new Error(data?.error || `HTTP ${res.status}`);
     (err as any).payload = data;
+    console.error("[ceypos:api] error", { path, status: res.status, data });
     throw err;
   }
   return data as T;

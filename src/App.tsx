@@ -21,7 +21,6 @@ import MobileScan from "./pages/mobilesessions/MobileScan";
 import TeamOnboard from "./pages/team/TeamOnboard";
 import { PublicReceiptView } from "./components/modules/receipts/PublicReceiptView";
 import {
-  TEAM_SETUP_CACHE_KEY,
   readAccountIntent,
   clearAccountIntent,
   intentToMetadataAccountType,
@@ -83,37 +82,6 @@ type ShopStatus = {
   isCompleted: boolean;
 };
 
-type TeamSetupCache = {
-  accountType: "team";
-  teamOnboarded: true;
-  userEmail: string;
-  shopId: string;
-  dbFileName: string;
-  mainTerminalEmail: string;
-  displayName: string;
-};
-
-function loadTeamSetupCache(userEmail?: string | null): TeamSetupCache | null {
-  if (!userEmail) return null;
-  try {
-    const raw = localStorage.getItem(TEAM_SETUP_CACHE_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as Partial<TeamSetupCache>;
-    if (
-      parsed.accountType !== "team" ||
-      parsed.teamOnboarded !== true ||
-      parsed.userEmail?.toLowerCase() !== userEmail.toLowerCase() ||
-      !parsed.shopId ||
-      !parsed.dbFileName
-    ) {
-      return null;
-    }
-    return parsed as TeamSetupCache;
-  } catch {
-    return null;
-  }
-}
-
 function removeShopStateFromMetadata(metadata: Record<string, unknown>) {
   const nextMetadata = { ...metadata };
   delete nextMetadata.shopCompleted;
@@ -148,10 +116,6 @@ function removeShopStateFromMetadata(metadata: Record<string, unknown>) {
 function PostAuthApp() {
   const { user } = useUser();
   const userEmail = user?.primaryEmailAddress?.emailAddress || "";
-  const teamSetupCache = useMemo(
-    () => loadTeamSetupCache(userEmail),
-    [userEmail],
-  );
 
   useEffect(() => {
     if (!user) return;
@@ -177,16 +141,11 @@ function PostAuthApp() {
 
   const rawMetadata = user?.unsafeMetadata;
   const metadata = useMemo(() => rawMetadata ?? {}, [rawMetadata]);
-  const metadataShopId =
-    typeof metadata.shopId === "string" ? metadata.shopId : teamSetupCache?.shopId ?? "";
+  const metadataShopId = typeof metadata.shopId === "string" ? metadata.shopId : "";
   const metadataDbFileName =
-    typeof metadata.dbFileName === "string"
-      ? metadata.dbFileName
-      : teamSetupCache?.dbFileName ?? "";
+    typeof metadata.dbFileName === "string" ? metadata.dbFileName : "";
   const metadataCompleted = Boolean(
-    (metadata.shopCompleted === true || teamSetupCache?.teamOnboarded === true) &&
-      metadataShopId &&
-      metadataDbFileName
+    metadata.shopCompleted === true && metadataShopId && metadataDbFileName,
   );
 
   const wizardInitialFormData = useMemo<Partial<ShopFormData>>(() => {
@@ -337,9 +296,7 @@ function PostAuthApp() {
 
   const sessionIntent = readAccountIntent();
   const accountType =
-    metadata.accountType === "team" ||
-    teamSetupCache?.accountType === "team" ||
-    sessionIntent === "employee"
+    metadata.accountType === "team" || sessionIntent === "employee"
       ? ("team" as const)
       : ("owner" as const);
 
@@ -379,26 +336,19 @@ function PostAuthContent({
 }: PostAuthContentProps) {
   const { user, isLoaded } = useUser();
   const userEmail = user?.primaryEmailAddress?.emailAddress || "";
-  const teamSetupCache = useMemo(
-    () => loadTeamSetupCache(userEmail),
-    [userEmail],
-  );
   const metadata = user?.unsafeMetadata ?? {};
   const sessionIntent = readAccountIntent();
   const accountType =
-    metadata.accountType === "team" ||
-    teamSetupCache?.accountType === "team" ||
-    sessionIntent === "employee"
+    metadata.accountType === "team" || sessionIntent === "employee"
       ? "team"
       : "owner";
-  const teamOnboarded =
-    metadata.teamOnboarded === true || teamSetupCache?.teamOnboarded === true;
+  const teamOnboarded = metadata.teamOnboarded === true;
   const validationOwnerEmail = useMemo(() => {
     const ownerEmailCandidate =
       accountType === "team"
         ? (typeof metadata.mainTerminalEmail === "string"
             ? metadata.mainTerminalEmail
-            : teamSetupCache?.mainTerminalEmail)
+            : userEmail)
         : (typeof metadata.ownerEmail === "string"
             ? metadata.ownerEmail
             : userEmail);
@@ -406,7 +356,7 @@ function PostAuthContent({
     return typeof ownerEmailCandidate === "string"
       ? ownerEmailCandidate.trim().toLowerCase()
       : "";
-  }, [accountType, metadata, teamSetupCache, userEmail]);
+  }, [accountType, metadata, userEmail]);
   const {
     isCompleted: wizardCompleted,
     shopId: wizardShopId,
@@ -427,12 +377,6 @@ function PostAuthContent({
   const validationReadyRef = useRef(false);
 
   const clearInvalidShopState = useCallback(async () => {
-    try {
-      localStorage.removeItem(TEAM_SETUP_CACHE_KEY);
-    } catch {
-      // ignore local cache cleanup failures
-    }
-
     if (!user) {
       return;
     }
@@ -448,14 +392,10 @@ function PostAuthContent({
 
   const effectiveShopData = useMemo(() => {
     const metadata = user?.unsafeMetadata ?? {};
-    const metadataShopId =
-      typeof metadata.shopId === "string" ? metadata.shopId : teamSetupCache?.shopId ?? "";
+    const metadataShopId = typeof metadata.shopId === "string" ? metadata.shopId : "";
     const metadataDbFileName =
-      typeof metadata.dbFileName === "string"
-        ? metadata.dbFileName
-        : teamSetupCache?.dbFileName ?? "";
-    const metadataCompleted =
-      metadata.shopCompleted === true || teamSetupCache?.teamOnboarded === true;
+      typeof metadata.dbFileName === "string" ? metadata.dbFileName : "";
+    const metadataCompleted = metadata.shopCompleted === true;
 
     const computedShopId = wizardShopId || shopStatus.shopId || metadataShopId;
     const computedDbFileName =
@@ -471,7 +411,7 @@ function PostAuthContent({
       dbFileName: computedDbFileName,
       isCompleted: computedCompleted,
     };
-  }, [shopDbFileName, shopStatus, teamSetupCache, user, wizardCompleted, wizardShopId]);
+  }, [shopDbFileName, shopStatus, user, wizardCompleted, wizardShopId]);
 
   useEffect(() => {
     if (!isLoaded || !user) {

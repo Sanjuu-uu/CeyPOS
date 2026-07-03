@@ -29,6 +29,7 @@ export const PairingModal: React.FC = () => {
           `/api/terminals/pairing/status/${encodeURIComponent(requestId)}?shopId=${encodeURIComponent(activeShopId)}`,
         );
         const body = await res.json();
+        console.debug("[ceypos:pairing] status poll", { requestId, activeShopId, body });
         if (body.status === "approved") {
           const claim = await postJSON<{
             ok: boolean;
@@ -41,6 +42,7 @@ export const PairingModal: React.FC = () => {
             userEmail,
             requestId,
           });
+          console.log("[ceypos:pairing] claim response", claim);
           if (!claim.ok || !claim.terminalId) {
             setError(claim.error || "Failed to claim terminal session");
             setStatus("error");
@@ -77,17 +79,21 @@ export const PairingModal: React.FC = () => {
     setError(null);
     setStatus("pending");
     try {
+      const payload = {
+        shopId: activeShopId,
+        userEmail,
+        code: code.trim().toUpperCase(),
+        deviceMeta: { userAgent: navigator.userAgent },
+      };
+      console.log("[ceypos:pairing] submit", payload);
       const result = await postJSON<{ ok: boolean; requestId: string; error?: string }>(
         "/api/terminals/pairing/request",
-        {
-          shopId: activeShopId,
-          userEmail,
-          code: code.trim().toUpperCase(),
-          deviceMeta: { userAgent: navigator.userAgent },
-        },
+        payload,
       );
+      console.log("[ceypos:pairing] request success", result);
       setRequestId(result.requestId);
     } catch (err) {
+      console.error("[ceypos:pairing] request failed", err, { activeShopId, userEmail, code: code.trim().toUpperCase() });
       setStatus("error");
       setError(err instanceof Error ? err.message : "Pairing failed");
     }
