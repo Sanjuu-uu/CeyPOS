@@ -72,6 +72,7 @@ import analyticsChatRoutes from "./src/routes/analytics-chat.js";
 import emailReceiptRoutes from "./src/routes/email-receipts.js";
 import smsReceiptRoutes from "./src/routes/sms-receipts.js";
 import receiptRoutes from "./src/routes/receipts.js";
+import notificationRoutes from "./src/routes/notifications.js";
 import { ensureAllShopDatabasesSchema } from "./src/utils/shop-database.js";
 import { SHOP_DATABASE_DIRECTORY } from "./src/utils/shop-database.js";
 import { migrateLegacyReceiptTokensDb } from "./src/services/receipt-tokens.js";
@@ -250,6 +251,7 @@ app.use("/api/analytics/chats", analyticsChatRoutes);
 app.use("/api/email-receipts", emailReceiptRoutes);
 app.use("/api/sms-receipts", smsReceiptRoutes);
 app.use("/api/receipts", receiptRoutes);
+app.use("/api/notifications", notificationRoutes);
 
 // Serve static files from the dist directory (built frontend)
 const distPath = path.join(process.cwd(), "../dist");

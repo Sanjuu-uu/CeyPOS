@@ -625,11 +625,24 @@ export const Settings: React.FC = () => {
   // Notification settings
   const [notifications, setNotifications] = useState({
     emailNotifications: true,
+    inAppNotifications: true,
     lowStockAlerts: true,
     dailyReports: false,
     salesAlerts: true,
     systemUpdates: true,
+    quietHoursStart: null as string | null,
+    quietHoursEnd: null as string | null,
   });
+  const [notificationSaveState, setNotificationSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
+
+  useEffect(() => {
+    if (!currentShop?.id || !currentUser?.email) return;
+    let active = true;
+    db.notifications.getPreferences(currentShop.id, currentUser.email)
+      .then((preferences) => { if (active) setNotifications(preferences); })
+      .catch((error) => console.warn("Failed to load notification preferences", error));
+    return () => { active = false; };
+  }, [currentShop?.id, currentUser?.email]);
 
   // Appearance settings
   const [appearance, setAppearance] = useState({
@@ -654,7 +667,17 @@ export const Settings: React.FC = () => {
   };
 
   const handleNotificationChange = (setting: keyof typeof notifications) => {
-    setNotifications((prev) => ({ ...prev, [setting]: !prev[setting] }));
+    if (setting === "quietHoursStart" || setting === "quietHoursEnd") return;
+    setNotifications((prev) => {
+      const next = { ...prev, [setting]: !prev[setting] };
+      if (currentShop?.id && currentUser?.email) {
+        setNotificationSaveState("saving");
+        db.notifications.savePreferences(currentShop.id, currentUser.email, next)
+          .then((saved) => { setNotifications(saved); setNotificationSaveState("saved"); window.setTimeout(() => setNotificationSaveState("idle"), 1500); })
+          .catch(() => setNotificationSaveState("error"));
+      }
+      return next;
+    });
   };
 
   const handleAppearanceChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -928,6 +951,7 @@ export const Settings: React.FC = () => {
           <div className="space-y-4">
             {Object.entries({
               emailNotifications: "Email Notifications",
+              inAppNotifications: "In-app Notifications",
               lowStockAlerts: "Low Stock Alerts",
               dailyReports: "Daily Sales Reports",
               salesAlerts: "Real-time Sales Alerts",
@@ -939,6 +963,8 @@ export const Settings: React.FC = () => {
                   <p className="text-sm text-gray-500">
                     {key === "emailNotifications" &&
                       "Receive notifications via email"}
+                    {key === "inAppNotifications" &&
+                      "Show realtime alerts in the notification inbox"}
                     {key === "lowStockAlerts" &&
                       "Get notified when products are running low"}
                     {key === "dailyReports" &&
@@ -969,6 +995,9 @@ export const Settings: React.FC = () => {
                 </button>
               </div>
             ))}
+            <p className={`text-xs ${notificationSaveState === "error" ? "text-red-600" : "text-gray-400"}`}>
+              {notificationSaveState === "saving" ? "Saving…" : notificationSaveState === "saved" ? "Preferences saved" : notificationSaveState === "error" ? "Could not save preferences. Try again." : "Changes save automatically."}
+            </p>
           </div>
         </Card>
       )}

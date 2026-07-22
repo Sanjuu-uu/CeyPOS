@@ -61,13 +61,13 @@ export const Analytics: React.FC = () => {
 
           <Card
             title="AI-driven visualizations"
-            subtitle="Gemini crafts narratives while AntV renders hosted charts"
+            subtitle="Native, interactive Power BI-style charts generated from verified shop data"
             className="border border-gray-200"
           >
             <p className="text-sm leading-relaxed text-gray-600">
-              Ask the assistant for trends, comparisons, or forecasts. When the AntV visualization
-              service is configured, charts will appear directly inside the conversation as hosted
-              images that stay up to date with your analytics query.
+              In Agent mode, type @ to choose bar, line, area, combo, pie, donut, scatter, radar,
+              funnel, waterfall, treemap, gauge, KPI, table, heatmap, and other professional visuals.
+              Charts render directly in the conversation and can be expanded or downloaded.
             </p>
           </Card>
 

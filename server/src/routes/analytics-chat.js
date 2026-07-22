@@ -470,7 +470,18 @@ router.post("/:conversationId/messages/stream", async (req, res) => {
     const userMessageId = randomUUID();
 
     const cleanQuestion = String(question || "").trim();
-    const safeAttachments = Array.isArray(attachments) ? attachments.slice(0, 5) : [];
+    const incomingAttachments = Array.isArray(attachments) ? attachments.slice(0, 5) : [];
+    const safeAttachments = incomingAttachments.map(({ inlineData, ...attachment }) => attachment);
+    const mediaParts = incomingAttachments
+      .filter((attachment) =>
+        typeof attachment?.inlineData === "string" &&
+        attachment.inlineData.length <= 3_000_000 &&
+        (String(attachment?.type || "").startsWith("image/") ||
+          String(attachment?.type || "").startsWith("audio/") ||
+          String(attachment?.type || "").startsWith("video/") ||
+          attachment?.type === "application/pdf")
+      )
+      .map((attachment) => ({ inlineData: { mimeType: attachment.type, data: attachment.inlineData } }));
 
     db.prepare(
       `INSERT INTO analytics_messages (id, conversation_id, shop_id, sender, message, status, attachments, visualizations, metadata, created_at)
@@ -531,6 +542,7 @@ router.post("/:conversationId/messages/stream", async (req, res) => {
           : auth.aiScope === "shop"
             ? { aiScope: "shop", memberId: auth.member.member_id }
             : null,
+        mediaParts,
       },
     );
 

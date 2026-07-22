@@ -10,17 +10,44 @@ import {
   Settings,
   UserCircle,
   ChevronDown,
+  CheckCheck,
+  Inbox,
 } from 'lucide-react';
 import { useUser, useClerk } from '@clerk/clerk-react';
 import { useApp } from '../../context/AppContext';
+import { db, type AppNotification } from '../../lib/db';
 
 export const TopBar: React.FC = () => {
-  const { currentModule, isMobileMenuOpen, setIsMobileMenuOpen } = useApp();
+  const { currentModule, setCurrentModule, isMobileMenuOpen, setIsMobileMenuOpen, activeShopId, currentUser } = useApp();
   const { user, isLoaded } = useUser();
   const { signOut, openUserProfile } = useClerk();
   
   const [isProfileDropdownOpen, setIsProfileDropdownOpen] = useState(false);
+  const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
+  const [notifications, setNotifications] = useState<AppNotification[]>([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [notificationsLoading, setNotificationsLoading] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const notificationRef = useRef<HTMLDivElement>(null);
+
+  const loadNotifications = React.useCallback(async () => {
+    if (!activeShopId || !currentUser?.email) return;
+    setNotificationsLoading(true);
+    try {
+      const result = await db.notifications.list(activeShopId, currentUser.email);
+      setNotifications(result.notifications);
+      setUnreadCount(result.unreadCount);
+    } catch (error) {
+      console.warn('Failed to load notifications', error);
+    } finally {
+      setNotificationsLoading(false);
+    }
+  }, [activeShopId, currentUser?.email]);
+
+  useEffect(() => {
+    void loadNotifications();
+    return db.on('notificationsUpdated', () => void loadNotifications());
+  }, [loadNotifications]);
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -28,11 +55,34 @@ export const TopBar: React.FC = () => {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
         setIsProfileDropdownOpen(false);
       }
+      if (notificationRef.current && !notificationRef.current.contains(event.target as Node)) {
+        setIsNotificationsOpen(false);
+      }
     };
 
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  const openNotification = async (item: AppNotification) => {
+    if (!activeShopId || !currentUser?.email) return;
+    if (!item.readAt) {
+      setNotifications((items) => items.map((entry) => entry.notificationId === item.notificationId ? { ...entry, readAt: new Date().toISOString() } : entry));
+      setUnreadCount((count) => Math.max(0, count - 1));
+      await db.notifications.markRead(activeShopId, currentUser.email, item.notificationId).catch(() => void loadNotifications());
+    }
+    const moduleName = item.linkPath?.replace(/^\//, '');
+    if (moduleName) setCurrentModule(moduleName as Parameters<typeof setCurrentModule>[0]);
+    setIsNotificationsOpen(false);
+  };
+
+  const markAllRead = async () => {
+    if (!activeShopId || !currentUser?.email || !unreadCount) return;
+    const readAt = new Date().toISOString();
+    setNotifications((items) => items.map((item) => ({ ...item, readAt: item.readAt || readAt })));
+    setUnreadCount(0);
+    await db.notifications.markAllRead(activeShopId, currentUser.email).catch(() => void loadNotifications());
+  };
 
   // Capitalize first letter of module name
   const formatModuleName = (name: string) =>
@@ -102,10 +152,27 @@ export const TopBar: React.FC = () => {
         </div>
 
         {/* Notifications Icon */}
-        <button className="p-2 rounded-full hover:bg-gray-100 text-gray-500 hover:text-gray-900 relative">
-          <Bell size={20} />
-          <span className="absolute top-0 right-0 h-2 w-2 rounded-full bg-red-500" />
-        </button>
+        <div className="relative" ref={notificationRef}>
+          <button aria-label={`Notifications${unreadCount ? `, ${unreadCount} unread` : ''}`} onClick={() => { setIsNotificationsOpen((open) => !open); setIsProfileDropdownOpen(false); }} className="p-2 rounded-full hover:bg-gray-100 text-gray-500 hover:text-gray-900 relative">
+            <Bell size={20} />
+            {unreadCount > 0 && <span className="absolute -top-1 -right-1 min-w-5 h-5 px-1 rounded-full bg-red-500 text-white text-[11px] font-semibold flex items-center justify-center">{unreadCount > 99 ? '99+' : unreadCount}</span>}
+          </button>
+          {isNotificationsOpen && (
+            <div className="absolute right-0 mt-2 w-[min(24rem,calc(100vw-2rem))] bg-white rounded-xl shadow-xl border border-gray-200 z-50 overflow-hidden">
+              <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
+                <div><p className="font-semibold text-gray-900">Notifications</p><p className="text-xs text-gray-500">{unreadCount ? `${unreadCount} unread` : 'You are all caught up'}</p></div>
+                {unreadCount > 0 && <button onClick={markAllRead} className="text-xs font-medium text-gray-600 hover:text-gray-900 flex items-center gap-1"><CheckCheck size={15} /> Mark all read</button>}
+              </div>
+              <div className="max-h-[28rem] overflow-y-auto">
+                {notificationsLoading && !notifications.length ? <p className="p-6 text-sm text-center text-gray-500">Loading notifications…</p> : notifications.length === 0 ? <div className="p-8 text-center text-gray-500"><Inbox size={28} className="mx-auto mb-2 text-gray-300" /><p className="text-sm">No notifications yet</p></div> : notifications.map((item) => (
+                  <button key={item.notificationId} onClick={() => void openNotification(item)} className={`w-full text-left px-4 py-3 border-b border-gray-100 last:border-0 hover:bg-gray-50 ${item.readAt ? 'bg-white' : 'bg-lime-50/60'}`}>
+                    <div className="flex gap-3"><span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${item.severity === 'critical' ? 'bg-red-500' : item.severity === 'warning' ? 'bg-amber-500' : item.severity === 'success' ? 'bg-green-500' : 'bg-blue-500'}`} /><div className="min-w-0"><div className="flex items-start justify-between gap-2"><p className={`text-sm text-gray-900 ${item.readAt ? 'font-medium' : 'font-semibold'}`}>{item.title}</p><span className="text-[10px] uppercase tracking-wide text-gray-400">{item.category}</span></div><p className="mt-1 text-sm text-gray-600 line-clamp-2">{item.body}</p><p className="mt-1 text-xs text-gray-400">{new Date(item.createdAt).toLocaleString()}</p></div></div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
 
         {/* Profile Avatar + Dropdown */}
         <div className="relative" ref={dropdownRef}>
