@@ -1,5 +1,4 @@
 import React from 'react';
-import { Award, Plus, ArrowRight } from 'lucide-react';
 import { NumericInput, Toggle } from './BusinessComponents';
 import { LoyaltyConfig } from './BusinessRules';
 
@@ -13,29 +12,23 @@ export const LoyaltySettings: React.FC<LoyaltySettingsProps> = ({ loyalty, setLo
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
       <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-200 flex items-center justify-between transition-colors hover:border-gray-300">
-        <div className="flex items-center gap-5">
-          <div className={`w-14 h-14 rounded-2xl flex items-center justify-center transition-colors shadow-sm ${loyalty.enabled ? 'bg-[#ecff76] text-black' : 'bg-gray-100 text-gray-400'}`}>
-            <Award size={28} strokeWidth={2} />
-          </div>
-          <div>
+        <div>
             <h2 className="text-xl font-black text-gray-900">Loyalty Program</h2>
             <p className="text-gray-500 font-medium text-sm mt-0.5">
               {loyalty.enabled 
                 ? "Active · Customers are currently earning points" 
                 : "Inactive · Enable to start rewarding your customers"}
             </p>
-          </div>
         </div>
         <Toggle checked={loyalty.enabled} onChange={(val) => setLoyalty({...loyalty, enabled: val})} />
       </div>
 
       <div className={`grid grid-cols-1 lg:grid-cols-2 gap-6 transition-all duration-500 ${!loyalty.enabled ? 'opacity-40 grayscale pointer-events-none blur-[1px]' : ''}`}>
-        <div className="bg-white p-8 rounded-3xl border border-gray-200 shadow-sm flex flex-col h-full relative overflow-hidden group hover:border-[#ecff76] transition-all hover:shadow-md">
-          <div className="absolute -right-6 -top-6 w-32 h-32 bg-blue-50 rounded-full opacity-50 blur-2xl group-hover:bg-[#ecff76]/20 transition-colors"></div>
+        <div className="bg-white p-8 rounded-2xl border border-[#e4e4e0] shadow-sm flex flex-col h-full relative overflow-hidden group hover:border-[#c5f542] transition-all hover:shadow-md">
           
           <div className="relative z-10 mb-6">
-            <div className="inline-flex items-center gap-2 px-3 py-1 bg-gray-100 rounded-full text-xs font-bold text-gray-600 mb-3 uppercase tracking-wider">
-              <Plus size={12} /> Earning Strategy
+            <div className="inline-flex items-center px-3 py-1 bg-gradient-to-r from-gray-100 to-gray-200 rounded-full text-xs font-bold text-gray-600 mb-3 uppercase tracking-wider">
+              Earning Strategy
             </div>
             <h3 className="text-lg font-bold text-gray-900">How customers earn</h3>
             <p className="text-gray-500 text-sm mt-1">Set the exchange rate for spending.</p>
@@ -54,7 +47,7 @@ export const LoyaltySettings: React.FC<LoyaltySettingsProps> = ({ loyalty, setLo
                   placeholder="0"
                 />
                 <span className="text-sm font-bold text-gray-500 whitespace-nowrap flex items-center gap-2">
-                  Spent <ArrowRight size={14}/> 1 Point
+                  Spent to 1 Point
                 </span>
               </div>
             </div>
@@ -68,12 +61,11 @@ export const LoyaltySettings: React.FC<LoyaltySettingsProps> = ({ loyalty, setLo
           </div>
         </div>
 
-        <div className="bg-white p-8 rounded-3xl border border-gray-200 shadow-sm flex flex-col h-full relative overflow-hidden group hover:border-[#ecff76] transition-all hover:shadow-md">
-          <div className="absolute -right-6 -top-6 w-32 h-32 bg-purple-50 rounded-full opacity-50 blur-2xl group-hover:bg-[#ecff76]/20 transition-colors"></div>
+        <div className="bg-white p-8 rounded-2xl border border-[#e4e4e0] shadow-sm flex flex-col h-full relative overflow-hidden group hover:border-[#c5f542] transition-all hover:shadow-md">
 
           <div className="relative z-10 mb-6">
-            <div className="inline-flex items-center gap-2 px-3 py-1 bg-gray-100 rounded-full text-xs font-bold text-gray-600 mb-3 uppercase tracking-wider">
-              <Award size={12} /> Redemption Strategy
+            <div className="inline-flex items-center px-3 py-1 bg-gradient-to-r from-gray-100 to-gray-200 rounded-full text-xs font-bold text-gray-600 mb-3 uppercase tracking-wider">
+              Redemption Strategy
             </div>
             <h3 className="text-lg font-bold text-gray-900">How customers spend</h3>
             <p className="text-gray-500 text-sm mt-1">Set the value of points and limits.</p>

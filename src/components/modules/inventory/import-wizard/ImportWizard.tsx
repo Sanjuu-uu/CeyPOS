@@ -59,7 +59,7 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ onClose, onImportCom
     if (!shopId) {
       setValidationData((prev) => ({
         ...prev,
-        backendError: 'Shop is not ready. Complete setup or reload the dashboard.',
+        backendError: 'Shop is not ready. Complete setup or reload the analytics workspace.',
       }));
       return;
     }

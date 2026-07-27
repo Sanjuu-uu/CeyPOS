@@ -1,5 +1,4 @@
 import React from 'react';
-import { Plus, Trash2, AlertCircle } from 'lucide-react';
 import { Button } from '../../ui/Button';
 import { NumericInput } from './BusinessComponents';
 import { SurchargeRule, type AddItemFn } from './BusinessRules';
@@ -19,14 +18,13 @@ export const SurchargeSettings: React.FC<SurchargeSettingsProps> = ({ surcharges
         <Button 
           size="sm" 
           onClick={() => addItem(setSurcharges, { minAmount: 0, type: 'percent', value: 0 })}
-          className="bg-black text-white hover:bg-gray-800 rounded-full px-4"
+          className="bg-[#c5f542] text-black hover:bg-[#b8ea34] rounded-full px-4"
         >
-          <Plus size={16} className="mr-2"/> Add Rule
+          Add Rule
         </Button>
       </div>
 
-      <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 flex gap-3 text-blue-900 mb-6">
-        <AlertCircle size={20} className="shrink-0" />
+      <div className="rounded-xl border border-[#eeeeeb] bg-white p-4 text-[#555550] mb-6">
         <p className="text-sm font-medium">Automatically apply extra fees to card payments based on the total transaction amount.</p>
       </div>
 
@@ -67,9 +65,9 @@ export const SurchargeSettings: React.FC<SurchargeSettingsProps> = ({ surcharges
             </div>
             <button 
               onClick={() => setSurcharges(prev => prev.filter(s => s.id !== charge.id))}
-              className="h-12 w-12 flex items-center justify-center rounded-xl bg-red-50 text-red-500 hover:bg-red-100 transition-colors"
+              className="h-12 rounded-xl bg-red-50 px-4 text-sm font-medium text-red-500 hover:bg-red-100 transition-colors"
             >
-              <Trash2 size={18} />
+              Delete
             </button>
           </div>
         ))}

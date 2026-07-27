@@ -2,7 +2,6 @@ import React from "react";
 import { useApp } from "../../context/AppContext";
 
 // Import all module components
-import { Dashboard } from "./dashboard/Dashboard";
 import { POS } from "./pos/POS";
 import { Inventory } from "./inventory/Inventory";
 import { Analytics } from "./analytics/Analytics";
@@ -21,14 +20,12 @@ export const ModuleRouter: React.FC = () => {
 
   // Return the appropriate module component based on currentModule
   switch (currentModule) {
-    case "dashboard":
-      return <Dashboard />;
     case "pos":
       return <POS />;
-    case "inventory":
-      return <Inventory />;
     case "analytics":
       return <Analytics />;
+    case "inventory":
+      return <Inventory />;
     case "Subscription":
       return <Subscription />;
     case "receipts":
@@ -48,6 +45,6 @@ export const ModuleRouter: React.FC = () => {
     case "business": // Add route
       return <BusinessRules />;
     default:
-      return <Dashboard />;
+      return <POS />;
   }
 };

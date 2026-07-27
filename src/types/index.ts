@@ -72,17 +72,6 @@ export interface Sale {
   timestamp: string;
 }
 
-export interface DashboardStats {
-  totalSales: number;
-  totalRevenue: number;
-  averageOrderValue: number;
-  popularProducts: Array<{
-    id: string;
-    name: string;
-    quantity: number;
-  }>;
-}
-
 export interface KeyboardShortcuts {
   focusSearch: string;
   checkout: string;
@@ -99,7 +88,6 @@ export interface KeyboardShortcuts {
 }
 
 export type ModuleName =
-  | "dashboard"
   | "pos"
   | "inventory"
   | "analytics"

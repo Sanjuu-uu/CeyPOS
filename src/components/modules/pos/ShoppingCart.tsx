@@ -1219,7 +1219,7 @@ export const ShoppingCart: React.FC = () => {
             <Button
               onClick={() => setViewState("checkout")}
               fullWidth
-              className="h-12 text-base font-bold bg-[#ecff76] text-gray-900 hover:bg-[#d9ec60] border-none"
+              className="h-12 text-base font-bold bg-[#ecff76] text-gray-900 hover:bg-[#c5f542] border-none"
               disabled={cart.length === 0}
             >
               Pay Now [{shortcuts.checkout}]
@@ -1562,7 +1562,7 @@ export const ShoppingCart: React.FC = () => {
                 id="checkout-confirm-btn"
                 onClick={handleCheckout}
                 disabled={saving || isInsufficientPayment}
-                className="flex-[2] py-3 text-sm font-bold text-gray-900 bg-[#ecff76] rounded-lg hover:bg-[#d9ec60] disabled:bg-gray-200 disabled:text-gray-400 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                className="flex-[2] py-3 text-sm font-bold text-gray-900 bg-[#ecff76] rounded-lg hover:bg-[#c5f542] disabled:bg-gray-200 disabled:text-gray-400 disabled:cursor-not-allowed flex items-center justify-center gap-2"
               >
                 {saving
                   ? "Processing..."

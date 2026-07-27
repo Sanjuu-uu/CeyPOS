@@ -1076,7 +1076,7 @@ const Login = () => {
                     Welcome to CeyPOS!
                   </h1>
                   <p className="text-gray-600 text-sm">
-                    Sign in to access your dashboard
+                    Sign in to access your analytics workspace
                   </p>
                 </div>
 
@@ -1350,12 +1350,12 @@ const Login = () => {
               </div>
             </div>
 
-            {/* Dashboard Preview */}
+            {/* Analytics Preview */}
             <div className="hidden lg:block">
               <div className="bg-white rounded-2xl shadow-2xl overflow-hidden border border-gray-20pre">
                 <img
                   src="https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=600&h=400&fit=crop&crop=center"
-                  alt="Dashboard Preview - Temporary Stock Photo"
+                  alt="Analytics Preview - Temporary Stock Photo"
                   width="600"
                   height="400"
                   className="w-full h-auto object-cover"

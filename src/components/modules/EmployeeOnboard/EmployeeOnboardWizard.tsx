@@ -8,7 +8,7 @@ import { EmployeeOnboardStep3 } from "./EmployeeOnboardStep3";
 import { EmployeeOnboardProgressBar } from "./EmployeeOnboardProgressBar";
 import { cancelClerkUserAndSignOut } from "../../../lib/authFlow";
 import { postJSON } from "../../../lib/api";
-import backgroundImage from "../ShopWizard/assets/blog-20background-1.png";
+import backgroundImage from "../../../assets/images.jpg";
 import "../ShopWizard/styles/ShopWizard.css";
 
 const slideVariants = {

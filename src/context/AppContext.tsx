@@ -37,7 +37,6 @@ interface AppContextType {
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 const MODULE_SCOPE_MAP: Partial<Record<ModuleName, keyof MemberScope['modules']>> = {
-  dashboard: undefined,
   pos: 'pos',
   inventory: 'inventory',
   sessions: 'sessions',
@@ -69,7 +68,7 @@ export const AppProvider: React.FC<AppProviderProps> = ({
   shopProfile,
   accountType = 'owner',
 }) => {
-  const [currentModule, setCurrentModule] = useState<ModuleName>('dashboard');
+  const [currentModule, setCurrentModule] = useState<ModuleName>('pos');
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -84,9 +83,9 @@ export const AppProvider: React.FC<AppProviderProps> = ({
     (module: ModuleName) => {
       if (!memberScope) {
         if (accountType === 'owner') return true;
-        return module === 'dashboard' || module === 'support';
+        return module === 'pos' || module === 'support';
       }
-      if (memberScope.role === 'owner' && module === 'analytics') {
+      if (memberScope.role === 'owner' && module === 'pos') {
         return true;
       }
       const key = MODULE_SCOPE_MAP[module];

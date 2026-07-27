@@ -37,7 +37,7 @@ export const Button: React.FC<ButtonProps> = ({
 
   return (
     <button
-      className={`inline-flex items-center justify-center font-medium rounded-full transition-all duration-200 ${variantStyles[variant]} ${sizeStyles[size]} ${widthClass} ${className}`}
+      className={`inline-flex items-center justify-center rounded-full font-medium transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-[#c5f542]/60 disabled:cursor-not-allowed disabled:opacity-50 ${variantStyles[variant]} ${sizeStyles[size]} ${widthClass} ${className}`}
       {...props}
     >
       {icon && iconPosition === 'left' && <span className="mr-2">{icon}</span>}

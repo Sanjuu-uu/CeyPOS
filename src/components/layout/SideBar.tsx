@@ -1,6 +1,5 @@
 import React from "react";
 import {
-  LayoutDashboard,
   ShoppingCart,
   Package,
   Wifi,
@@ -36,17 +35,19 @@ const SidebarItem: React.FC<SidebarItemProps> = ({
   onClick,
 }) => {
   return (
-    <div
-      className={`flex items-center px-3 py-2 cursor-pointer rounded-lg transition-colors duration-200 ${
+    <button
+      type="button"
+      title={isCollapsed ? label : undefined}
+      className={`group flex w-full items-center rounded-lg px-3 py-2.5 text-left text-[13px] transition-colors duration-150 ${
         isActive
-          ? "bg-[#ecff76] text-gray-900"
-          : "text-gray-500 hover:bg-gray-100 hover:text-gray-900"
+          ? "bg-[#c5f542] text-gray-900"
+          : "text-[#686868] hover:bg-gray-100 hover:text-gray-950"
       }`}
       onClick={onClick}
     >
-      <div className={`${isActive ? "text-gray-900" : ""}`}>{icon}</div>
-      {!isCollapsed && <span className="ml-3 font-medium">{label}</span>}
-    </div>
+      <span className="flex h-5 w-5 shrink-0 items-center justify-center">{icon}</span>
+      {!isCollapsed && <span className="ml-3 truncate font-medium">{label}</span>}
+    </button>
   );
 };
 
@@ -65,29 +66,14 @@ export const Sidebar: React.FC = () => {
 
   const menuItems = [
     {
-      icon: <LayoutDashboard size={20} />,
-      label: "Dashboard",
-      module: "dashboard" as ModuleName,
-    },
-    {
       icon: <ShoppingCart size={20} />,
       label: "POS",
       module: "pos" as ModuleName,
     },
     {
-      icon: <Package size={20} />,
-      label: "Inventory",
-      module: "inventory" as ModuleName,
-    },
-    {
-      icon: <Wifi size={20} />,
-      label: "Sessions",
-      module: "sessions" as ModuleName,
-    },
-    {
-      icon: <Briefcase size={20} />, // New Icon
-      label: "Business",             // New Label
-      module: "business" as ModuleName,
+      icon: <BarChart3 size={20} />,
+      label: "Analytics",
+      module: "analytics" as ModuleName,
     },
     {
       icon: <Wallet size={20} />,
@@ -100,13 +86,23 @@ export const Sidebar: React.FC = () => {
       module: "receipts" as ModuleName,
     },
     {
-      icon: <BarChart3 size={20} />,
-      label: "Analytics",
-      module: "analytics" as ModuleName,
+      icon: <Package size={20} />,
+      label: "Inventory",
+      module: "inventory" as ModuleName,
+    },
+    {
+      icon: <Wifi size={20} />,
+      label: "Sessions",
+      module: "sessions" as ModuleName,
+    },
+    {
+      icon: <Briefcase size={20} />,
+      label: "Loyalty",
+      module: "business" as ModuleName,
     },
     {
       icon: <Upload size={20} />,
-      label: "Flash-Promo",
+      label: "Flash Promo",
       module: "import" as ModuleName,
     },
     {
@@ -133,7 +129,7 @@ export const Sidebar: React.FC = () => {
 
   return (
     <>
-      {/* === 1) Mobile back‐drop === */}
+      {/* === 1) Mobile back-drop === */}
       {isMobileMenuOpen && (
         <div
           className="fixed inset-0 bg-black bg-opacity-30 z-40 md:hidden"
@@ -144,7 +140,7 @@ export const Sidebar: React.FC = () => {
       {/* === 2) Sidebar container === */}
       <div
         className={`
-          fixed top-0 left-0 h-full bg-white border-r border-gray-200 z-50
+          fixed top-0 left-0 z-50 flex h-full flex-col bg-white border-r border-[#e8e8e5]
           w-60 transform transition-transform duration-300 ease-in-out
           ${isMobileMenuOpen ? "translate-x-0" : "-translate-x-full"}
           md:relative
@@ -153,13 +149,16 @@ export const Sidebar: React.FC = () => {
         `}
       >
         {/* Sidebar Header */}
-        <div className="h-16 flex items-center justify-between px-4 border-b border-gray-200">
+        <div className={`flex h-20 shrink-0 items-center border-b border-[#eeeeeb] ${effectiveCollapsed ? "justify-center px-2" : "justify-between px-4"}`}>
           {!effectiveCollapsed && (
             <div className="flex items-center">
-              <div className="bg-[#ecff76] h-8 w-8 rounded-md flex items-center justify-center">
-                <span className="font-bold text-gray-900">POS</span>
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#ecff76]">
+                <span className="text-[11px] font-bold tracking-tight text-gray-950">POS</span>
               </div>
-              <span className="ml-2 font-semibold text-gray-900">CeyPOS</span>
+              <div className="ml-2.5 leading-tight">
+                <p className="text-sm font-semibold tracking-[-0.01em] text-gray-950">CeyPOS</p>
+                <p className="text-[10px] text-gray-400">Point of sale</p>
+              </div>
             </div>
           )}
           <button
@@ -170,7 +169,8 @@ export const Sidebar: React.FC = () => {
                 setIsSidebarCollapsed(!isSidebarCollapsed);
               }
             }}
-            className="p-1 rounded-md hover:bg-gray-100 text-gray-500 hover:text-gray-900 transition-colors"
+            aria-label={effectiveCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+            className="rounded-md p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-900"
           >
             {effectiveCollapsed ? (
               <PanelLeftOpen size={20} />
@@ -181,7 +181,7 @@ export const Sidebar: React.FC = () => {
         </div>
 
         {/* Menu Items */}
-        <div className="p-3 space-y-1 overflow-y-auto flex-1">
+        <div className="flex-1 space-y-1 overflow-y-auto p-3">
           {menuItems
             .filter((item) => canAccessModule(item.module))
             .map((item) => (

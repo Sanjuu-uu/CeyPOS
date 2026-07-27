@@ -238,13 +238,13 @@ export const EmployeeOnboardStep3: React.FC = () => {
     }
   };
 
-  const goToDashboard = () => {
-    window.location.replace("/dashboard");
+  const goToAnalytics = () => {
+    window.location.replace("/analytics");
   };
 
   React.useEffect(() => {
     if (pairStatus === "approved") {
-      window.location.replace("/dashboard");
+      window.location.replace("/analytics");
     }
   }, [pairStatus]);
 
@@ -309,10 +309,10 @@ export const EmployeeOnboardStep3: React.FC = () => {
               </div>
               <button
                 type="button"
-                onClick={goToDashboard}
+                onClick={goToAnalytics}
                 className="w-full rounded-full bg-[#c5f542] text-black font-semibold py-3"
               >
-                Go to Dashboard
+                Go to Analytics
               </button>
             </div>
           ) : (

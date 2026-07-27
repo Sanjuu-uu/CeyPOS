@@ -1191,6 +1191,7 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({ isOpen, onToggle }) =>
       className={`relative isolate flex h-full min-w-0 shrink-0 flex-col overflow-visible border-l border-gray-200 bg-white shadow-sm transition-[width] duration-300 ${
         isOpen ? 'w-full md:w-[440px] lg:w-[480px] xl:w-[520px]' : 'w-[52px]'
       }`}
+      style={{ backgroundColor: '#ffffff' }}
     >
       <button
         type="button"
@@ -1287,7 +1288,7 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({ isOpen, onToggle }) =>
           </header>
 
           {showRecent ? (
-            <div className="flex-1 overflow-y-auto bg-gray-50/70 px-4 py-5">
+            <div className="flex-1 overflow-y-auto bg-white px-4 py-5">
               <div className="mb-5">
                 <h3 className="text-sm font-semibold text-gray-950">Recent chats</h3>
                 <p className="text-xs text-gray-500">Grouped by chat mode for this shop.</p>
@@ -1366,7 +1367,7 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({ isOpen, onToggle }) =>
             </div>
           ) : (
             <>
-          <div ref={scrollAreaRef} onScroll={handleScroll} className="min-w-0 flex-1 overflow-x-hidden overflow-y-auto bg-gray-50/70 px-4 py-5">
+          <div ref={scrollAreaRef} onScroll={handleScroll} className="min-w-0 flex-1 overflow-x-hidden overflow-y-auto bg-white px-4 py-5">
             <div className="space-y-3">
               {!(activeConversation?.messages ?? []).some((message) => message.sender === 'user') && (
                 <StartSurface mode={chatMode} onPickPrompt={handlePickPrompt} />
@@ -1619,7 +1620,7 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({ isOpen, onToggle }) =>
                     type="button"
                     onClick={handleToggleVoice}
                     className={`inline-flex h-9 w-9 items-center justify-center rounded-full ${
-                      isListening ? 'bg-[var(--verde-naturale--primary)] text-gray-950' : 'text-gray-600 hover:bg-gray-100'
+                      isListening ? 'bg-[#c5f542] text-gray-950' : 'text-gray-600 hover:bg-gray-100'
                     }`}
                     title={isListening ? 'Stop voice typing' : 'Voice typing'}
                   >
@@ -1649,7 +1650,7 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({ isOpen, onToggle }) =>
                       type="button"
                       onClick={handleSendMessage}
                       disabled={!chatInput.trim() || !normalizedShopId}
-                      className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-[var(--verde-naturale--primary)] text-gray-950 transition hover:brightness-95 disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-400"
+                      className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-[#c5f542] text-gray-950 transition hover:brightness-95 disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-400"
                       title="Send message"
                     >
                       <Send className="h-4 w-4" />

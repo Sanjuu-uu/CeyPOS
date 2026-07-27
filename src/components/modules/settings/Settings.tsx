@@ -2,26 +2,6 @@ import React, { useState, useEffect } from "react";
 import { Card } from "../../ui/Card";
 import { Button } from "../../ui/Button";
 import { Input } from "../../ui/Input";
-import {
-  Store,
-  User,
-  Bell,
-  Shield,
-  Palette,
-  Database,
-  Save,
-  Upload,
-  Download,
-  Trash2,
-  Eye,
-  EyeOff,
-  Keyboard,
-  CheckCircle2,
-  AlertCircle,
-  RotateCcw,
-  Copy,
-} from "lucide-react";
-import { Printer as PrinterIcon } from "lucide-react";
 import { useApp } from "../../../context/AppContext";
 import { db, normalizeKey } from "../../../lib/db";
 import { KeyboardShortcuts } from "../../../types";
@@ -34,6 +14,7 @@ import {
 } from "../../../lib/printerSettings";
 import { printReceipt } from "../../../lib/receiptPrinter";
 import { TeamSettings } from "../team/TeamSettings";
+import { getSearchHash } from "../../../lib/navigationSearch";
 
 // --- ADVANCED KEYBOARD SETTINGS ---
 const KeyboardSettings: React.FC = () => {
@@ -163,7 +144,8 @@ const KeyboardSettings: React.FC = () => {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
+      <p className="page-subheading">Customize workspace and account preferences</p>
       <Card
         title={`Customizable Shortcuts for ${currentUser?.name || "Current User"}`}
         className="border border-gray-100"
@@ -176,7 +158,6 @@ const KeyboardSettings: React.FC = () => {
             <Button
               variant="outline"
               size="sm"
-              icon={<Copy size={14} />}
               onClick={handleExport}
             >
               Export
@@ -184,7 +165,6 @@ const KeyboardSettings: React.FC = () => {
             <Button
               variant="outline"
               size="sm"
-              icon={<RotateCcw size={14} />}
               onClick={handleReset}
             >
               Reset Defaults
@@ -193,8 +173,8 @@ const KeyboardSettings: React.FC = () => {
         </div>
 
         {conflictError && (
-          <div className="mb-4 p-3 bg-red-50 text-red-700 border border-red-200 rounded-lg flex items-center gap-2 text-sm font-bold animate-in fade-in zoom-in duration-200">
-            <AlertCircle size={16} /> {conflictError}
+          <div className="mb-4 p-3 bg-red-50 text-red-700 border border-red-200 rounded-lg text-sm font-bold animate-in fade-in zoom-in duration-200">
+            {conflictError}
           </div>
         )}
 
@@ -303,19 +283,18 @@ const KeyboardSettings: React.FC = () => {
         <div className="mt-6 flex items-center gap-4 pt-4 border-t border-gray-100">
           <Button
             variant="primary"
-            icon={<Save size={16} />}
             onClick={handleSave}
           >
             Save Keybindings
           </Button>
           {hasUnsavedChanges && !savedStatus && (
-            <span className="text-amber-600 text-sm font-bold flex items-center gap-1 animate-pulse">
-              <AlertCircle size={16} /> Unsaved Changes
+            <span className="text-amber-600 text-sm font-bold animate-pulse">
+              Unsaved Changes
             </span>
           )}
           {savedStatus && (
-            <span className="text-green-600 text-sm font-bold flex items-center gap-1 animate-in fade-in">
-              <CheckCircle2 size={16} /> Saved Successfully
+            <span className="text-green-600 text-sm font-bold animate-in fade-in">
+              Saved Successfully
             </span>
           )}
         </div>
@@ -537,12 +516,11 @@ const PrinterSettingsPanel: React.FC = () => {
         </div>
 
         <div className="mt-6 pt-4 border-t border-gray-100 flex flex-wrap items-center gap-3">
-          <Button variant="primary" icon={<Save size={16} />} onClick={handleSave}>
+          <Button variant="primary" onClick={handleSave}>
             Save Settings
           </Button>
           <Button
             variant="secondary"
-            icon={<PrinterIcon size={16} />}
             onClick={handleTestPrint}
             disabled={testStatus === "printing"}
           >
@@ -550,24 +528,23 @@ const PrinterSettingsPanel: React.FC = () => {
           </Button>
           <Button
             variant="secondary"
-            icon={<RotateCcw size={16} />}
             onClick={handleReset}
           >
             Reset
           </Button>
           {savedFlash && (
-            <span className="text-xs font-medium text-green-700 bg-green-50 px-2 py-1 rounded-md border border-green-200 flex items-center gap-1">
-              <CheckCircle2 size={12} /> Saved
+            <span className="text-xs font-medium text-green-700 bg-green-50 px-2 py-1 rounded-md border border-green-200">
+              Saved
             </span>
           )}
           {testStatus === "ok" && (
-            <span className="text-xs font-medium text-green-700 bg-green-50 px-2 py-1 rounded-md border border-green-200 flex items-center gap-1">
-              <CheckCircle2 size={12} /> Print dialog opened
+            <span className="text-xs font-medium text-green-700 bg-green-50 px-2 py-1 rounded-md border border-green-200">
+              Print dialog opened
             </span>
           )}
           {testStatus === "error" && (
-            <span className="text-xs font-medium text-red-700 bg-red-50 px-2 py-1 rounded-md border border-red-200 flex items-center gap-1">
-              <AlertCircle size={12} /> Print failed — check console
+            <span className="text-xs font-medium text-red-700 bg-red-50 px-2 py-1 rounded-md border border-red-200">
+              Print failed - check console
             </span>
           )}
         </div>
@@ -587,7 +564,7 @@ const PrinterSettingsPanel: React.FC = () => {
 // --- MAIN SETTINGS COMPONENT ---
 export const Settings: React.FC = () => {
   const { currentShop, currentUser, memberScope } = useApp();
-  const [activeTab, setActiveTab] = useState<
+  type SettingsTab =
     | "general"
     | "users"
     | "team"
@@ -596,7 +573,9 @@ export const Settings: React.FC = () => {
     | "appearance"
     | "backup"
     | "keybindings"
-    | "printer"
+    | "printer";
+  const [activeTab, setActiveTab] = useState<
+    SettingsTab
   >("general");
   const [showPassword, setShowPassword] = useState(false);
 
@@ -634,6 +613,29 @@ export const Settings: React.FC = () => {
     quietHoursEnd: null as string | null,
   });
   const [notificationSaveState, setNotificationSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
+
+  useEffect(() => {
+    const tabs: SettingsTab[] = [
+      "general",
+      "users",
+      "team",
+      "notifications",
+      "security",
+      "appearance",
+      "backup",
+      "keybindings",
+      "printer",
+    ];
+    const applySearchHash = () => {
+      const hash = getSearchHash();
+      const tab = hash.startsWith("settings:") ? hash.split(":")[1] : "";
+      if (tabs.includes(tab as SettingsTab)) setActiveTab(tab as SettingsTab);
+    };
+
+    applySearchHash();
+    window.addEventListener("hashchange", applySearchHash);
+    return () => window.removeEventListener("hashchange", applySearchHash);
+  }, []);
 
   useEffect(() => {
     if (!currentShop?.id || !currentUser?.email) return;
@@ -698,12 +700,11 @@ export const Settings: React.FC = () => {
   };
 
   return (
-    <div className="space-y-6 pb-20">
-      <div className="flex items-center justify-between">
-        <h1 className="heading-h2">Settings</h1>
+    <div className="space-y-5 pb-20">
+      <div className="page-action-row">
+        <p className="page-subheading">Customize workspace and account preferences</p>
         <Button
           variant="primary"
-          icon={<Save size={16} />}
           onClick={handleSaveSettings}
         >
           Save Changes
@@ -711,51 +712,45 @@ export const Settings: React.FC = () => {
       </div>
 
       {/* Tab Navigation */}
-      <div className="border-b border-gray-200 overflow-x-auto no-scrollbar">
-        <nav className="-mb-px flex space-x-8 min-w-max">
+      <div className="module-tabs">
+        <nav className="flex gap-1">
           {[
-            { id: "general", label: "General", icon: <Store size={16} /> },
-            { id: "users", label: "Users", icon: <User size={16} /> },
+            { id: "general", label: "General" },
+            { id: "users", label: "Users" },
             ...(memberScope?.modules?.team
-              ? [{ id: "team", label: "Team", icon: <Shield size={16} /> }]
+              ? [{ id: "team", label: "Team" }]
               : []),
             {
               id: "keybindings",
               label: "Keybindings",
-              icon: <Keyboard size={16} />,
             },
             {
               id: "printer",
               label: "Printer",
-              icon: <PrinterIcon size={16} />,
             },
             {
               id: "notifications",
               label: "Notifications",
-              icon: <Bell size={16} />,
             },
-            { id: "security", label: "Security", icon: <Shield size={16} /> },
+            { id: "security", label: "Security" },
             {
               id: "appearance",
               label: "Appearance",
-              icon: <Palette size={16} />,
             },
             {
               id: "backup",
               label: "Backup & Data",
-              icon: <Database size={16} />,
             },
           ].map((tab) => (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id as any)}
-              className={`flex items-center space-x-2 py-2 px-1 border-b-2 font-medium text-sm transition-colors ${
+              className={`module-tab ${
                 activeTab === tab.id
-                  ? "border-verde-primary text-gray-900"
-                  : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                  ? "module-tab-active"
+                  : ""
               }`}
             >
-              {tab.icon}
               <span>{tab.label}</span>
             </button>
           ))}
@@ -911,9 +906,9 @@ export const Settings: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
-                    className="text-gray-400 hover:text-gray-600"
+                    className="text-xs font-medium text-gray-400 hover:text-gray-600"
                   >
-                    {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                    {showPassword ? "Hide" : "Show"}
                   </button>
                 }
               />
@@ -1120,7 +1115,6 @@ export const Settings: React.FC = () => {
                 </div>
                 <Button
                   variant="outline"
-                  icon={<Download size={16} />}
                   onClick={handleExportData}
                 >
                   Export
@@ -1136,7 +1130,6 @@ export const Settings: React.FC = () => {
                 </div>
                 <Button
                   variant="outline"
-                  icon={<Upload size={16} />}
                   onClick={handleImportData}
                 >
                   Import
@@ -1151,8 +1144,8 @@ export const Settings: React.FC = () => {
                       Permanently delete all shop data
                     </p>
                   </div>
-                  <button className="flex items-center gap-2 bg-red-50 text-red-600 px-4 py-2 rounded-lg font-bold hover:bg-red-100 transition-colors">
-                    <Trash2 size={16} /> Delete All Data
+                  <button className="bg-red-50 text-red-600 px-4 py-2 rounded-lg font-bold hover:bg-red-100 transition-colors">
+                    Delete All Data
                   </button>
                 </div>
               </div>

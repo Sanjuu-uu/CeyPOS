@@ -2,30 +2,27 @@
 import React from 'react';
 import { Sidebar } from '../layout/SideBar';
 import { TopBar } from '../layout/TopBar';
-import { useApp } from '../../context/AppContext';
 import { ModuleRouter } from '../modules/ModuleRouter';
 import { PairingModal } from '../modules/team/PairingModal';
+import shellBackground from '../../assets/images.jpg';
 
 export const MainLayout: React.FC = () => {
-  const { isSidebarCollapsed } = useApp();
-
   return (
-    <div className="h-screen flex overflow-hidden bg-gray-100">
+    <div className="flex h-screen overflow-hidden bg-[#f7f7f5]">
       {/* Sidebar Drawer (sliding on mobile, docked on desktop) */}
       <Sidebar />
 
       {/* Main Content */}
-      <div
-        className={`
-          flex-1 flex flex-col overflow-hidden transition-all duration-300
-          /* No left margin on mobile so the drawer can slide over */
-          ml-0
-          /* On desktop, push right by 64px if collapsed, 240px if expanded */
-          md:${isSidebarCollapsed ? 'ml-16' : 'ml-60'}
-        `}
-      >
+      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
         <TopBar />
-        <main className="flex-1 overflow-y-auto p-6 bg-gray-50">
+        <main
+          className="flex-1 overflow-y-auto bg-[#f9fafb] bg-top bg-no-repeat p-4 md:p-6"
+          style={{
+            backgroundImage: `url("${shellBackground}")`,
+            backgroundPosition: 'top center',
+            backgroundSize: '100% auto',
+          }}
+        >
           <ModuleRouter />
         </main>
         <PairingModal />

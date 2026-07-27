@@ -1,5 +1,4 @@
 import React from 'react';
-import { Check, X as XIcon } from 'lucide-react';
 
 // ✅ Fix: Omit 'onChange' from standard props to prevent type conflict
 interface NumericInputProps extends Omit<React.InputHTMLAttributes<HTMLInputElement>, 'onChange'> {
@@ -27,7 +26,7 @@ export const NumericInput = ({
     )}
     <input
       type="number"
-      // ✅ Fix: Check for null/undefined specifically so 0 is rendered
+      // Keep 0 rendered while still allowing empty input.
       value={value === undefined || value === null ? '' : value}
       onChange={(e) => {
         const val = e.target.value;
@@ -61,11 +60,9 @@ export const Toggle = ({ checked, onChange }: { checked: boolean; onChange: (val
     }`}
   >
     <div 
-        className={`w-6 h-6 bg-white rounded-full shadow-md absolute top-1 transition-transform duration-300 flex items-center justify-center ${
+        className={`w-6 h-6 bg-white rounded-full shadow-md absolute top-1 transition-transform duration-300 ${
             checked ? 'translate-x-7' : 'translate-x-1'
         }`} 
-    >
-        {checked ? <Check size={12} className="text-black" /> : <XIcon size={12} className="text-gray-400" />}
-    </div>
+    />
   </button>
 );

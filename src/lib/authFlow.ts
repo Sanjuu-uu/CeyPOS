@@ -212,7 +212,7 @@ export function resolvePostAuthDestination(options: {
   if (isOwner && !options.shopReady) {
     return "/shop-wizard";
   }
-  return "/dashboard";
+  return "/analytics";
 }
 
 export function buildOAuthRedirectUrl(

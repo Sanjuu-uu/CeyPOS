@@ -66,7 +66,7 @@ function PreAuthApp() {
       <Route path="/support" element={<div>Support Page - Coming Soon</div>} />
       <Route path="/contact" element={<div>Contact Page - Coming Soon</div>} />
       {/* Redirect any authenticated routes back to home */}
-      <Route path="/dashboard/*" element={<Navigate to="/" replace />} />
+      <Route path="/analytics/*" element={<Navigate to="/" replace />} />
       <Route path="/shop-wizard" element={<PreAuthWizardRedirect intent="owner" />} />
       <Route path="/team-onboard" element={<PreAuthWizardRedirect intent="employee" />} />
       {/* Catch-all route for 404 */}
@@ -603,7 +603,7 @@ function PostAuthContent({
                 ? accountType === "team"
                   ? "/team-onboard"
                   : "/shop-wizard"
-                : "/dashboard"
+                : "/analytics"
             }
             replace
           />
@@ -618,13 +618,13 @@ function PostAuthContent({
           ) : forceWizard ? (
             <ShopWizard />
           ) : (
-            <Navigate to="/dashboard" replace />
+            <Navigate to="/analytics" replace />
           )
         }
       />
 
       <Route
-        path="/dashboard/*"
+        path="/analytics/*"
         element={
           accountType === "team" && forceWizard ? (
             <Navigate to="/team-onboard" replace />
@@ -645,7 +645,7 @@ function PostAuthContent({
                 ? accountType === "team"
                   ? "/team-onboard"
                   : "/shop-wizard"
-                : "/dashboard"
+                : "/analytics"
             }
             replace
           />
@@ -660,7 +660,7 @@ function PostAuthContent({
                 ? accountType === "team"
                   ? "/team-onboard"
                   : "/shop-wizard"
-                : "/dashboard"
+                : "/analytics"
             }
             replace
           />
@@ -675,7 +675,7 @@ function PostAuthContent({
                 ? accountType === "team"
                   ? "/team-onboard"
                   : "/shop-wizard"
-                : "/dashboard"
+                : "/analytics"
             }
             replace
           />
@@ -690,7 +690,7 @@ function PostAuthContent({
                 ? accountType === "team"
                   ? "/team-onboard"
                   : "/shop-wizard"
-                : "/dashboard"
+                : "/analytics"
             }
             replace
           />
@@ -705,7 +705,7 @@ function PostAuthContent({
                 ? accountType === "team"
                   ? "/team-onboard"
                   : "/shop-wizard"
-                : "/dashboard"
+                : "/analytics"
             }
             replace
           />

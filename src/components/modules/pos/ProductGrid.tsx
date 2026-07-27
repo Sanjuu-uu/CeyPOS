@@ -29,7 +29,7 @@ const ProductCard = memo(
 
     if (viewMode === "row") {
       return (
-        <div className="bg-white rounded-lg p-3 shadow-sm border border-gray-100 hover:border-[#ecff76]/50 transition-all flex items-center gap-3">
+        <div className="bg-white rounded-xl p-3 shadow-[0_1px_2px_rgba(0,0,0,0.02)] border border-[#e4e4e0] hover:border-[#c5f542]/70 transition-all flex items-center gap-3">
           <div className="h-14 w-14 bg-gray-100 rounded-md overflow-hidden flex-shrink-0">
             {product.imageUrl ? (
               <img
@@ -63,7 +63,7 @@ const ProductCard = memo(
               <button
                 onClick={() => onAdd(product)}
                 disabled={isOutOfStock}
-                className="mt-1 h-8 px-4 bg-[#ecff76] text-gray-900 text-xs font-bold rounded hover:brightness-95 disabled:bg-gray-200 disabled:text-gray-400 transition-colors"
+                className="mt-1 h-8 px-4 bg-[#ecff76] text-gray-900 text-xs font-bold rounded hover:bg-[#c5f542] disabled:bg-gray-200 disabled:text-gray-400 transition-colors"
               >
                 Add
               </button>
@@ -93,7 +93,7 @@ const ProductCard = memo(
     }
 
     return (
-      <div className="group bg-white rounded-xl shadow-sm border border-gray-100 hover:shadow-md hover:border-[#ecff76] transition-all flex flex-col h-full overflow-hidden relative">
+      <div className="group bg-white rounded-2xl shadow-[0_1px_2px_rgba(0,0,0,0.02)] border border-[#e4e4e0] hover:shadow-md hover:border-[#c5f542] transition-all flex flex-col h-full overflow-hidden relative">
         <div className="aspect-[4/3] bg-gray-100 relative overflow-hidden">
           {product.imageUrl ? (
             <img
@@ -129,7 +129,7 @@ const ProductCard = memo(
               <button
                 onClick={() => onAdd(product)}
                 disabled={isOutOfStock}
-                className="w-full h-9 flex items-center justify-center bg-gray-100 text-gray-800 text-sm font-medium rounded-lg hover:bg-[#ecff76] hover:text-gray-900 disabled:bg-gray-50 disabled:text-gray-300 transition-all active:scale-95"
+                className="w-full h-9 flex items-center justify-center bg-gray-100 text-gray-800 text-sm font-medium rounded-lg hover:bg-[#c5f542] hover:text-gray-900 disabled:bg-gray-50 disabled:text-gray-300 transition-all active:scale-95"
               >
                 {isOutOfStock ? "Out of Stock" : "Add to Cart"}
               </button>

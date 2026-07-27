@@ -2,16 +2,6 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Card } from '../../ui/Card';
 import { Input } from '../../ui/Input';
 import { Button } from '../../ui/Button';
-import {
-  Search,
-  Plus,
-  Package,
-  Edit,
-  Trash2,
-  Upload,
-  X,
-  AlertTriangle,
-} from 'lucide-react';
 import { db } from '../../../lib/db';
 import { useApp } from '../../../context/AppContext';
 import { Product } from '../../../types';
@@ -411,15 +401,12 @@ export const Inventory: React.FC = () => {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       {/* Header Actions */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+      <div className="page-action-row">
         <div>
-          <h2 className="text-xl font-semibold text-gray-800">
-            Inventory Management
-          </h2>
-          <p className="text-sm text-gray-500 mt-0.5">
-            {products.length} products
+          <p className="page-subheading" title={`${products.length} products in your catalog`}>
+            Manage products, stock and catalog data
             {lowStockCount > 0 && (
               <span className="text-yellow-600"> · {lowStockCount} low</span>
             )}
@@ -428,15 +415,11 @@ export const Inventory: React.FC = () => {
             )}
           </p>
         </div>
-        <div className="flex gap-3">
-          <Button
-            variant="secondary"
-            icon={<Upload size={16} />}
-            onClick={() => setShowImportWizard(true)}
-          >
+        <div className="page-actions">
+          <Button variant="secondary" onClick={() => setShowImportWizard(true)}>
             Import Products
           </Button>
-          <Button variant="primary" icon={<Plus size={16} />} onClick={startAdd}>
+          <Button variant="primary" onClick={startAdd}>
             Add Product
           </Button>
         </div>
@@ -446,13 +429,12 @@ export const Inventory: React.FC = () => {
       {isAddingProduct && (
         <Card
           title={editingId ? 'Edit Product' : 'Add New Product'}
-          className="border border-gray-100"
           actions={
             <button
               onClick={resetForm}
-              className="text-gray-400 hover:text-gray-600"
+              className="rounded-lg border border-[#dfdfda] bg-white px-3 py-2 text-xs font-medium text-[#555550] hover:border-black hover:text-black"
             >
-              <X size={18} />
+              Close
             </button>
           }
         >
@@ -582,11 +564,10 @@ export const Inventory: React.FC = () => {
       )}
 
       {/* Search and Filter */}
-      <Card className="border border-gray-100">
+      <Card>
         <div className="flex flex-col sm:flex-row gap-4">
           <Input
             placeholder="Search products or scan barcode..."
-            leftIcon={<Search size={18} />}
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             onKeyDown={(e) => {
@@ -646,9 +627,8 @@ export const Inventory: React.FC = () => {
             <button
               onClick={handleBulkDelete}
               disabled={bulkDeleting}
-              className="inline-flex items-center gap-1.5 text-sm font-medium text-red-600 bg-red-50 hover:bg-red-100 disabled:opacity-50 px-4 py-1.5 rounded-full border border-red-200 transition-colors"
+              className="inline-flex items-center text-sm font-medium text-red-600 bg-red-50 hover:bg-red-100 disabled:opacity-50 px-4 py-1.5 rounded-full border border-red-200 transition-colors"
             >
-              <Trash2 size={14} />
               {bulkDeleting ? 'Deleting...' : 'Delete Selected'}
             </button>
           </div>
@@ -656,7 +636,7 @@ export const Inventory: React.FC = () => {
       )}
 
       {/* Products Table */}
-      <Card className="border border-gray-100">
+      <Card>
         {globalError && (
           <div className="mb-4 rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600">
             {globalError}
@@ -664,7 +644,7 @@ export const Inventory: React.FC = () => {
         )}
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-gray-200">
-            <thead>
+            <thead className="bg-[#f3f4f6]">
               <tr>
                 <th className="px-3 py-3 w-10">
                   <input
@@ -675,22 +655,22 @@ export const Inventory: React.FC = () => {
                     className="accent-[#ecff76] w-4 h-4 cursor-pointer"
                   />
                 </th>
-                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-3 py-3 text-left text-[11px] font-medium uppercase tracking-[0.1em] text-[#666661]">
                   Product
                 </th>
-                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-3 py-3 text-left text-[11px] font-medium uppercase tracking-[0.1em] text-[#666661]">
                   Category
                 </th>
-                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-3 py-3 text-left text-[11px] font-medium uppercase tracking-[0.1em] text-[#666661]">
                   Price
                 </th>
-                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-3 py-3 text-left text-[11px] font-medium uppercase tracking-[0.1em] text-[#666661]">
                   Stock
                 </th>
-                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-3 py-3 text-left text-[11px] font-medium uppercase tracking-[0.1em] text-[#666661]">
                   Barcode
                 </th>
-                <th className="px-3 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-3 py-3 text-right text-[11px] font-medium uppercase tracking-[0.1em] text-[#666661]">
                   Actions
                 </th>
               </tr>
@@ -715,20 +695,14 @@ export const Inventory: React.FC = () => {
                       </td>
                       <td className="px-3 py-4 whitespace-nowrap">
                         <div className="flex items-center">
-                          <div className="h-10 w-10 flex-shrink-0 mr-3">
-                            {product.imageUrl ? (
-                              <img
-                                src={product.imageUrl}
-                                alt={product.name}
-                                loading="lazy"
-                                className="h-10 w-10 rounded-md object-cover"
-                              />
-                            ) : (
-                              <div className="h-10 w-10 rounded-md bg-gray-100 flex items-center justify-center">
-                                <Package size={16} className="text-gray-400" />
-                              </div>
-                            )}
-                          </div>
+                          {product.imageUrl && (
+                            <img
+                              src={product.imageUrl}
+                              alt={product.name}
+                              loading="lazy"
+                              className="mr-3 h-10 w-10 flex-shrink-0 rounded-md object-cover"
+                            />
+                          )}
                           <div className="text-sm font-medium text-gray-900">
                             {product.name}
                           </div>
@@ -742,7 +716,7 @@ export const Inventory: React.FC = () => {
                       </td>
                       <td className="px-3 py-4 whitespace-nowrap text-sm text-gray-500">
                         <span
-                          className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${
+                          className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
                             product.stock > LOW_STOCK_THRESHOLD
                               ? 'bg-green-50 text-green-600'
                               : product.stock > 0
@@ -750,10 +724,6 @@ export const Inventory: React.FC = () => {
                                 : 'bg-red-50 text-red-600'
                           }`}
                         >
-                          {product.stock > 0 &&
-                            product.stock <= LOW_STOCK_THRESHOLD && (
-                              <AlertTriangle size={11} />
-                            )}
                           {product.stock}
                         </span>
                       </td>
@@ -765,22 +735,22 @@ export const Inventory: React.FC = () => {
                       <td className="px-3 py-4 whitespace-nowrap text-right text-sm font-medium">
                         <button
                           onClick={() => startEdit(product)}
-                          className="text-blue-600 hover:text-blue-800 mr-3"
+                          className="mr-3 rounded-lg border border-[#dfdfda] bg-white px-3 py-1.5 text-xs font-medium text-[#555550] hover:border-black hover:text-black"
                           aria-label={`Edit ${product.name}`}
                         >
-                          <Edit size={16} />
+                          Edit
                         </button>
                         <button
                           onClick={() => handleDeleteProduct(product)}
                           disabled={deleteInProgress === product.id}
-                          className={`text-red-500 hover:text-red-700 ${
+                          className={`rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-medium text-red-600 hover:bg-red-100 ${
                             deleteInProgress === product.id
                               ? 'opacity-50 cursor-not-allowed'
                               : ''
                           }`}
                           aria-label={`Delete ${product.name}`}
                         >
-                          <Trash2 size={16} />
+                          Delete
                         </button>
                       </td>
                     </tr>

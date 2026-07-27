@@ -1,35 +1,10 @@
 // src/components/Import/Import.tsx
-import React, { useState, useRef, ChangeEvent } from 'react';
+import React, { useEffect, useState, useRef, ChangeEvent } from 'react';
 
 import { Button } from '../../ui/Button';
 import { Input } from '../../ui/Input';
-import {
-  Zap,
-  Image as ImageIcon,
-  Calendar,
-  Clock,
-  List,
-  Users,
-  Send,
-  Save,
-  Copy,
-  QrCode,
-  Percent,
-  BarChart3,
-  Settings,
-  ChevronRight,
-  ChevronLeft,
-  Plus,
-  MessageSquare,
-  Mail,
-  Smartphone,
-  TrendingUp,
-  CheckCircle,
-  Target,
-  Timer
-} from 'lucide-react';
-import type { LucideIcon } from 'lucide-react';
 import { useApp } from '../../../context/AppContext';
+import { getSearchHash } from '../../../lib/navigationSearch';
 // import { PaymentSummary } from './PaymentSummary';
 // import { PaymentConfirmation } from './PaymentConfirmation';
 
@@ -42,12 +17,12 @@ export const Import: React.FC = () => {
   type AudienceValue = 'all' | 'recent' | 'inactive' | 'vip' | 'segment' | 'manual';
   type ScheduleType = 'immediate' | 'scheduled' | 'optimal';
 
-  const tabOptions: Array<{ id: TabId; label: string; icon: LucideIcon }> = [
-    { id: 'create', label: 'Create', icon: Plus },
-    { id: 'analytics', label: 'Analytics', icon: BarChart3 },
-    { id: 'history', label: 'History', icon: List },
-    { id: 'templates', label: 'Templates', icon: Copy },
-    { id: 'audience', label: 'Audience', icon: Users },
+  const tabOptions: Array<{ id: TabId; label: string }> = [
+    { id: 'create', label: 'Create' },
+    { id: 'analytics', label: 'Analytics' },
+    { id: 'history', label: 'History' },
+    { id: 'templates', label: 'Templates' },
+    { id: 'audience', label: 'Audience' },
   ];
 
   const [activeTab, setActiveTab] = useState<TabId>('create');
@@ -61,6 +36,19 @@ export const Import: React.FC = () => {
   const [scheduleTime, setScheduleTime] = useState<string>('');
   const [template, setTemplate] = useState('');
   const [language, setLanguage] = useState('en');
+
+  useEffect(() => {
+    const tabs: TabId[] = ['create', 'history', 'analytics', 'templates', 'audience'];
+    const applySearchHash = () => {
+      const hash = getSearchHash();
+      const tab = hash.startsWith('import:') ? hash.split(':')[1] : '';
+      if (tabs.includes(tab as TabId)) setActiveTab(tab as TabId);
+    };
+
+    applySearchHash();
+    window.addEventListener('hashchange', applySearchHash);
+    return () => window.removeEventListener('hashchange', applySearchHash);
+  }, []);
 
   // For FlashPro (image+text)
   const [uploadedImage, setUploadedImage] = useState<File | null>(null);
@@ -84,14 +72,13 @@ export const Import: React.FC = () => {
     label: string;
     desc: string;
     count: string;
-    icon: LucideIcon;
   }> = [
-    { value: 'all', label: 'All Customers', desc: 'Send to entire customer base', count: '2,543', icon: Users },
-    { value: 'recent', label: 'Recent Buyers', desc: 'Customers who bought in last 30 days', count: '892', icon: TrendingUp },
-    { value: 'inactive', label: 'Inactive Customers', desc: 'No purchases in 60+ days', count: '1,234', icon: Timer },
-    { value: 'vip', label: 'VIP Customers', desc: 'High-value customers', count: '156', icon: Target },
-    { value: 'segment', label: 'Custom Segment', desc: 'Create custom audience', count: '---', icon: Settings },
-    { value: 'manual', label: 'Manual Selection', desc: 'Pick specific customers', count: '---', icon: CheckCircle }
+    { value: 'all', label: 'All Customers', desc: 'Send to entire customer base', count: '2,543' },
+    { value: 'recent', label: 'Recent Buyers', desc: 'Customers who bought in last 30 days', count: '892' },
+    { value: 'inactive', label: 'Inactive Customers', desc: 'No purchases in 60+ days', count: '1,234' },
+    { value: 'vip', label: 'VIP Customers', desc: 'High-value customers', count: '156' },
+    { value: 'segment', label: 'Custom Segment', desc: 'Create custom audience', count: '---' },
+    { value: 'manual', label: 'Manual Selection', desc: 'Pick specific customers', count: '---' }
   ];
 
   const campaignStats = {
@@ -177,20 +164,20 @@ export const Import: React.FC = () => {
 
   // ─── Step Progress Component ─────────────────────────────────────────
   const StepProgress = () => (
-    <div className="flex items-center justify-center mb-8">
+    <div className="flex items-center justify-center mb-6">
       <div className="flex items-center space-x-4">
         {[1, 2, 3, 4].map((step) => (
           <React.Fragment key={step}>
             <div className={`flex items-center justify-center w-10 h-10 rounded-full font-semibold text-sm ${
               step <= currentStep 
-                ? 'bg-verde-primary text-white' 
+                ? 'bg-[#c5f542] text-black' 
                 : 'bg-gray-200 text-gray-500'
             }`}>
-              {step < currentStep ? <CheckCircle size={20} /> : step}
+              {step}
             </div>
             {step < 4 && (
               <div className={`w-12 h-1 rounded ${
-                step < currentStep ? 'bg-verde-primary' : 'bg-gray-200'
+                step < currentStep ? 'bg-[#c5f542]' : 'bg-gray-200'
               }`} />
             )}
           </React.Fragment>
@@ -233,21 +220,23 @@ export const Import: React.FC = () => {
 
   // Main interface
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-gray-100">
-      {/* Navigation Pills - Now at the very top */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-4 pb-2">
-        <div className="flex space-x-2 bg-white rounded-2xl p-2 shadow-sm border">
+    <div className="space-y-5">
+      <div className="flex items-center justify-between">
+        <p className="page-subheading">Create and manage promotional campaigns</p>
+      </div>
+
+      <div>
+        <div className="module-tabs">
           {tabOptions.map((tab) => (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className={`flex items-center space-x-2 px-6 py-3 rounded-xl font-medium transition-all ${
+              className={`module-tab ${
                 activeTab === tab.id
-                  ? 'bg-verde-primary text-white shadow-lg shadow-verde-primary/25'
-                  : 'text-black hover:text-black hover:bg-gray-50'
+                  ? 'module-tab-active'
+                  : ''
               }`}
             >
-              <tab.icon size={18} />
               <span>{tab.label}</span>
             </button>
           ))}
@@ -255,7 +244,7 @@ export const Import: React.FC = () => {
       </div>
 
       {/* Main Content */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-8">
+      <div>
         {/* Campaign Creation */}
         {activeTab === 'create' && (
           <div className="space-y-8">
@@ -263,7 +252,7 @@ export const Import: React.FC = () => {
             
             {/* Step 1: Campaign Type */}
             {currentStep === 1 && (
-              <div className="bg-white rounded-3xl shadow-xl border p-8">
+              <div className="rounded-2xl border border-[#e4e4e0] bg-white p-8 shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
                 <div className="text-center mb-8">
                   <h2 className="text-2xl font-bold text-black mb-2">Choose Your Campaign Type</h2>
                   <p className="text-black">Select the best format for your promotional message</p>
@@ -274,15 +263,15 @@ export const Import: React.FC = () => {
                     onClick={() => setCampaignType('fastflash')}
                     className={`group cursor-pointer p-8 rounded-2xl border-2 transition-all duration-300 ${
                       campaignType === 'fastflash'
-                        ? 'border-verde-primary bg-gradient-to-br from-verde-primary/5 to-verde-primary/10 shadow-lg shadow-verde-primary/20'
-                        : 'border-gray-200 hover:border-verde-primary/50 hover:shadow-lg'
+                        ? 'border-[#c5f542] bg-[#c5f542]/10'
+                        : 'border-[#eeeeeb] hover:border-[#c5f542]'
                     }`}
                   >
                     <div className="text-center">
                       <div className={`inline-flex items-center justify-center w-16 h-16 rounded-2xl mb-6 ${
-                        campaignType === 'fastflash' ? 'bg-verde-primary text-white' : 'bg-gray-100 text-gray-400 group-hover:bg-verde-primary group-hover:text-white'
+                        campaignType === 'fastflash' ? 'bg-[#c5f542] text-black' : 'bg-gray-100 text-gray-500 group-hover:bg-[#c5f542] group-hover:text-black'
                       } transition-all duration-300`}>
-                        <Zap size={32} />
+                        <span className="text-sm font-semibold">Fast</span>
                       </div>
                       <h3 className="text-xl font-bold text-black mb-2">FastFlash</h3>
                       <p className="text-black mb-4">Quick text-only messages for instant customer engagement</p>
@@ -304,15 +293,15 @@ export const Import: React.FC = () => {
                     onClick={() => setCampaignType('flashpro')}
                     className={`group cursor-pointer p-8 rounded-2xl border-2 transition-all duration-300 ${
                       campaignType === 'flashpro'
-                        ? 'border-verde-primary bg-gradient-to-br from-verde-primary/5 to-verde-primary/10 shadow-lg shadow-verde-primary/20'
-                        : 'border-gray-200 hover:border-verde-primary/50 hover:shadow-lg'
+                        ? 'border-[#c5f542] bg-[#c5f542]/10'
+                        : 'border-[#eeeeeb] hover:border-[#c5f542]'
                     }`}
                   >
                     <div className="text-center">
                       <div className={`inline-flex items-center justify-center w-16 h-16 rounded-2xl mb-6 ${
-                        campaignType === 'flashpro' ? 'bg-verde-primary text-white' : 'bg-gray-100 text-gray-400 group-hover:bg-verde-primary group-hover:text-white'
+                        campaignType === 'flashpro' ? 'bg-[#c5f542] text-black' : 'bg-gray-100 text-gray-500 group-hover:bg-[#c5f542] group-hover:text-black'
                       } transition-all duration-300`}>
-                        <ImageIcon size={32} />
+                        <span className="text-sm font-semibold">Pro</span>
                       </div>
                       <h3 className="text-xl font-bold text-black mb-2">FlashPro</h3>
                       <p className="text-black mb-4">Rich media campaigns with images and advanced features</p>
@@ -327,7 +316,6 @@ export const Import: React.FC = () => {
                 <div className="flex justify-end mt-8">
                   <Button variant="primary" onClick={nextStep} className="px-8">
                     Continue
-                    <ChevronRight size={16} className="ml-2" />
                   </Button>
                 </div>
               </div>
@@ -335,7 +323,7 @@ export const Import: React.FC = () => {
 
             {/* Step 2: Content Creation */}
             {currentStep === 2 && (
-              <div className="bg-white rounded-3xl shadow-xl border p-8">
+              <div className="rounded-2xl border border-[#e4e4e0] bg-white p-8 shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
                 <div className="text-center mb-8">
                   <h2 className="text-2xl font-bold text-black mb-2">Create Your Message</h2>
                   <p className="text-black">Craft compelling content that drives action</p>
@@ -371,7 +359,6 @@ export const Import: React.FC = () => {
                                 : 'border-gray-200 hover:border-verde-primary/50'
                             }`}
                           >
-                            <div className="text-2xl mb-2">{tmpl.icon}</div>
                             <div className="font-medium text-black">{tmpl.name}</div>
                           </button>
                         ))}
@@ -384,11 +371,9 @@ export const Import: React.FC = () => {
                         <label className="block text-sm font-semibold text-black">Message Content</label>
                         <div className="flex space-x-2">
                           <button className="text-xs bg-yellow-100 text-yellow-700 px-3 py-1 rounded-full hover:bg-yellow-200 transition-colors">
-                            <Percent size={12} className="inline mr-1" />
                             Discount
                           </button>
                           <button className="text-xs bg-purple-100 text-purple-700 px-3 py-1 rounded-full hover:bg-purple-200 transition-colors">
-                            <QrCode size={12} className="inline mr-1" />
                             QR Code
                           </button>
                         </div>
@@ -438,9 +423,6 @@ export const Import: React.FC = () => {
                             </div>
                           ) : (
                             <div className="space-y-4">
-                              <div className="inline-flex items-center justify-center w-16 h-16 bg-gray-100 rounded-2xl">
-                                <ImageIcon size={32} className="text-gray-400" />
-                              </div>
                               <div>
                                 <p className="text-lg font-medium text-black">Upload Campaign Image</p>
                                 <p className="text-sm text-gray-500">PNG, JPG up to 5MB</p>
@@ -473,12 +455,10 @@ export const Import: React.FC = () => {
 
                 <div className="flex justify-between mt-8">
                   <Button variant="outline" onClick={prevStep}>
-                    <ChevronLeft size={16} className="mr-2" />
                     Back
                   </Button>
                   <Button variant="primary" onClick={nextStep}>
                     Continue
-                    <ChevronRight size={16} className="ml-2" />
                   </Button>
                 </div>
               </div>
@@ -486,7 +466,7 @@ export const Import: React.FC = () => {
 
             {/* Step 3: Audience & Channels */}
             {currentStep === 3 && (
-              <div className="bg-white rounded-3xl shadow-xl border p-8">
+              <div className="rounded-2xl border border-[#e4e4e0] bg-white p-8 shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
                 <div className="text-center mb-8">
                   <h2 className="text-2xl font-bold text-black mb-2">Target Your Audience</h2>
                   <p className="text-black">Choose who receives your campaign and how</p>
@@ -498,7 +478,6 @@ export const Import: React.FC = () => {
                     <h3 className="text-lg font-semibold text-black mb-4">Select Audience</h3>
                     <div className="space-y-3">
                       {audienceOptions.map(option => {
-                        const IconComponent = option.icon;
                         return (
                           <label key={option.value} className={`flex items-center p-4 rounded-xl border-2 cursor-pointer transition-all ${
                             audience === option.value
@@ -513,11 +492,6 @@ export const Import: React.FC = () => {
                               onChange={handleAudienceChange}
                               className="sr-only"
                             />
-                            <div className={`flex items-center justify-center w-10 h-10 rounded-xl mr-4 ${
-                              audience === option.value ? 'bg-verde-primary text-white' : 'bg-gray-100 text-gray-400'
-                            }`}>
-                              <IconComponent size={20} />
-                            </div>
                             <div className="flex-1">
                               <div className="flex items-center justify-between">
                                 <div className="font-medium text-black">{option.label}</div>
@@ -544,16 +518,11 @@ export const Import: React.FC = () => {
                           onChange={(e) => setSendWhatsApp(e.target.checked)}
                           className="sr-only"
                         />
-                        <div className={`flex items-center justify-center w-10 h-10 rounded-xl mr-4 ${
-                          sendWhatsApp ? 'bg-green-500 text-white' : 'bg-gray-100 text-gray-400'
-                        }`}>
-                          <MessageSquare size={20} />
-                        </div>
                         <div className="flex-1">
                           <div className="font-medium text-black">WhatsApp Business</div>
                           <div className="text-sm text-gray-500">High engagement rate • 95% open rate</div>
                         </div>
-                        {sendWhatsApp && <CheckCircle size={20} className="text-green-500" />}
+                        {sendWhatsApp && <span className="text-xs font-semibold text-[#555550]">Selected</span>}
                       </label>
 
                       <label className={`flex items-center p-4 rounded-xl border-2 cursor-pointer transition-all ${
@@ -565,16 +534,11 @@ export const Import: React.FC = () => {
                           onChange={(e) => setSendEmail(e.target.checked)}
                           className="sr-only"
                         />
-                        <div className={`flex items-center justify-center w-10 h-10 rounded-xl mr-4 ${
-                          sendEmail ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-400'
-                        }`}>
-                          <Mail size={20} />
-                        </div>
                         <div className="flex-1">
                           <div className="font-medium text-black">Email</div>
                           <div className="text-sm text-gray-500">Rich content support • 78% open rate</div>
                         </div>
-                        {sendEmail && <CheckCircle size={20} className="text-blue-500" />}
+                        {sendEmail && <span className="text-xs font-semibold text-[#555550]">Selected</span>}
                       </label>
 
                       <label className={`flex items-center p-4 rounded-xl border-2 cursor-pointer transition-all ${
@@ -586,23 +550,17 @@ export const Import: React.FC = () => {
                           onChange={(e) => setSendSMS(e.target.checked)}
                           className="sr-only"
                         />
-                        <div className={`flex items-center justify-center w-10 h-10 rounded-xl mr-4 ${
-                          sendSMS ? 'bg-purple-500 text-white' : 'bg-gray-100 text-gray-400'
-                        }`}>
-                          <Smartphone size={20} />
-                        </div>
                         <div className="flex-1">
                           <div className="font-medium text-black">SMS</div>
                           <div className="text-sm text-gray-500">Universal delivery • 98% delivery rate</div>
                         </div>
-                        {sendSMS && <CheckCircle size={20} className="text-purple-500" />}
+                        {sendSMS && <span className="text-xs font-semibold text-[#555550]">Selected</span>}
                       </label>
                     </div>
 
                     {/* Estimated Reach */}
                     <div className="mt-6 p-4 bg-gradient-to-r from-verde-primary/10 to-green-100 rounded-xl border border-verde-primary/20">
                       <div className="flex items-center space-x-2 mb-2">
-                        <Target size={16} className="text-verde-primary" />
                         <span className="font-semibold text-verde-primary">Estimated Reach</span>
                       </div>
                       <div className="text-2xl font-bold text-black">
@@ -617,12 +575,10 @@ export const Import: React.FC = () => {
 
                 <div className="flex justify-between mt-8">
                   <Button variant="outline" onClick={prevStep}>
-                    <ChevronLeft size={16} className="mr-2" />
                     Back
                   </Button>
                   <Button variant="primary" onClick={nextStep}>
                     Continue
-                    <ChevronRight size={16} className="ml-2" />
                   </Button>
                 </div>
               </div>
@@ -630,7 +586,7 @@ export const Import: React.FC = () => {
 
             {/* Step 4: Schedule & Launch */}
             {currentStep === 4 && (
-              <div className="bg-white rounded-3xl shadow-xl border p-8">
+              <div className="rounded-2xl border border-[#e4e4e0] bg-white p-8 shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
                 <div className="text-center mb-8">
                   <h2 className="text-2xl font-bold text-black mb-2">Schedule Your Campaign</h2>
                   <p className="text-black">Choose when to send your promotional message</p>
@@ -652,11 +608,6 @@ export const Import: React.FC = () => {
                         onChange={handleScheduleTypeChange}
                         className="sr-only"
                       />
-                      <div className={`inline-flex items-center justify-center w-12 h-12 rounded-xl mb-3 ${
-                        scheduleType === 'immediate' ? 'bg-verde-primary text-white' : 'bg-gray-100 text-gray-400'
-                      }`}>
-                        <Send size={24} />
-                      </div>
                       <div className="font-semibold text-black">Send Now</div>
                       <div className="text-sm text-gray-500 mt-1">Immediate delivery</div>
                     </label>
@@ -674,11 +625,6 @@ export const Import: React.FC = () => {
                         onChange={handleScheduleTypeChange}
                         className="sr-only"
                       />
-                      <div className={`inline-flex items-center justify-center w-12 h-12 rounded-xl mb-3 ${
-                        scheduleType === 'scheduled' ? 'bg-verde-primary text-white' : 'bg-gray-100 text-gray-400'
-                      }`}>
-                        <Calendar size={24} />
-                      </div>
                       <div className="font-semibold text-black">Schedule</div>
                       <div className="text-sm text-gray-500 mt-1">Pick date & time</div>
                     </label>
@@ -696,11 +642,6 @@ export const Import: React.FC = () => {
                         onChange={handleScheduleTypeChange}
                         className="sr-only"
                       />
-                      <div className={`inline-flex items-center justify-center w-12 h-12 rounded-xl mb-3 ${
-                        scheduleType === 'optimal' ? 'bg-verde-primary text-white' : 'bg-gray-100 text-gray-400'
-                      }`}>
-                        <TrendingUp size={24} />
-                      </div>
                       <div className="font-semibold text-black">Best Time</div>
                       <div className="text-sm text-gray-500 mt-1">AI-optimized timing</div>
                     </label>
@@ -712,24 +653,22 @@ export const Import: React.FC = () => {
                       <div>
                         <label className="block text-sm font-semibold text-black mb-2">Date</label>
                         <div className="relative">
-                          <Calendar size={16} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
                           <input
                             type="date"
                             value={scheduleDate}
                             onChange={(e) => setScheduleDate(e.target.value)}
-                            className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-verde-primary focus:border-verde-primary"
+                            className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-verde-primary focus:border-verde-primary"
                           />
                         </div>
                       </div>
                       <div>
                         <label className="block text-sm font-semibold text-black mb-2">Time</label>
                         <div className="relative">
-                          <Clock size={16} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
                           <input
                             type="time"
                             value={scheduleTime}
                             onChange={(e) => setScheduleTime(e.target.value)}
-                            className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-verde-primary focus:border-verde-primary"
+                            className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-verde-primary focus:border-verde-primary"
                           />
                         </div>
                       </div>
@@ -766,16 +705,13 @@ export const Import: React.FC = () => {
 
                 <div className="flex justify-between mt-8">
                   <Button variant="outline" onClick={prevStep}>
-                    <ChevronLeft size={16} className="mr-2" />
                     Back
                   </Button>
                   <div className="flex space-x-3">
                     <Button variant="outline" onClick={resetForm}>
-                      <Save size={16} className="mr-2" />
                       Save Draft
                     </Button>
                     <Button variant="primary" onClick={handleScheduleClick} className="px-8">
-                      <Send size={16} className="mr-2" />
                       {scheduleType === 'immediate' ? 'Launch Campaign' : 'Schedule Campaign'}
                     </Button>
                   </div>
@@ -810,7 +746,6 @@ export const Import: React.FC = () => {
               <h2 className="text-base font-bold text-black mb-4">Performance Overview</h2>
               <div className="h-32 bg-gray-50 rounded-lg flex items-center justify-center border-2 border-dashed border-gray-200">
                 <div className="text-center">
-                  <BarChart3 size={24} className="text-gray-400 mx-auto mb-2" />
                   <p className="text-xs text-gray-500">Charts display here</p>
                 </div>
               </div>
@@ -854,9 +789,6 @@ export const Import: React.FC = () => {
         {/* Other tabs */}
         {(activeTab === 'templates' || activeTab === 'audience') && (
           <div className="text-center py-12">
-            <div className="inline-flex items-center justify-center w-12 h-12 bg-gray-100 rounded-lg mb-4">
-              {activeTab === 'templates' ? <Copy size={20} className="text-gray-400" /> : <Users size={20} className="text-gray-400" />}
-            </div>
             <h3 className="text-base font-semibold text-black mb-2">
               {activeTab === 'templates' ? 'Templates Library' : 'Audience Management'}
             </h3>

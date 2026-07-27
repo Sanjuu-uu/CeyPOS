@@ -98,9 +98,9 @@ export const ShopWizardStep6: React.FC = () => {
     };
   }, [completeWizard, hasTriggeredCompletion]);
 
-  const handleGoToDashboard = () => {
-    // Navigate to dashboard immediately
-    navigate('/dashboard');
+  const handleGoToAnalytics = () => {
+    // Navigate to analytics immediately
+    navigate('/analytics');
   };
 
   const handleRetry = () => {
@@ -344,7 +344,7 @@ export const ShopWizardStep6: React.FC = () => {
             
             <div style={{ display: 'flex', gap: '16px', justifyContent: 'center', flexWrap: 'wrap' }}>
               <button 
-                onClick={handleGoToDashboard}
+                onClick={handleGoToAnalytics}
                 className="button-primary"
                 style={{
                   padding: '12px 24px',
@@ -360,7 +360,7 @@ export const ShopWizardStep6: React.FC = () => {
                 }}
                 disabled={isSaving}
               >
-                {isSaving ? 'Finalizing...' : 'Go to Dashboard'}
+                {isSaving ? 'Finalizing...' : 'Go to Analytics'}
               </button>
               <button 
                 onClick={() => window.open('/help', '_blank')}
