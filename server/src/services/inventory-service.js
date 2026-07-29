@@ -1,6 +1,7 @@
 import { openShopDatabase } from "../utils/shop-database.js";
 import { publishChange } from "../realtime/change-bus.js";
 import { upsertGlobalBarcodeProducts } from "../utils/global-barcode-database.js";
+import { notifyLowStock } from "./notification-service.js";
 
 function normalizeProduct(input = {}) {
   const now = new Date().toISOString();
@@ -148,6 +149,7 @@ function upsertProducts(shopId, products = [], options = {}) {
       metadata: options.metadata || {},
       actor: options.actor || null,
     });
+    notifyLowStock({ shopId, rows: updatedRows });
     return updatedRows;
   } finally {
     db.close();
@@ -170,6 +172,7 @@ function applyStockAdjustments(shopId, adjustments = [], options = {}) {
         metadata: options.metadata || {},
         actor: options.actor || null,
       });
+      notifyLowStock({ shopId, rows: updatedRows });
     }
     return updatedRows;
   } finally {

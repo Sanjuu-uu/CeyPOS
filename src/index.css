@@ -1,4 +1,34 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+@font-face {
+  font-family: 'Aspekta';
+  src: url('./pages/webflow website/images/aspekta-450.ttf') format('truetype');
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Aspekta';
+  src: url('./pages/webflow website/images/aspekta-550.ttf') format('truetype');
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Aspekta';
+  src: url('./pages/webflow website/images/aspekta-650.otf') format('opentype');
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Aspekta';
+  src: url('./pages/webflow website/images/aspekta-750.ttf') format('truetype');
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+}
 
 @tailwind base;
 @tailwind components;
@@ -26,7 +56,12 @@
   --radius-12px: 12px;
   
   /* Typography */
-  --font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+  --font-family: 'Aspekta', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+html {
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
 body {
@@ -58,6 +93,42 @@ body {
 
 .component-description {
   @apply text-sm text-gray-500 leading-relaxed;
+}
+
+.page-subheading {
+  @apply hidden;
+}
+
+.topbar-subheading {
+  @apply mt-1 block min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-xs font-normal leading-5 text-gray-500 sm:text-sm;
+}
+
+.page-action-row {
+  @apply flex min-h-10 w-full items-center justify-end;
+}
+
+.page-actions {
+  @apply flex flex-wrap items-center justify-end gap-3;
+}
+
+.page-action-control {
+  @apply h-10;
+}
+
+.topbar-panel {
+  @apply absolute right-0 z-50 mt-2 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-xl;
+}
+
+.module-tabs {
+  @apply flex min-h-11 items-center gap-1 overflow-x-auto rounded-xl bg-gradient-to-r from-gray-100 to-gray-200 p-1;
+}
+
+.module-tab {
+  @apply whitespace-nowrap rounded-lg px-4 py-2.5 text-sm font-medium text-gray-500 transition-colors hover:text-gray-900;
+}
+
+.module-tab-active {
+  @apply bg-white text-gray-900 shadow-sm;
 }
 
 /* Codex-style chat step animations */

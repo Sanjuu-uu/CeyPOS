@@ -1,5 +1,4 @@
 import React from 'react';
-import { Plus, Trash2, Check } from 'lucide-react';
 import { Button } from '../../ui/Button';
 import { NumericInput } from './BusinessComponents';
 import { TaxRule, type AddItemFn } from './BusinessRules';
@@ -18,9 +17,9 @@ export const TaxSettings: React.FC<TaxSettingsProps> = ({ taxes, setTaxes, addIt
         <Button 
           size="sm" 
           onClick={() => addItem(setTaxes, { name: "New Tax", rate: 0, isDefault: false })}
-          className="bg-black text-white hover:bg-gray-800 rounded-full px-4"
+          className="bg-[#c5f542] text-black hover:bg-[#b8ea34] rounded-full px-4"
         >
-          <Plus size={16} className="mr-2"/> Add Tax
+          Add Tax
         </Button>
       </div>
 
@@ -49,9 +48,7 @@ export const TaxSettings: React.FC<TaxSettingsProps> = ({ taxes, setTaxes, addIt
             </div>
             <div className="w-full md:w-auto h-12 flex items-center pt-5">
               <label className="flex items-center gap-3 cursor-pointer select-none px-4 py-2 rounded-lg hover:bg-gray-50 transition-colors">
-                <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${tax.isDefault ? 'border-[#ecff76] bg-[#ecff76]' : 'border-gray-300'}`}>
-                  {tax.isDefault && <Check size={12} className="text-black"/>}
-                </div>
+                <div className={`w-5 h-5 rounded-full border-2 ${tax.isDefault ? 'border-[#c5f542] bg-[#c5f542]' : 'border-gray-300'}`} />
                 <input 
                   type="checkbox"
                   checked={tax.isDefault}
@@ -74,9 +71,9 @@ export const TaxSettings: React.FC<TaxSettingsProps> = ({ taxes, setTaxes, addIt
             <div className="pt-5">
               <button 
                   onClick={() => setTaxes(prev => prev.filter(t => t.id !== tax.id))}
-                  className="h-12 w-12 flex items-center justify-center rounded-xl bg-red-50 text-red-500 hover:bg-red-100 transition-colors"
+                  className="h-12 rounded-xl bg-red-50 px-4 text-sm font-medium text-red-500 hover:bg-red-100 transition-colors"
               >
-                  <Trash2 size={18} />
+                  Delete
               </button>
             </div>
           </div>

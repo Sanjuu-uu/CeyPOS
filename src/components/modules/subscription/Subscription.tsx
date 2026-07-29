@@ -2,18 +2,9 @@ import React, { useCallback, useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Card } from "../../ui/Card";
 import { Button } from "../../ui/Button";
-import {
-  Crown,
-  Zap,
-  Package,
-  FileText,
-  Users,
-  Briefcase,
-  CreditCard,
-  AlertCircle,
-  Loader2,
-} from "lucide-react";
+import { FileText, CreditCard, AlertCircle, Loader2 } from "lucide-react";
 import { useApp } from "../../../context/AppContext";
+import { getSearchHash } from "../../../lib/navigationSearch";
 import {
   fetchSubscription,
   startSubscriptionCheckout,
@@ -46,6 +37,18 @@ export const Subscription: React.FC = () => {
 
   // State for the billing toggle (Monthly vs. Annual)
   const [billingPeriod, setBillingPeriod] = useState<BillingPeriod>("monthly");
+
+  useEffect(() => {
+    const applySearchHash = () => {
+      const hash = getSearchHash();
+      const tab = hash.startsWith("subscription:") ? hash.split(":")[1] : "";
+      if (tab === "business" || tab === "enterprise") setViewMode(tab);
+    };
+
+    applySearchHash();
+    window.addEventListener("hashchange", applySearchHash);
+    return () => window.removeEventListener("hashchange", applySearchHash);
+  }, []);
 
   const [snapshot, setSnapshot] = useState<SubscriptionSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
@@ -175,8 +178,6 @@ export const Subscription: React.FC = () => {
       period: { monthly: "/ month", annual: "/ year" },
       description:
         "For new businesses needing one terminal and essential POS features.",
-      icon: <Package size={24} />,
-      color: "#00C49F", // Yellow
       features: [
         "1 Terminal",
         "1 Staff Account",
@@ -191,8 +192,6 @@ export const Subscription: React.FC = () => {
       period: { monthly: "/ month", annual: "/ year" },
       description:
         "For established businesses needing advanced inventory and analytics.",
-      icon: <Zap size={24} />,
-      color: " #b39efc", // Green
       features: [
         "Up to 3 Terminals",
         "5 Staff Accounts",
@@ -208,8 +207,6 @@ export const Subscription: React.FC = () => {
       period: { monthly: "/ month", annual: "/ year" },
       description:
         "For multi-location businesses needing unlimited staff and terminals.",
-      icon: <Crown size={24} />,
-      color: "#ef94b5", // Blue
       features: [
         "Unlimited Terminals",
         "Unlimited Staff",
@@ -246,13 +243,16 @@ export const Subscription: React.FC = () => {
   };
 
   return (
-    <div className="space-y-6">
-      {/* Page Header */}
-      <div>
-        <h1 className="heading-h2">Plans that grow with you</h1>
-        <p className="text-gray-600 mt-2">
-          Manage your subscription and billing.
-        </p>
+    <div className="space-y-5">
+      <div className="page-action-row">
+        <div className="page-actions">
+          <Button variant="outline" onClick={() => setCurrentModule("support")}>
+            Manage Billing
+          </Button>
+          <Button variant="secondary" onClick={() => setCurrentModule("support")}>
+            Contact Support
+          </Button>
+        </div>
       </div>
 
       {/* Inline feedback */}
@@ -357,38 +357,19 @@ export const Subscription: React.FC = () => {
       </Card>
 
       {/* TOP-LEVEL TOGGLE (Business / Enterprise) */}
-      <div className="flex justify-center">
-        <div className="relative flex w-full max-w-xs items-center rounded-lg bg-gray-100 p-1 border border-transparent hover:border-gray-300 transition-colors">
+      <div className="module-tabs">
           <button
             onClick={() => setViewMode("business")}
-            className={`relative z-10 h-9 w-1/2 rounded-md px-3 py-1 text-sm font-medium transition-colors ${
-              viewMode === "business"
-                ? "text-gray-900"
-                : "text-gray-500 hover:text-gray-700"
-            }`}
+            className={`module-tab ${viewMode === "business" ? "module-tab-active" : ""}`}
           >
             Business
           </button>
           <button
             onClick={() => setViewMode("enterprise")}
-            className={`relative z-10 h-9 w-1/2 rounded-md px-3 py-1 text-sm font-medium transition-colors ${
-              viewMode === "enterprise"
-                ? "text-gray-900"
-                : "text-gray-500 hover:text-gray-700"
-            }`}
+            className={`module-tab ${viewMode === "enterprise" ? "module-tab-active" : ""}`}
           >
             Enterprise
           </button>
-          <motion.div
-            layout
-            transition={{ type: "spring", stiffness: 300, damping: 30 }}
-            className={`absolute left-1 top-1 h-9 w-1/2 rounded-md bg-white shadow-sm ${
-              viewMode === "enterprise"
-                ? "translate-x-[calc(100%-4px)]"
-                : "translate-x-0"
-            }`}
-          />
-        </div>
       </div>
 
       {/* --- CONDITIONAL CONTENT --- */}
@@ -427,12 +408,8 @@ export const Subscription: React.FC = () => {
                         <div className="flex justify-between items-start">
                           <div className="flex items-center gap-3">
                             <div
-                              className="p-2 rounded-lg w-fit"
-                              style={{ backgroundColor: `${plan.color}20` }}
+                              className="hidden"
                             >
-                              <div style={{ color: plan.color }}>
-                                {plan.icon}
-                              </div>
                             </div>
                             <h3 className="font-semibold text-lg text-gray-900">
                               {plan.title}
@@ -524,8 +501,7 @@ export const Subscription: React.FC = () => {
                               className="flex items-center gap-2 text-xs text-gray-600"
                             >
                               <div
-                                className="w-1.5 h-1.5 rounded-full"
-                                style={{ backgroundColor: plan.color }}
+                                className="w-1.5 h-1.5 rounded-full bg-[#c5f542]"
                               ></div>
                               {feature}
                             </li>
@@ -549,7 +525,7 @@ export const Subscription: React.FC = () => {
                               style={
                                 !isCurrent && !disabled
                                   ? {
-                                      backgroundColor: plan.color,
+                                      backgroundColor: "#c5f542",
                                       color: "black",
                                       border: "none",
                                     }
@@ -592,11 +568,8 @@ export const Subscription: React.FC = () => {
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               {/* Team Card */}
               <motion.div whileHover={{ y: -4 }} transition={{ duration: 0.2 }}>
-                <Card className="h-full border border-gray-100 hover:shadow-lg transition-all duration-200 flex flex-col">
+                <Card className="h-full hover:shadow-lg transition-all duration-200 flex flex-col">
                   <div className="p-6 space-y-4 flex-grow">
-                    <div className="p-3 rounded-lg w-fit bg-blue-100">
-                      <Users size={32} className="text-blue-600" />
-                    </div>
                     <h3 className="font-semibold text-xl text-gray-900">
                       Team
                     </h3>
@@ -610,7 +583,7 @@ export const Subscription: React.FC = () => {
                           key={index}
                           className="flex items-center gap-2 text-xs text-gray-600"
                         >
-                          <div className="w-1.5 h-1.5 rounded-full bg-blue-600"></div>
+                          <div className="w-1.5 h-1.5 rounded-full bg-[#c5f542]"></div>
                           {feature}
                         </li>
                       ))}
@@ -635,11 +608,8 @@ export const Subscription: React.FC = () => {
 
               {/* Custom Card */}
               <motion.div whileHover={{ y: -4 }} transition={{ duration: 0.2 }}>
-                <Card className="h-full border border-gray-100 hover:shadow-lg transition-all duration-200 flex flex-col">
+                <Card className="h-full hover:shadow-lg transition-all duration-200 flex flex-col">
                   <div className="p-6 space-y-4 flex-grow">
-                    <div className="p-3 rounded-lg w-fit bg-purple-100">
-                      <Briefcase size={32} className="text-purple-600" />
-                    </div>
                     <h3 className="font-semibold text-xl text-gray-900">
                       Custom
                     </h3>
@@ -653,7 +623,7 @@ export const Subscription: React.FC = () => {
                           key={index}
                           className="flex items-center gap-2 text-xs text-gray-600"
                         >
-                          <div className="w-1.5 h-1.5 rounded-full bg-purple-600"></div>
+                          <div className="w-1.5 h-1.5 rounded-full bg-[#c5f542]"></div>
                           {feature}
                         </li>
                       ))}
@@ -682,24 +652,24 @@ export const Subscription: React.FC = () => {
       </AnimatePresence>
 
       {/* Billing History (Stays at the bottom) */}
-      <Card title="Billing History" className="border border-gray-100">
+      <Card title="Billing History">
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-gray-200">
-            <thead>
+            <thead className="bg-[#f3f4f6]">
               <tr>
-                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-3 py-3 text-left text-[11px] font-medium uppercase tracking-[0.1em] text-[#666661]">
                   Date
                 </th>
-                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-3 py-3 text-left text-[11px] font-medium uppercase tracking-[0.1em] text-[#666661]">
                   Description
                 </th>
-                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-3 py-3 text-left text-[11px] font-medium uppercase tracking-[0.1em] text-[#666661]">
                   Card
                 </th>
-                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-3 py-3 text-left text-[11px] font-medium uppercase tracking-[0.1em] text-[#666661]">
                   Amount
                 </th>
-                <th className="px-3 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-3 py-3 text-right text-[11px] font-medium uppercase tracking-[0.1em] text-[#666661]">
                   Status
                 </th>
               </tr>

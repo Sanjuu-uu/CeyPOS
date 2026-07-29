@@ -2,6 +2,7 @@ import { Router } from "express";
 import { openShopDatabase, shopDatabaseExists } from "../utils/shop-database.js";
 import { adjustStockLevels, normalizeProduct } from "../services/inventory-service.js";
 import { publishChange } from "../realtime/change-bus.js";
+import { notifySaleCompleted } from "../services/notification-service.js";
 import { recordMemberSaleStats } from "../services/member-stats-service.js";
 import { requireClerkSession } from "../middleware/clerk-auth.js";
 import crypto from "crypto";
@@ -423,6 +424,14 @@ router.post("/complete", (req, res) => {
             payload: { row: result.customerRow },
           });
         }
+
+        notifySaleCompleted({
+          shopId,
+          transactionId: result.transactionId,
+          total: result.transactionRow?.total,
+          itemCount: result.transactionItems?.reduce((sum, item) => sum + Number(item.quantity || 0), 0),
+          servedBy: result.transactionRow?.served_by_display_name,
+        });
       } catch (notifyErr) {
         console.warn("Realtime update failed:", notifyErr);
       }

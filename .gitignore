@@ -68,6 +68,9 @@ jspm_packages/
 # Generated documentation
 PREVIEW_GUIDE.md
 
+# Webflow export
+src/pages/webflow website/
+
 # Local development files
 .temp/
 .cache/

@@ -2,14 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Button } from '../../ui/Button';
 import { useApp } from '../../../context/AppContext';
 import { db } from '../../../lib/db';
-import {
-  Award,
-  Percent,
-  CreditCard,
-  Landmark,
-  Save,
-  type LucideIcon,
-} from 'lucide-react';
+import { getSearchHash } from '../../../lib/navigationSearch';
 
 // Import sub-components
 import { LoyaltySettings } from './LoyaltySettings';
@@ -93,13 +86,11 @@ type TabKey = 'loyalty' | 'discounts' | 'taxes' | 'surcharges';
 const NAV_TABS: ReadonlyArray<{
   id: TabKey;
   label: string;
-  icon: LucideIcon;
-  desc: string;
 }> = [
-  { id: 'loyalty', label: 'Loyalty Points', icon: Award, desc: 'Rewards program' },
-  { id: 'discounts', label: 'Discounts', icon: Percent, desc: 'Sales & offers' },
-  { id: 'taxes', label: 'Tax Rates', icon: Landmark, desc: 'VAT & Service fees' },
-  { id: 'surcharges', label: 'Surcharges', icon: CreditCard, desc: 'Payment fees' },
+  { id: 'loyalty', label: 'Loyalty Points' },
+  { id: 'discounts', label: 'Discounts' },
+  { id: 'taxes', label: 'Tax Rates' },
+  { id: 'surcharges', label: 'Surcharges' },
 ] as const;
 
 export const BusinessRules: React.FC = () => {
@@ -108,6 +99,19 @@ export const BusinessRules: React.FC = () => {
 
   const [activeTab, setActiveTab] = useState<TabKey>('loyalty');
   const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => {
+    const tabs: TabKey[] = ['loyalty', 'discounts', 'taxes', 'surcharges'];
+    const applySearchHash = () => {
+      const hash = getSearchHash();
+      const tab = hash.startsWith('business:') ? hash.split(':')[1] : '';
+      if (tabs.includes(tab as TabKey)) setActiveTab(tab as TabKey);
+    };
+
+    applySearchHash();
+    window.addEventListener('hashchange', applySearchHash);
+    return () => window.removeEventListener('hashchange', applySearchHash);
+  }, []);
 
   // --- STATE ---
   const [loyalty, setLoyalty] = useState<LoyaltyConfig>({
@@ -189,66 +193,45 @@ export const BusinessRules: React.FC = () => {
   };
 
   return (
-    <div className="flex flex-col h-full bg-white/50">
+    <div className="flex h-full flex-col bg-transparent">
       
       {/* --- Header Section --- */}
-      <div className="px-8 py-6 bg-white border-b border-gray-200 flex flex-col md:flex-row md:items-center justify-between gap-4 sticky top-0 z-20 shadow-sm">
+      <div className="page-action-row sticky top-0 z-20 mb-5 border-b border-transparent bg-transparent">
         <div>
-           <h1 className="text-2xl font-black text-gray-900 tracking-tight">Configuration</h1>
-           <p className="text-gray-500 font-medium text-sm mt-1">Manage core business rules and automations.</p>
+           <p className="page-subheading mt-2">Manage loyalty rules and reward settings</p>
         </div>
         <Button
           onClick={handleSave}
           disabled={isSaving}
-          className={`h-12 px-6 rounded-full font-bold text-sm transition-all shadow-lg hover:shadow-xl ${
-            isSaving ? 'bg-gray-100 text-gray-400' : 'bg-[#ecff76] text-black hover:bg-[#d9ec60] hover:scale-105'
+          className={`${
+            isSaving ? 'bg-gray-100 text-gray-400' : 'bg-[#c5f542] text-black hover:bg-[#b8ea34]'
           }`}
         >
-          {isSaving ? (
-            <div className="flex items-center gap-2">
-              <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin"/>
-              Saving...
-            </div>
-          ) : (
-            <div className="flex items-center gap-2">
-              <Save size={18} />
-              Save Changes
-            </div>
-          )}
+          {isSaving ? 'Saving...' : 'Save Changes'}
         </Button>
       </div>
 
-      <div className="flex flex-1 overflow-hidden">
+      <div className="flex flex-1 flex-col gap-5 overflow-hidden">
         
         {/* --- Sidebar Navigation --- */}
-        <div className="w-full md:w-64 bg-gray-50 border-b md:border-b-0 md:border-r border-gray-200 p-4 flex md:flex-col gap-2 overflow-x-auto md:overflow-visible">
+        <div className="module-tabs">
           {NAV_TABS.map((tab) => (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className={`flex items-center gap-3 p-3 rounded-xl transition-all text-left group min-w-[200px] md:min-w-0 ${
+              className={`module-tab ${
                 activeTab === tab.id 
-                  ? 'bg-white shadow-md border border-gray-100' 
-                  : 'hover:bg-gray-100 border border-transparent'
+                  ? 'module-tab-active' 
+                  : ''
               }`}
             >
-              <div className={`w-10 h-10 rounded-lg flex items-center justify-center transition-colors ${
-                activeTab === tab.id ? 'bg-[#ecff76] text-black' : 'bg-gray-200 text-gray-500 group-hover:bg-gray-300'
-              }`}>
-                <tab.icon size={20} />
-              </div>
-              <div>
-                <div className={`font-bold text-sm ${activeTab === tab.id ? 'text-gray-900' : 'text-gray-600'}`}>
-                  {tab.label}
-                </div>
-                <div className="text-xs text-gray-400 font-medium">{tab.desc}</div>
-              </div>
+              {tab.label}
             </button>
           ))}
         </div>
 
         {/* --- Main Content Area --- */}
-        <div className="flex-1 overflow-y-auto p-4 md:p-8 bg-white/50">
+        <div className="flex-1 overflow-y-auto bg-transparent">
           <div className="max-w-5xl mx-auto">
             {activeTab === 'loyalty' && <LoyaltySettings loyalty={loyalty} setLoyalty={setLoyalty} currencySymbol={currencySymbol} />}
             {activeTab === 'discounts' && <DiscountSettings discounts={discounts} setDiscounts={setDiscounts} addItem={addItem} currencySymbol={currencySymbol} />}

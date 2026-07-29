@@ -2,21 +2,6 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { AnimatePresence, motion } from "framer-motion";
 import QRCode from "qrcode";
 import { useUser } from "@clerk/clerk-react";
-import {
-  CheckCircle,
-  Copy,
-  Eye,
-  EyeOff,
-  Loader2,
-  MonitorSpeaker,
-  PowerOff,
-  QrCode,
-  RefreshCw,
-  Smartphone,
-  Trash2,
-  Wifi,
-  X,
-} from "lucide-react";
 import { Card } from "../../ui/Card";
 import { Button } from "../../ui/Button";
 import { postJSON, getJSON } from "../../../lib/api";
@@ -56,7 +41,7 @@ const SessionQR: React.FC<{ scanUrl: string }> = ({ scanUrl }) => {
   if (!dataUrl) {
     return (
       <div className="w-[140px] h-[140px] flex items-center justify-center rounded-lg border border-gray-200 bg-gray-50">
-        <Loader2 size={22} className="animate-spin text-gray-400" />
+        <span className="text-xs font-medium text-gray-400">Loading QR</span>
       </div>
     );
   }
@@ -260,10 +245,10 @@ const SessionWizard: React.FC<SessionWizardProps> = ({
             </div>
             <button
               onClick={onClose}
-              className="rounded-lg p-2 transition-colors hover:bg-gray-100"
+              className="rounded-lg border border-[#dfdfda] bg-white px-3 py-2 text-xs font-medium text-[#555550] transition-colors hover:border-black hover:text-black"
               aria-label="Close session wizard"
             >
-              <X size={18} />
+              Close
             </button>
           </div>
 
@@ -280,9 +265,9 @@ const SessionWizard: React.FC<SessionWizardProps> = ({
                   ) : (
                     <div className="text-center text-gray-500">
                       {sessionState === "creating" ? (
-                        <Loader2 size={42} className="mx-auto animate-spin" />
+                        <span className="text-sm font-medium">Creating...</span>
                       ) : (
-                        <QrCode size={52} className="mx-auto" />
+                        <span className="text-sm font-medium">QR pending</span>
                       )}
                     </div>
                   )}
@@ -295,14 +280,7 @@ const SessionWizard: React.FC<SessionWizardProps> = ({
                     Status
                   </p>
                   <div className="mt-2 flex items-center gap-2 text-sm text-gray-800">
-                    {sessionState === "linked" ? (
-                      <CheckCircle size={16} className="text-green-600" />
-                    ) : sessionState === "creating" ||
-                      sessionState === "pending" ? (
-                      <Loader2 size={16} className="animate-spin text-gray-500" />
-                    ) : (
-                      <Wifi size={16} className="text-gray-500" />
-                    )}
+                    <span className={`h-2 w-2 rounded-full ${sessionState === "linked" ? "bg-green-500" : sessionState === "error" ? "bg-red-500" : "bg-amber-400"}`} />
                     <span>{statusLine}</span>
                   </div>
                   {sessionState === "pending" && secondsRemaining > 0 && (
@@ -350,21 +328,21 @@ const SessionWizard: React.FC<SessionWizardProps> = ({
 
           <div className="flex flex-wrap items-center gap-2 border-t border-gray-200 bg-white px-5 py-3">
             <Button
-              variant="secondary"
+              variant="primary"
+              className="bg-[#c5f542] text-black hover:bg-[#b8ea34]"
               onClick={() => {
                 if (sessionLink) navigator.clipboard.writeText(sessionLink);
               }}
               disabled={!sessionLink}
             >
-              <Copy size={14} className="mr-1" />
               Copy Link
             </Button>
             <Button
-              variant="secondary"
+              variant="primary"
+              className="bg-[#c5f542] text-black hover:bg-[#b8ea34]"
               onClick={() => void createSession()}
               disabled={sessionState === "creating"}
             >
-              <RefreshCw size={14} className="mr-1" />
               New QR
             </Button>
             <div className="ml-auto">
@@ -628,8 +606,6 @@ export const Sessions: React.FC = () => {
     id: SessionType;
     title: string;
     description: string;
-    icon: React.ReactNode;
-    color: string;
     features: string[];
   }> = [
     {
@@ -637,8 +613,6 @@ export const Sessions: React.FC = () => {
       title: "Start Import Session",
       description:
         "Create a secure mobile barcode-import session for this exact shop account.",
-      icon: <QrCode size={32} />,
-      color: "#b39efc",
       features: ["Mobile barcode scanning", "Inventory sync", "Offline capability"],
     },
     {
@@ -646,8 +620,6 @@ export const Sessions: React.FC = () => {
       title: "Start Checkout Session",
       description:
         "Create a secure mobile checkout session for real-time cart sync with desktop.",
-      icon: <Smartphone size={32} />,
-      color: "#ef94b5",
       features: ["Mobile checkout", "Customer management", "Receipt generation"],
     },
   ];
@@ -658,40 +630,31 @@ export const Sessions: React.FC = () => {
       title: "Connect Register Terminal",
       description:
         "Pair an additional register terminal for multi-station checkout with owner approval",
-      icon: <MonitorSpeaker size={32} />,
-      color: "#c5f542",
       features: ["Multi-terminal support", "Secure pairing code", "Real-time sync"],
     });
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="heading-h2">Device Sessions</h1>
-          <p className="text-gray-600 mt-2">
+          <p className="page-subheading mt-2">
             Connect and manage different devices with your CeyPoS shop
           </p>
         </div>
       </div>
 
       {/* Session Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
         {sessions.map((session) => (
           <motion.div
             key={session.id}
             whileHover={{ y: -4 }}
             transition={{ duration: 0.2 }}
           >
-            <Card className="h-full border border-gray-100 hover:shadow-lg transition-all duration-200">
-              <div className="p-6 space-y-4">
+            <Card className="h-full transition-all duration-200">
+              <div className="space-y-4">
                 <div className="flex items-start justify-between">
-                  <div
-                    className="p-3 rounded-lg"
-                    style={{ backgroundColor: `${session.color}20` }}
-                  >
-                    <div style={{ color: session.color }}>{session.icon}</div>
-                  </div>
                   <div
                     className="w-3 h-3 rounded-full"
                     style={{
@@ -699,8 +662,8 @@ export const Sessions: React.FC = () => {
                         (session.id === "barcode" ||
                           session.id === "checkout") &&
                         activeByType[session.id as MobileSessionType]
-                          ? "#22c55e"
-                          : "#e5e7eb",
+                        ? "#c5f542"
+                        : "#e5e7eb",
                     }}
                   />
                 </div>
@@ -731,10 +694,6 @@ export const Sessions: React.FC = () => {
                         key={index}
                         className="flex items-center gap-2 text-xs text-gray-600"
                       >
-                        <div
-                          className="w-1.5 h-1.5 rounded-full"
-                          style={{ backgroundColor: session.color }}
-                        />
                         {feature}
                       </li>
                     ))}
@@ -749,11 +708,7 @@ export const Sessions: React.FC = () => {
                     (session.id === "register" && (!canManageTerminals || !shopId || !userEmail)) ||
                     (session.id !== "register" && (!shopId || !userEmail))
                   }
-                  style={{
-                    backgroundColor: session.color,
-                    color: "black",
-                    border: "none",
-                  }}
+                  style={{ backgroundColor: "#c5f542", color: "black", border: "none" }}
                 >
                   {(session.id === "barcode" || session.id === "checkout") &&
                   activeByType[session.id as MobileSessionType]
@@ -767,23 +722,22 @@ export const Sessions: React.FC = () => {
       </div>
 
       {/* Active Sessions */}
-      <Card className="border border-gray-100">
-        <div className="p-6">
-          <h2 className="font-semibold text-lg mb-4">Active Sessions</h2>
+      <Card title="Active sessions" subtitle="Connected devices and pending mobile links">
+        <div>
           <div className="space-y-3">
-            <div className="flex items-center justify-between p-4 bg-green-50 rounded-lg border border-green-200">
+            <div className="flex items-center justify-between rounded-xl border border-[#eeeeeb] bg-white p-4">
               <div className="flex items-center gap-3">
-                <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+                <div className="w-2 h-2 bg-[#c5f542] rounded-full animate-pulse" />
                 <div>
-                  <p className="font-medium text-green-900">Primary Terminal</p>
-                  <p className="text-sm text-green-700">
+                  <p className="font-medium text-[#181818]">Primary Terminal</p>
+                  <p className="text-sm text-[#777773]">
                     {currentUser?.terminalId
                       ? `This device — ${currentUser.name || memberScope?.displayName || "Connected"}`
                       : "Current device — Always active"}
                   </p>
                 </div>
               </div>
-              <span className="text-xs text-green-600 bg-green-100 px-2 py-1 rounded">
+              <span className="rounded-full bg-gradient-to-r from-gray-100 to-gray-200 px-2 py-1 text-[10px] font-semibold text-[#777773]">
                 ACTIVE
               </span>
             </div>
@@ -795,13 +749,13 @@ export const Sessions: React.FC = () => {
               return (
                 <div
                   key={terminal.terminalId}
-                  className="flex items-center justify-between p-4 bg-blue-50 rounded-lg border border-blue-200"
+                  className="flex items-center justify-between rounded-xl border border-[#eeeeeb] bg-white p-4"
                 >
                   <div className="flex items-center gap-3 min-w-0">
-                    <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse flex-shrink-0" />
+                    <div className="w-2 h-2 bg-[#c5f542] rounded-full animate-pulse flex-shrink-0" />
                     <div className="min-w-0">
-                      <p className="font-medium text-blue-900">{terminal.label}</p>
-                      <p className="text-sm text-blue-700 truncate">
+                      <p className="font-medium text-[#181818]">{terminal.label}</p>
+                      <p className="text-sm text-[#777773] truncate">
                         Register terminal
                         {terminal.pairedMemberName
                           ? ` — ${terminal.pairedMemberName}`
@@ -810,7 +764,7 @@ export const Sessions: React.FC = () => {
                     </div>
                   </div>
                   <div className="flex items-center gap-2 flex-shrink-0">
-                    <span className="text-xs text-blue-600 bg-blue-100 px-2 py-1 rounded">
+                    <span className="rounded-full bg-gradient-to-r from-gray-100 to-gray-200 px-2 py-1 text-[10px] font-semibold text-[#777773]">
                       ACTIVE
                     </span>
                     {canManageTerminals &&
@@ -819,13 +773,13 @@ export const Sessions: React.FC = () => {
                           <button
                             onClick={() => void handleRevokeTerminal(terminal.terminalId)}
                             disabled={isRevoking}
-                            className="px-2 py-1 rounded text-xs font-medium bg-red-500 text-white hover:bg-red-600 disabled:opacity-50"
+                            className="rounded-full bg-[#c5f542] px-3 py-1.5 text-xs font-medium text-black hover:bg-[#b8ea34] disabled:opacity-50"
                           >
                             Revoke
                           </button>
                           <button
                             onClick={() => setConfirmingRevoke(null)}
-                            className="px-2 py-1 rounded text-xs text-gray-500 hover:bg-gray-100"
+                            className="rounded-full bg-[#c5f542] px-3 py-1.5 text-xs font-medium text-black hover:bg-[#b8ea34]"
                           >
                             Cancel
                           </button>
@@ -833,10 +787,10 @@ export const Sessions: React.FC = () => {
                       ) : (
                         <button
                           onClick={() => setConfirmingRevoke(terminal.terminalId)}
-                          className="p-1.5 rounded-lg hover:bg-red-50 text-gray-400 hover:text-red-500 transition-colors"
+                          className="rounded-full bg-[#c5f542] px-3 py-1.5 text-xs font-medium text-black hover:bg-[#b8ea34] transition-colors"
                           title="Revoke register terminal"
                         >
-                          <PowerOff size={14} />
+                          Revoke
                         </button>
                       ))}
                   </div>
@@ -846,7 +800,6 @@ export const Sessions: React.FC = () => {
 
             {sessionFeed.length === 0 && registerTerminals.length === 0 ? (
               <div className="text-center py-8 text-gray-500">
-                <Wifi size={32} className="mx-auto mb-2 opacity-50" />
                 <p className="text-sm">No additional sessions active</p>
                 <p className="text-xs mt-1">
                   Start a session above to connect more devices
@@ -867,14 +820,14 @@ export const Sessions: React.FC = () => {
                     {/* Main row */}
                     <div
                       className={`flex items-center gap-3 px-3 py-2.5 ${
-                        isLinked ? "bg-green-50/60" : "bg-amber-50/40"
+                        isLinked ? "bg-white" : "bg-white"
                       }`}
                     >
                       {/* Status dot */}
                       <div
                         className={`w-2 h-2 rounded-full flex-shrink-0 ${
                           isLinked
-                            ? "bg-green-500 animate-pulse"
+                            ? "bg-[#c5f542] animate-pulse"
                             : "bg-amber-400"
                         }`}
                       />
@@ -915,16 +868,13 @@ export const Sessions: React.FC = () => {
                             <button
                               onClick={() => void handleRevoke(item.sessionId)}
                               disabled={isRevoking}
-                              className="flex items-center gap-1 px-2 py-1 rounded text-xs font-medium bg-red-500 text-white hover:bg-red-600 transition-colors disabled:opacity-50"
+                              className="rounded-full bg-[#c5f542] px-3 py-1.5 text-xs font-medium text-black hover:bg-[#b8ea34] transition-colors disabled:opacity-50"
                             >
-                              {isRevoking ? (
-                                <Loader2 size={11} className="animate-spin" />
-                              ) : null}
-                              {isLinked ? "Deactivate" : "Delete"}
+                              {isRevoking ? "Working..." : isLinked ? "Deactivate" : "Delete"}
                             </button>
                             <button
                               onClick={() => setConfirmingRevoke(null)}
-                              className="px-2 py-1 rounded text-xs text-gray-500 hover:bg-gray-100 transition-colors"
+                              className="rounded-full bg-[#c5f542] px-3 py-1.5 text-xs font-medium text-black hover:bg-[#b8ea34] transition-colors"
                             >
                               Cancel
                             </button>
@@ -935,10 +885,10 @@ export const Sessions: React.FC = () => {
                             onClick={() =>
                               setConfirmingRevoke(item.sessionId)
                             }
-                            className="p-1.5 rounded-lg hover:bg-red-50 text-gray-400 hover:text-red-500 transition-colors"
+                            className="rounded-full bg-[#c5f542] px-3 py-1.5 text-xs font-medium text-black hover:bg-[#b8ea34] transition-colors"
                             title="Deactivate session"
                           >
-                            <PowerOff size={14} />
+                            Deactivate
                           </button>
                         ) : (
                           /* View details + delete for pending sessions */
@@ -949,23 +899,19 @@ export const Sessions: React.FC = () => {
                                   isExpanded ? null : item.sessionId,
                                 )
                               }
-                              className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors"
+                              className="rounded-full bg-[#c5f542] px-3 py-1.5 text-xs font-medium text-black hover:bg-[#b8ea34] transition-colors"
                               title={isExpanded ? "Hide details" : "View details"}
                             >
-                              {isExpanded ? (
-                                <EyeOff size={14} />
-                              ) : (
-                                <Eye size={14} />
-                              )}
+                              {isExpanded ? "Hide" : "View"}
                             </button>
                             <button
                               onClick={() =>
                                 setConfirmingRevoke(item.sessionId)
                               }
-                              className="p-1.5 rounded-lg hover:bg-red-50 text-gray-400 hover:text-red-500 transition-colors"
+                              className="rounded-full bg-[#c5f542] px-3 py-1.5 text-xs font-medium text-black hover:bg-[#b8ea34] transition-colors"
                               title="Delete session"
                             >
-                              <Trash2 size={14} />
+                              Delete
                             </button>
                           </>
                         )}
@@ -998,7 +944,6 @@ export const Sessions: React.FC = () => {
                                       </>
                                     ) : (
                                       <div className="w-[140px] h-[140px] flex flex-col items-center justify-center rounded-lg border border-dashed border-gray-200 bg-gray-50 text-center gap-2 px-3">
-                                        <QrCode size={28} className="text-gray-300" />
                                         <p className="text-[10px] text-gray-400 leading-tight">
                                           QR unavailable — refresh or recreate the session
                                         </p>
@@ -1022,10 +967,10 @@ export const Sessions: React.FC = () => {
                                               item.sessionId,
                                             )
                                           }
-                                          className="flex-shrink-0 p-0.5 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors"
+                                          className="flex-shrink-0 rounded-full bg-[#c5f542] px-2 py-1 text-[10px] font-medium text-black hover:bg-[#b8ea34] transition-colors"
                                           title="Copy session ID"
                                         >
-                                          <Copy size={11} />
+                                          Copy
                                         </button>
                                       </div>
                                     </div>
@@ -1060,9 +1005,8 @@ export const Sessions: React.FC = () => {
                                             urlInfo.scanUrl,
                                           )
                                         }
-                                        className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-800 transition-colors self-start"
+                                        className="self-start rounded-full bg-[#c5f542] px-3 py-1.5 text-xs font-medium text-black hover:bg-[#b8ea34] transition-colors"
                                       >
-                                        <Copy size={11} />
                                         Copy scan link
                                       </button>
                                     )}

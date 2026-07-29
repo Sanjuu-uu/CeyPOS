@@ -6,14 +6,12 @@ import {
   ChevronDown,
   AlertCircle,
   Clipboard,
-  Code2,
   FileText,
   History,
   Loader2,
   Mic,
   MoreHorizontal,
   PanelRightOpen,
-  Paperclip,
   Plus,
   Send,
   Sparkles,
@@ -33,6 +31,7 @@ interface Attachment {
   size: number;
   type: string;
   preview?: string;
+  inlineData?: string;
 }
 
 interface Message {
@@ -95,17 +94,10 @@ interface ChatSidebarProps {
   onToggle: () => void;
 }
 
-interface VisualizationConfig {
-  provider: string;
-  configured: boolean;
-  baseUrl: string | null;
-  serviceId: string | null;
-}
-
 type AnalyticsResponse = {
   answer?: string;
   visualizations?: VisualizationData[];
-  visualizationConfig?: VisualizationConfig;
+  visualizationConfig?: unknown;
   mode?: ChatMode;
   agentSteps?: AgentStep[];
   step?: AgentStep;
@@ -153,6 +145,16 @@ const MODE_START_CONTENT: Record<ChatMode, { title: string; prompts: string[] }>
     ],
   },
 };
+
+const CHART_COMMANDS = [
+  ['@barchart', 'Bar'], ['@stackedbar', 'Stacked bar'], ['@columnchart', 'Column'],
+  ['@stackedcolumn', 'Stacked column'], ['@linechart', 'Line'], ['@areachart', 'Area'],
+  ['@stackedarea', 'Stacked area'], ['@combochart', 'Combo'], ['@piechart', 'Pie'],
+  ['@donutchart', 'Donut'], ['@scatterplot', 'Scatter'], ['@bubblechart', 'Bubble'],
+  ['@radarchart', 'Radar'], ['@funnelchart', 'Funnel'], ['@waterfallchart', 'Waterfall'],
+  ['@treemap', 'Treemap'], ['@gauge', 'Gauge'], ['@kpi', 'KPI'], ['@table', 'Table'],
+  ['@heatmap', 'Heatmap'],
+] as const;
 
 const inferConversationMode = (conversation: Conversation | ConversationSummary): ChatMode => {
   if (conversation.mode === 'agent') return 'agent';
@@ -431,7 +433,6 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({ isOpen, onToggle }) =>
   const [activeConversation, setActiveConversation] = useState<Conversation | null>(null);
   const [chatInput, setChatInput] = useState('');
   const [attachments, setAttachments] = useState<Attachment[]>([]);
-  const [config, setConfig] = useState<VisualizationConfig | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [chatMode, setChatMode] = useState<ChatMode>('lite');
   const [isListening, setIsListening] = useState(false);
@@ -803,7 +804,6 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({ isOpen, onToggle }) =>
         setShowRecent(false);
         setChatInput('');
         setAttachments([]);
-        setConfig(null);
         setAutoScroll(true);
         focusInput();
       })
@@ -812,7 +812,7 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({ isOpen, onToggle }) =>
       });
   };
 
-  const handleChangeChatMode = (nextMode: ChatMode) => {
+  const handleChangeChatMode = (nextMode: ChatMode, initialInput = '') => {
     setShowModeDropdown(false);
     if (nextMode === chatMode || !normalizedShopId || !userEmail) return;
 
@@ -829,9 +829,8 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({ isOpen, onToggle }) =>
         setActiveConversation(conversation);
         setActiveConversationId(conversation.id);
         setShowRecent(false);
-        setChatInput('');
+        setChatInput(initialInput);
         setAttachments([]);
-        setConfig(null);
         setAutoScroll(true);
         focusInput();
       })
@@ -893,8 +892,16 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({ isOpen, onToggle }) =>
       }
 
       let preview: string | undefined;
+      let inlineData: string | undefined;
       if (file.type.startsWith('text/') || file.name.endsWith('.csv') || file.name.endsWith('.json')) {
         preview = (await file.text()).slice(0, 4000);
+      } else if (file.type.startsWith('image/') || file.type.startsWith('audio/') || file.type.startsWith('video/') || file.type === 'application/pdf') {
+        inlineData = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(String(reader.result || '').split(',')[1] || '');
+          reader.onerror = () => reject(reader.error || new Error('Could not read attachment'));
+          reader.readAsDataURL(file);
+        });
       }
       nextAttachments.push({
         id: createId(),
@@ -902,6 +909,7 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({ isOpen, onToggle }) =>
         size: file.size,
         type: file.type || 'application/octet-stream',
         preview,
+        inlineData,
       });
     }
 
@@ -967,7 +975,7 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({ isOpen, onToggle }) =>
         question,
         shopId: normalizedShopId,
         userEmail,
-        attachments: sentAttachments.map(({ name, size, type, preview }) => ({ name, size, type, preview })),
+        attachments: sentAttachments.map(({ name, size, type, preview, inlineData }) => ({ name, size, type, preview, inlineData })),
         history: historyPayload,
         mode: chatMode,
       }),
@@ -1014,9 +1022,6 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({ isOpen, onToggle }) =>
       }
 
       if (eventName === 'done') {
-        if (payload.visualizationConfig) {
-          setConfig(payload.visualizationConfig);
-        }
         updateMessage(
           aiMessageId,
           {
@@ -1101,7 +1106,6 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({ isOpen, onToggle }) =>
         setShowRecent(false);
         setChatInput('');
         setAttachments([]);
-        setConfig(null);
         setAutoScroll(true);
         conversationId = conversation.id;
       } catch (error) {
@@ -1187,6 +1191,7 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({ isOpen, onToggle }) =>
       className={`relative isolate flex h-full min-w-0 shrink-0 flex-col overflow-visible border-l border-gray-200 bg-white shadow-sm transition-[width] duration-300 ${
         isOpen ? 'w-full md:w-[440px] lg:w-[480px] xl:w-[520px]' : 'w-[52px]'
       }`}
+      style={{ backgroundColor: '#ffffff' }}
     >
       <button
         type="button"
@@ -1282,14 +1287,8 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({ isOpen, onToggle }) =>
             </div>
           </header>
 
-          {config && !config.configured && (
-            <div className="border-b border-amber-200 bg-amber-50 px-4 py-3 text-xs leading-5 text-amber-800">
-              Remote chart hosting is not fully configured. Text analysis still works, and chart requests will return a setup notice.
-            </div>
-          )}
-
           {showRecent ? (
-            <div className="flex-1 overflow-y-auto bg-gray-50/70 px-4 py-5">
+            <div className="flex-1 overflow-y-auto bg-white px-4 py-5">
               <div className="mb-5">
                 <h3 className="text-sm font-semibold text-gray-950">Recent chats</h3>
                 <p className="text-xs text-gray-500">Grouped by chat mode for this shop.</p>
@@ -1368,7 +1367,7 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({ isOpen, onToggle }) =>
             </div>
           ) : (
             <>
-          <div ref={scrollAreaRef} onScroll={handleScroll} className="min-w-0 flex-1 overflow-x-hidden overflow-y-auto bg-gray-50/70 px-4 py-5">
+          <div ref={scrollAreaRef} onScroll={handleScroll} className="min-w-0 flex-1 overflow-x-hidden overflow-y-auto bg-white px-4 py-5">
             <div className="space-y-3">
               {!(activeConversation?.messages ?? []).some((message) => message.sender === 'user') && (
                 <StartSurface mode={chatMode} onPickPrompt={handlePickPrompt} />
@@ -1537,7 +1536,19 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({ isOpen, onToggle }) =>
               </div>
             )}
 
-            <div className="rounded-2xl border border-gray-300 bg-white shadow-sm focus-within:border-gray-400">
+            <div className="relative rounded-2xl border border-gray-300 bg-white shadow-sm focus-within:border-gray-400">
+              {chatMode === 'agent' && /^@[^\s]*$/.test(chatInput) && (
+                <div className="absolute bottom-full left-0 right-0 z-30 mb-2 max-h-64 overflow-y-auto rounded-xl border border-gray-200 bg-white p-2 shadow-xl">
+                  <div className="px-2 py-1.5"><p className="text-xs font-semibold text-gray-900">Insert a visualization</p><p className="text-[11px] text-gray-500">Choose a chart, then describe the data you want.</p></div>
+                  <div className="grid grid-cols-2 gap-1">
+                    {CHART_COMMANDS.filter(([command]) => command.startsWith(chatInput.toLowerCase())).map(([command, chartLabel]) => (
+                      <button key={command} type="button" onClick={() => { setChatInput(`${command} `); focusInput(); }} className="rounded-lg px-2 py-2 text-left hover:bg-blue-50">
+                        <span className="block text-xs font-medium text-gray-900">{chartLabel}</span><span className="block text-[10px] text-blue-600">{command}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
               <textarea
                 ref={inputRef}
                 placeholder={
@@ -1555,12 +1566,12 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({ isOpen, onToggle }) =>
               />
               <div className="flex flex-wrap items-center justify-between gap-2 border-t border-gray-100 px-2 py-2">
                 <div className="flex min-w-0 flex-wrap items-center gap-1">
-                  <input ref={fileInputRef} type="file" multiple className="hidden" onChange={handleFilesSelected} />
+                  <input ref={fileInputRef} type="file" multiple accept="image/*,audio/*,video/*,application/pdf,text/*,.csv,.json" className="hidden" onChange={handleFilesSelected} />
                   <button
                     type="button"
                     onClick={() => fileInputRef.current?.click()}
                     className="inline-flex h-8 w-8 items-center justify-center rounded-full text-gray-600 hover:bg-gray-100"
-                    title="Add context"
+                    title="Add images, documents, audio, video, or data files"
                   >
                     <Plus className="h-4 w-4" />
                   </button>
@@ -1599,31 +1610,22 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({ isOpen, onToggle }) =>
                       </div>
                     )}
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => fileInputRef.current?.click()}
-                    className="inline-flex h-8 items-center gap-1 rounded-full px-2 text-[12px] font-medium text-gray-600 hover:bg-gray-100"
-                    title="Attach files"
-                  >
-                    <Paperclip className="h-3.5 w-3.5" />
-                    Context
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleToggleVoice}
-                    className={`inline-flex h-8 w-8 items-center justify-center rounded-full ${
-                      isListening ? 'bg-[var(--verde-naturale--primary)] text-gray-950' : 'text-gray-600 hover:bg-gray-100'
-                    }`}
-                    title="Voice typing"
-                  >
-                    <Mic className="h-4 w-4" />
-                  </button>
-                  <button type="button" className="inline-flex h-8 w-8 items-center justify-center rounded-full text-gray-600 hover:bg-gray-100" title="Insert code block">
-                    <Code2 className="h-4 w-4" />
+                  <button type="button" onClick={() => { if (chatMode !== 'agent') handleChangeChatMode('agent', '@'); else setChatInput('@'); focusInput(); }} className="inline-flex h-8 items-center gap-1 rounded-full px-2 text-[12px] font-medium text-gray-600 hover:bg-gray-100" title="Insert visualization command">
+                    @ Chart
                   </button>
                 </div>
 
                 <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleToggleVoice}
+                    className={`inline-flex h-9 w-9 items-center justify-center rounded-full ${
+                      isListening ? 'bg-[#c5f542] text-gray-950' : 'text-gray-600 hover:bg-gray-100'
+                    }`}
+                    title={isListening ? 'Stop voice typing' : 'Voice typing'}
+                  >
+                    <Mic className="h-4 w-4" />
+                  </button>
                   {activeConversation && activeConversation.messages.length > 1 && !isLoading && (
                     <button
                       type="button"
@@ -1648,7 +1650,7 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({ isOpen, onToggle }) =>
                       type="button"
                       onClick={handleSendMessage}
                       disabled={!chatInput.trim() || !normalizedShopId}
-                      className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-[var(--verde-naturale--primary)] text-gray-950 transition hover:brightness-95 disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-400"
+                      className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-[#c5f542] text-gray-950 transition hover:brightness-95 disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-400"
                       title="Send message"
                     >
                       <Send className="h-4 w-4" />

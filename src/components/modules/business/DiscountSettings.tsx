@@ -1,5 +1,4 @@
 import React from 'react';
-import { Plus, Trash2 } from 'lucide-react';
 import { Button } from '../../ui/Button';
 import { NumericInput } from './BusinessComponents';
 import { DiscountRule, type AddItemFn } from './BusinessRules';
@@ -19,9 +18,9 @@ export const DiscountSettings: React.FC<DiscountSettingsProps> = ({ discounts, s
         <Button 
           size="sm" 
           onClick={() => addItem(setDiscounts, { name: "New Discount", type: 'percent', value: 0 })}
-          className="bg-black text-white hover:bg-gray-800 rounded-full px-4"
+          className="bg-[#c5f542] text-black hover:bg-[#b8ea34] rounded-full px-4"
         >
-          <Plus size={16} className="mr-2"/> Add Discount
+          Add Discount
         </Button>
       </div>
 
@@ -63,9 +62,9 @@ export const DiscountSettings: React.FC<DiscountSettingsProps> = ({ discounts, s
             </div>
             <button 
               onClick={() => setDiscounts(prev => prev.filter(d => d.id !== discount.id))}
-              className="h-12 w-12 flex items-center justify-center rounded-xl bg-red-50 text-red-500 hover:bg-red-100 transition-colors"
+              className="h-12 rounded-xl bg-red-50 px-4 text-sm font-medium text-red-500 hover:bg-red-100 transition-colors"
             >
-              <Trash2 size={18} />
+              Delete
             </button>
           </div>
         ))}

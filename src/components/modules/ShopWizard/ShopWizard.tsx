@@ -10,7 +10,7 @@ import { ShopWizardStep4 } from "./ShopWizardStep4";
 import { ShopWizardStep5 } from "./ShopWizardStep5";
 import { ShopWizardStep6 } from "./ShopWizardStep6";
 import { ShopWizardProgressBar } from "./ShopWizardProgressBar";
-import backgroundImage from "./assets/blog-20background-1.png";
+import backgroundImage from "../../../assets/images.jpg";
 import "./styles/ShopWizard.css";
 
 const slideVariants = {
@@ -136,7 +136,7 @@ export const ShopWizard: React.FC = () => {
           overflow: "hidden", // Prevent scrollbar during animations
         }}
       >
-        {/* Navigation Bar - Dashboard Style */}
+        {/* Navigation Bar - App Style */}
         <motion.div
           className="navigation"
           initial={{ y: -20, opacity: 0 }}
@@ -468,7 +468,7 @@ export const ShopWizard: React.FC = () => {
                     }}
                   >
                     Are you sure you want to skip this step? You can always fill
-                    in these details later from your dashboard.
+                    in these details later from your analytics workspace.
                   </p>
                 </div>
               </div>

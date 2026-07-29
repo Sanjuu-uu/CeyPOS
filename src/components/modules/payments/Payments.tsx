@@ -1,20 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Card } from '../../ui/Card';
 import { Button } from '../../ui/Button';
-import { 
-  CreditCard, 
-  Wallet, 
-  Smartphone, 
-  DollarSign, 
-  Plus, 
-  Settings, 
-  Check, 
-  X,
-  Shield,
-  TrendingUp
-} from 'lucide-react';
 import { useApp } from '../../../context/AppContext';
 import { db } from '../../../lib/db';
+import { getSearchHash } from '../../../lib/navigationSearch';
 import { Sale } from '../../../types';
 
 type PaymentMethodId = 'card' | 'digital_wallet' | 'mobile' | 'cash';
@@ -141,12 +130,26 @@ interface Transaction {
 
 export const Payments: React.FC = () => {
   const { currentShop } = useApp();
-  const [activeTab, setActiveTab] = useState<'overview' | 'methods' | 'transactions' | 'settings'>('overview');
+  type PaymentTab = 'overview' | 'methods' | 'transactions' | 'settings';
+  const [activeTab, setActiveTab] = useState<PaymentTab>('overview');
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [enabledMethods, setEnabledMethods] = useState<PaymentMethodId[]>(DEFAULT_ENABLED_METHODS);
   const [methodsLoading, setMethodsLoading] = useState(false);
   const [methodsError, setMethodsError] = useState<string | null>(null);
   const [pendingMethodId, setPendingMethodId] = useState<PaymentMethodId | null>(null);
+
+  useEffect(() => {
+    const tabs: PaymentTab[] = ['overview', 'methods', 'transactions', 'settings'];
+    const applySearchHash = () => {
+      const hash = getSearchHash();
+      const tab = hash.startsWith('payments:') ? hash.split(':')[1] : '';
+      if (tabs.includes(tab as PaymentTab)) setActiveTab(tab as PaymentTab);
+    };
+
+    applySearchHash();
+    window.addEventListener('hashchange', applySearchHash);
+    return () => window.removeEventListener('hashchange', applySearchHash);
+  }, []);
 
   const mapSalesToTransactions = (sales: Sale[]): Transaction[] =>
     sales.map((sale) => ({
@@ -327,20 +330,42 @@ export const Payments: React.FC = () => {
     }).format(new Date(dateString));
   };
 
-  const tabs: Array<{ id: typeof activeTab; label: string; icon: React.ReactNode }> = [
-    { id: 'overview', label: 'Overview', icon: <TrendingUp size={16} /> },
-    { id: 'methods', label: 'Payment Methods', icon: <CreditCard size={16} /> },
-    { id: 'transactions', label: 'Transactions', icon: <Wallet size={16} /> },
-    { id: 'settings', label: 'Settings', icon: <Settings size={16} /> },
+  const tabs: Array<{ id: typeof activeTab; label: string }> = [
+    { id: 'overview', label: 'Overview' },
+    { id: 'methods', label: 'Payment Methods' },
+    { id: 'transactions', label: 'Transactions' },
+    { id: 'settings', label: 'Settings' },
+  ];
+
+  const metrics = [
+    {
+      label: 'Total revenue',
+      value: formatCurrency(stats.totalAmount),
+      badge: stats.totalAmount > 0 ? 'Live data' : 'No change',
+    },
+    {
+      label: 'Transactions',
+      value: stats.totalTransactions.toLocaleString(),
+      badge: stats.totalTransactions > 0 ? 'Live data' : 'No change',
+    },
+    {
+      label: 'Average payment',
+      value: formatCurrency(stats.avgTransaction),
+      badge: stats.avgTransaction > 0 ? 'Live data' : 'No change',
+    },
+    {
+      label: 'Success rate',
+      value: transactions.length > 0 ? '100%' : '0%',
+      badge: transactions.length > 0 ? 'Live data' : 'No change',
+    },
   ];
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="heading-h2">Payment Management</h1>
+    <div className="space-y-5">
+      <div className="page-action-row">
+        <p className="page-subheading">Manage payments and transaction preferences</p>
         <Button
           variant="primary"
-          icon={<Plus size={16} />}
           onClick={() => setActiveTab('methods')}
         >
           Add Payment Method
@@ -348,19 +373,18 @@ export const Payments: React.FC = () => {
       </div>
 
       {/* Tab Navigation */}
-      <div className="border-b border-gray-200">
-        <nav className="-mb-px flex space-x-8">
+      <div className="module-tabs">
+        <nav className="flex gap-1">
           {tabs.map(tab => (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className={`flex items-center space-x-2 py-2 px-1 border-b-2 font-medium text-sm ${
+              className={`module-tab ${
                 activeTab === tab.id
-                  ? 'border-verde-primary text-gray-900'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                  ? 'module-tab-active'
+                  : ''
               }`}
             >
-              {tab.icon}
               <span>{tab.label}</span>
             </button>
           ))}
@@ -369,88 +393,47 @@ export const Payments: React.FC = () => {
 
       {/* Overview Tab */}
       {activeTab === 'overview' && (
-        <div className="space-y-6">
-          {/* Statistics Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-            <Card className="border border-gray-100">
-              <div className="flex items-center">
-                <div className="flex-shrink-0">
-                  <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center">
-                    <DollarSign className="w-4 h-4 text-blue-600" />
-                  </div>
+        <div className="space-y-5">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            {metrics.map((metric) => (
+              <Card key={metric.label} className="min-h-[150px] !p-5">
+                <div className="flex items-start justify-end">
+                  <span className="flex items-center rounded-full bg-gradient-to-r from-gray-100 to-gray-200 px-2 py-1 text-[10px] font-semibold text-[#777773]">
+                    {metric.badge}
+                  </span>
                 </div>
-                <div className="ml-4">
-                  <p className="text-sm font-medium text-gray-500">Total Revenue</p>
-                  <p className="text-2xl font-semibold text-gray-900">{formatCurrency(stats.totalAmount)}</p>
-                </div>
-              </div>
-            </Card>
-
-            <Card className="border border-gray-100">
-              <div className="flex items-center">
-                <div className="flex-shrink-0">
-                  <div className="w-8 h-8 bg-green-100 rounded-lg flex items-center justify-center">
-                    <TrendingUp className="w-4 h-4 text-green-600" />
-                  </div>
-                </div>
-                <div className="ml-4">
-                  <p className="text-sm font-medium text-gray-500">Transactions</p>
-                  <p className="text-2xl font-semibold text-gray-900">{stats.totalTransactions}</p>
-                </div>
-              </div>
-            </Card>
-
-            <Card className="border border-gray-100">
-              <div className="flex items-center">
-                <div className="flex-shrink-0">
-                  <div className="w-8 h-8 bg-purple-100 rounded-lg flex items-center justify-center">
-                    <Wallet className="w-4 h-4 text-purple-600" />
-                  </div>
-                </div>
-                <div className="ml-4">
-                  <p className="text-sm font-medium text-gray-500">Avg Transaction</p>
-                  <p className="text-2xl font-semibold text-gray-900">{formatCurrency(stats.avgTransaction)}</p>
-                </div>
-              </div>
-            </Card>
-
-            <Card className="border border-gray-100">
-              <div className="flex items-center">
-                <div className="flex-shrink-0">
-                  <div className="w-8 h-8 bg-orange-100 rounded-lg flex items-center justify-center">
-                    <Shield className="w-4 h-4 text-orange-600" />
-                  </div>
-                </div>
-                <div className="ml-4">
-                  <p className="text-sm font-medium text-gray-500">Success Rate</p>
-                  <p className="text-2xl font-semibold text-gray-900">99.8%</p>
-                </div>
-              </div>
-            </Card>
+                <p className="mt-5 text-[11px] font-medium uppercase tracking-[0.1em] text-[#858580]">
+                  {metric.label}
+                </p>
+                <p className="mt-1 text-[26px] font-semibold leading-none tracking-[-0.04em] text-[#111]">
+                  {metric.value}
+                </p>
+              </Card>
+            ))}
           </div>
 
           {/* Payment Method Breakdown */}
-          <Card title="Payment Method Breakdown" className="border border-gray-100">
-            <div className="space-y-4">
-              {Object.entries(stats.methodBreakdown).map(([method, amount]) => {
-                const percentage = stats.totalAmount > 0 ? (amount / stats.totalAmount) * 100 : 0;
-                return (
-                  <div key={method} className="flex items-center justify-between">
-                    <div className="flex items-center space-x-3">
-                      <div className="w-8 h-8 bg-gray-100 rounded-lg flex items-center justify-center">
-                        {method === 'card' && <CreditCard size={16} />}
-                        {method === 'cash' && <DollarSign size={16} />}
-                        {method === 'mobile' && <Smartphone size={16} />}
+          <Card title="Payment method breakdown" subtitle="Sales grouped by tender type">
+            <div className="space-y-3">
+              {Object.entries(stats.methodBreakdown).length > 0 ? (
+                Object.entries(stats.methodBreakdown).map(([method, amount]) => {
+                  const percentage = stats.totalAmount > 0 ? (amount / stats.totalAmount) * 100 : 0;
+                  return (
+                    <div key={method} className="flex items-center justify-between rounded-xl border border-[#eeeeeb] bg-white px-4 py-3">
+                      <div>
+                        <p className="text-sm font-semibold capitalize text-[#181818]">{method}</p>
+                        <p className="mt-1 text-xs text-[#777773]">{percentage.toFixed(1)}% of payment volume</p>
                       </div>
-                      <span className="font-medium text-gray-900 capitalize">{method}</span>
+                      <p className="text-sm font-semibold text-[#181818]">{formatCurrency(amount)}</p>
                     </div>
-                    <div className="text-right">
-                      <p className="font-semibold text-gray-900">{formatCurrency(amount)}</p>
-                      <p className="text-sm text-gray-500">{percentage.toFixed(1)}%</p>
-                    </div>
-                  </div>
-                );
-              })}
+                  );
+                })
+              ) : (
+                <div className="rounded-xl border border-[#eeeeeb] bg-white px-5 py-6 text-center">
+                  <p className="text-sm font-medium text-[#333330]">No payments recorded</p>
+                  <p className="mt-1 text-xs text-[#81817c]">Completed sales will appear here automatically.</p>
+                </div>
+              )}
             </div>
           </Card>
         </div>
@@ -458,52 +441,42 @@ export const Payments: React.FC = () => {
 
       {/* Payment Methods Tab */}
       {activeTab === 'methods' && (
-        <div className="space-y-6">
+        <div className="space-y-5">
           {methodsError && (
-            <div className="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600">
+            <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
               {methodsError}
             </div>
           )}
           {methodsLoading && (
-            <div className="rounded border border-blue-100 bg-blue-50 px-3 py-2 text-sm text-blue-600">
+            <div className="rounded-xl border border-[#eeeeeb] bg-white px-4 py-3 text-sm text-[#777773]">
               Loading payment methods...
             </div>
           )}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
             {PAYMENT_METHOD_ORDER.map((methodId) => {
               const definition = PAYMENT_METHOD_DEFINITIONS[methodId];
               const enabled = enabledMethods.includes(methodId);
               return (
-                <Card key={methodId} className="border border-gray-100">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-3">
-                    <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
-                      enabled ? 'bg-green-100 text-green-600' : 'bg-gray-100 text-gray-400'
-                    }`}>
-                      {methodId === 'card' && <CreditCard size={20} />}
-                      {methodId === 'digital_wallet' && <Wallet size={20} />}
-                      {methodId === 'mobile' && <Smartphone size={20} />}
-                      {methodId === 'cash' && <DollarSign size={20} />}
-                    </div>
+                <Card key={methodId} className="!p-5">
+                  <div className="flex items-center justify-between gap-4">
                     <div>
-                      <h3 className="font-medium text-gray-900">{definition.name}</h3>
-                      <p className="text-sm text-gray-500">{definition.description}</p>
-                      <p className="text-xs text-gray-400">Fee: {definition.fee}%</p>
+                      <h3 className="text-[15px] font-semibold tracking-[-0.01em] text-[#181818]">{definition.name}</h3>
+                      <p className="mt-1 text-xs text-[#777773]">{definition.description}</p>
+                      <p className="mt-3 text-[11px] font-medium uppercase tracking-[0.1em] text-[#858580]">Fee {definition.fee}%</p>
                     </div>
+                    <button
+                      onClick={() => togglePaymentMethod(methodId)}
+                      disabled={methodsLoading || pendingMethodId === methodId}
+                      className={`relative h-7 w-12 rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
+                        enabled ? 'bg-[#c5f542]' : 'bg-gray-200'
+                      }`}
+                    >
+                      <span className={`block h-6 w-6 rounded-full bg-white shadow transition-transform ${
+                        enabled ? 'translate-x-5' : 'translate-x-0.5'
+                      }`} />
+                    </button>
                   </div>
-                  <button
-                    onClick={() => togglePaymentMethod(methodId)}
-                    disabled={methodsLoading || pendingMethodId === methodId}
-                    className={`w-12 h-6 rounded-full transition-colors ${
-                      enabled ? 'bg-verde-primary' : 'bg-gray-200'
-                    }`}
-                  >
-                    <div className={`w-5 h-5 bg-white rounded-full shadow transition-transform ${
-                      enabled ? 'translate-x-6' : 'translate-x-0.5'
-                    }`} />
-                  </button>
-                </div>
-              </Card>
+                </Card>
               );
             })}
           </div>
@@ -512,24 +485,24 @@ export const Payments: React.FC = () => {
 
       {/* Transactions Tab */}
       {activeTab === 'transactions' && (
-        <Card title="Recent Transactions" className="border border-gray-100">
+        <Card title="Recent transactions" subtitle="Latest completed payment activity">
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
+              <thead className="bg-[#f3f4f6]">
                 <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-6 py-3 text-left text-[11px] font-medium uppercase tracking-[0.1em] text-[#666661]">
                     Transaction
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-6 py-3 text-left text-[11px] font-medium uppercase tracking-[0.1em] text-[#666661]">
                     Amount
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-6 py-3 text-left text-[11px] font-medium uppercase tracking-[0.1em] text-[#666661]">
                     Method
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-6 py-3 text-left text-[11px] font-medium uppercase tracking-[0.1em] text-[#666661]">
                     Status
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-6 py-3 text-left text-[11px] font-medium uppercase tracking-[0.1em] text-[#666661]">
                     Date
                   </th>
                 </tr>
@@ -559,8 +532,6 @@ export const Payments: React.FC = () => {
                           ? 'bg-yellow-100 text-yellow-800'
                           : 'bg-red-100 text-red-800'
                       }`}>
-                        {transaction.status === 'completed' && <Check size={12} className="mr-1" />}
-                        {transaction.status === 'failed' && <X size={12} className="mr-1" />}
                         {transaction.status}
                       </span>
                     </td>
@@ -577,14 +548,14 @@ export const Payments: React.FC = () => {
 
       {/* Settings Tab */}
       {activeTab === 'settings' && (
-        <div className="space-y-6">
-          <Card title="Payment Settings" className="border border-gray-100">
+        <div className="space-y-5">
+          <Card title="Payment settings" subtitle="Default tender and receipt preferences">
             <div className="space-y-6">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Default Payment Method
                 </label>
-                <select className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-verde-primary focus:border-verde-primary">
+                <select className="block w-full rounded-lg border border-[#dfdfda] bg-white px-3 py-2 text-sm text-[#333330] shadow-sm outline-none focus:border-black focus:ring-2 focus:ring-black">
                   <option>Credit/Debit Cards</option>
                   <option>Cash</option>
                   <option>Digital Wallet</option>

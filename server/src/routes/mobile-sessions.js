@@ -8,6 +8,7 @@ import { getMemberByEmail, normalizeEmail } from "../services/team-service.js";
 import { buildMemberScope, getShopPlanLimits, scopeAllows } from "../services/member-scope.js";
 import { upsertProducts } from "../services/inventory-service.js";
 import { lookupGlobalBarcodeProduct } from "../utils/global-barcode-database.js";
+import { createNotifications, getManagerNotificationRecipients } from "../services/notification-service.js";
 
 const router = express.Router();
 
@@ -264,6 +265,7 @@ router.post("/sessions/create", (req, res) => {
           expiresAt: toIso(expiresAt),
         },
       });
+      createNotifications({ shopId, recipients: getManagerNotificationRecipients(shopId), category: "sessions", severity: "info", title: "Mobile session created", body: `A ${sessionType} mobile session is ready to connect.`, linkPath: "/sessions", sourceEntity: "sessions", sourceAction: "created", sourceChangeId: sessionId, payload: { sessionId, sessionType } });
 
       return res.json({
         ok: true,
@@ -360,6 +362,7 @@ router.post("/sessions/validate", (req, res) => {
           expiresAt: toIso(activeExpiresAt),
         },
       });
+      createNotifications({ shopId, recipients: getManagerNotificationRecipients(shopId), category: "sessions", severity: "success", title: "Mobile session connected", body: `${userEmail} connected a ${session.session_type} mobile session.`, linkPath: "/sessions", sourceEntity: "sessions", sourceAction: "linked", sourceChangeId: sessionId, payload: { sessionId, sessionType: session.session_type } });
 
       return res.json({
         ok: true,
@@ -541,6 +544,7 @@ router.post("/sessions/revoke", (req, res) => {
           revokedBy: userEmail || null,
         },
       });
+      createNotifications({ shopId, recipients: getManagerNotificationRecipients(shopId), category: "sessions", severity: "warning", title: "Mobile session revoked", body: `A ${session.session_type} mobile session was revoked.`, linkPath: "/sessions", sourceEntity: "sessions", sourceAction: "revoked", sourceChangeId: sessionId, payload: { sessionId, sessionType: session.session_type } });
 
       return res.json({ ok: true });
     } finally {

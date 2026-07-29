@@ -34,7 +34,7 @@ const features = [
   {
     icon: '📈',
     title: 'Advanced Reports & Insights',
-    description: 'Sales analytics, staff performance, and profit breakdowns in one dashboard.',
+    description: 'Sales analytics, staff performance, and profit breakdowns in one workspace.',
   },
 ];
 

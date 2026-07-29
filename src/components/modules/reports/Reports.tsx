@@ -31,6 +31,7 @@ import {
 } from 'recharts';
 import { useApp } from '../../../context/AppContext';
 import { db } from '../../../lib/db';
+import { getSearchHash } from '../../../lib/navigationSearch';
 
 /* ------------------------------------------------------------------ */
 /*  Theme                                                              */
@@ -415,7 +416,8 @@ const EmptyState: React.FC<{ label: string }> = ({ label }) => (
 /* ------------------------------------------------------------------ */
 export const Reports: React.FC = () => {
   const { currentShop } = useApp();
-  const [selectedReport, setSelectedReport] = useState<'sales' | 'inventory' | 'customers'>('sales');
+  type ReportTab = 'sales' | 'inventory' | 'customers';
+  const [selectedReport, setSelectedReport] = useState<ReportTab>('sales');
   const [granularity, setGranularity] = useState<Granularity>('day');
   const [showAllCustomers, setShowAllCustomers] = useState(false);
   const CUSTOMER_LIMIT = 5;
@@ -425,6 +427,19 @@ export const Reports: React.FC = () => {
   });
   const [sales, setSales] = useState<any[]>([]);
   const [products, setProducts] = useState<any[]>([]);
+
+  useEffect(() => {
+    const tabs: ReportTab[] = ['sales', 'inventory', 'customers'];
+    const applySearchHash = () => {
+      const hash = getSearchHash();
+      const tab = hash.startsWith('reports:') ? hash.split(':')[1] : '';
+      if (tabs.includes(tab as ReportTab)) setSelectedReport(tab as ReportTab);
+    };
+
+    applySearchHash();
+    window.addEventListener('hashchange', applySearchHash);
+    return () => window.removeEventListener('hashchange', applySearchHash);
+  }, []);
 
   useEffect(() => {
     if (!currentShop) {
@@ -680,12 +695,11 @@ export const Reports: React.FC = () => {
 
   /* ------------------------------------------------------------------ */
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
+      <div className="page-action-row">
         <div>
-          <h1 className="text-2xl font-bold text-gray-800">Reports & Analytics</h1>
-          <p className="text-gray-600">Insights for {currentShop?.name || 'your business'}</p>
+          <p className="page-subheading">Review business insights and performance trends</p>
         </div>
         <Button variant="dark" icon={<Download size={16} />} onClick={downloadReport}>
           Export CSV

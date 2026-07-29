@@ -37,7 +37,6 @@ interface AppContextType {
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 const MODULE_SCOPE_MAP: Partial<Record<ModuleName, keyof MemberScope['modules']>> = {
-  dashboard: undefined,
   pos: 'pos',
   inventory: 'inventory',
   sessions: 'sessions',
@@ -72,9 +71,9 @@ export const AppProvider: React.FC<AppProviderProps> = ({
   // PayHere returns the customer to "/?module=Subscription&payhere=..." after
   // checkout, so honour a module hint in the URL on first render.
   const [currentModule, setCurrentModule] = useState<ModuleName>(() => {
-    if (typeof window === 'undefined') return 'dashboard';
+    if (typeof window === 'undefined') return 'pos';
     const requested = new URLSearchParams(window.location.search).get('module');
-    return requested === 'Subscription' ? 'Subscription' : 'dashboard';
+    return requested === 'Subscription' ? 'Subscription' : 'pos';
   });
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -90,9 +89,9 @@ export const AppProvider: React.FC<AppProviderProps> = ({
     (module: ModuleName) => {
       if (!memberScope) {
         if (accountType === 'owner') return true;
-        return module === 'dashboard' || module === 'support';
+        return module === 'pos' || module === 'support';
       }
-      if (memberScope.role === 'owner' && module === 'analytics') {
+      if (memberScope.role === 'owner' && module === 'pos') {
         return true;
       }
       const key = MODULE_SCOPE_MAP[module];

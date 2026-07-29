@@ -5,6 +5,8 @@ import { getMemberById } from "./team-service.js";
 import {
   notifyOwnerTerminalPairingPending,
   notifyOwnerTerminalPaired,
+  createNotifications,
+  getManagerNotificationRecipients,
 } from "./notification-service.js";
 
 const PAIRING_TTL_MS = 10 * 60 * 1000;
@@ -197,6 +199,7 @@ export function requestTerminalPairing(db, shopId, { code, memberId, deviceMeta 
     memberName: member.display_name,
     memberEmail: member.email,
   }).catch(() => {});
+  createNotifications({ shopId, recipients: getManagerNotificationRecipients(shopId), category: "terminals", severity: "warning", title: "Terminal approval needed", body: `${member.display_name || member.email} requested register access.`, linkPath: "/sessions", sourceEntity: "terminals", sourceAction: "pairing-pending", sourceChangeId: requestId, payload: { requestId } });
 
   return {
     requestId,
@@ -291,6 +294,7 @@ export function approvePairingRequest(db, shopId, requestId, approvedByMemberId)
     memberEmail: member.email,
     terminalLabel,
   }).catch(() => {});
+  createNotifications({ shopId, recipients: [...getManagerNotificationRecipients(shopId), member.email], category: "terminals", severity: "success", title: "Terminal connected", body: `${terminalLabel} was approved for ${member.display_name || member.email}.`, linkPath: "/sessions", sourceEntity: "terminals", sourceAction: "approved", sourceChangeId: requestId, payload: { requestId, terminalId } });
 
   return {
     terminalId,
@@ -302,6 +306,7 @@ export function approvePairingRequest(db, shopId, requestId, approvedByMemberId)
 }
 
 export function rejectPairingRequest(db, shopId, requestId, resolvedByMemberId) {
+  const request = db.prepare(`SELECT m.email, m.display_name FROM terminal_pairing_requests r JOIN shop_members m ON m.member_id = r.member_id WHERE r.request_id = ? AND r.shop_id = ?`).get(requestId, shopId);
   const now = new Date().toISOString();
   const result = db
     .prepare(
@@ -319,6 +324,7 @@ export function rejectPairingRequest(db, shopId, requestId, resolvedByMemberId) 
     action: "pairing_rejected",
     payload: { requestId },
   });
+  createNotifications({ shopId, recipients: [...getManagerNotificationRecipients(shopId), request?.email], category: "terminals", severity: "info", title: "Terminal request rejected", body: `${request?.display_name || request?.email || "A team member"}'s register request was rejected.`, linkPath: "/sessions", sourceEntity: "terminals", sourceAction: "rejected", sourceChangeId: requestId, payload: { requestId } });
 
   return { ok: true };
 }
@@ -376,6 +382,8 @@ export function revokeTerminal(db, shopId, terminalId, revokedByMemberId) {
     action: "revoked",
     payload: { terminalId, revokedByMemberId },
   });
+  const pairedEmail = terminal.paired_by_member_id ? getMemberById(db, shopId, terminal.paired_by_member_id)?.email : null;
+  createNotifications({ shopId, recipients: [...getManagerNotificationRecipients(shopId), pairedEmail], category: "terminals", severity: "warning", title: "Terminal revoked", body: `${terminal.label || "A register terminal"} was revoked.`, linkPath: "/sessions", sourceEntity: "terminals", sourceAction: "revoked", sourceChangeId: terminalId, payload: { terminalId, revokedByMemberId } });
 
   return { ok: true };
 }

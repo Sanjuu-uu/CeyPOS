@@ -1,232 +1,164 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useApp } from '../../../context/AppContext';
 import { db } from '../../../lib/db';
 import { Card } from './Card';
-import { ChevronDown, ChevronRight, Database, RefreshCw } from 'lucide-react';
 
 type TableCell = string | number;
 
 interface TableData {
+  id: string;
   name: string;
   columns: string[];
   rows: TableCell[][];
-  expanded: boolean;
 }
 
 export const DatabasePreview: React.FC = () => {
   const { currentShop } = useApp();
   const [tables, setTables] = useState<TableData[]>([]);
-  const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
+  const [activeTableId, setActiveTableId] = useState('inventory');
 
   const loadDatabaseData = useCallback(() => {
     if (!currentShop) {
+      setTables([]);
       return;
     }
 
-    const tablesData: TableData[] = [];
-
-    // Products/Inventory table
     const products = db.products.getByShopId(currentShop.id);
-    if (products.length > 0) {
-      const productColumns = ['ID', 'Name', 'Category', 'Price', 'Stock', 'Barcode'];
-      const productRows = products.map(p => [
-        p.id,
-        p.name || '',
-        p.category || '',
-        `$${p.price?.toFixed(2) || '0.00'}`,
-        p.stock || 0,
-        p.barcode || ''
-      ]);
-      tablesData.push({
-        name: 'Inventory',
-        columns: productColumns,
-        rows: productRows,
-        expanded: true
-      });
-    }
-
-    // Sales/Transactions table
     const sales = db.sales.getByShopId(currentShop.id);
-    if (sales.length > 0) {
-      const salesColumns = ['ID', 'Customer ID', 'Total', 'Items Count', 'Timestamp'];
-      const salesRows = sales.map(s => [
-        s.id,
-        s.customerInfo?.name || s.customerInfo?.email || 'N/A',
-        `$${s.total?.toFixed(2) || '0.00'}`,
-        s.items?.length || 0,
-        new Date(s.timestamp).toLocaleString()
-      ]);
-      tablesData.push({
-        name: 'Sales',
-        columns: salesColumns,
-        rows: salesRows,
-        expanded: false
-      });
-    }
-
-    // Customers table
     const customers = db.customers.getByShopId(currentShop.id);
-    if (customers.length > 0) {
-      const customerColumns = ['ID', 'Name', 'Email', 'Phone', 'Total Spend', 'Last Purchase'];
-      const customerRows = customers.map(c => [
-        c.id,
-        c.name || '',
-        c.email || '',
-        c.phone || '',
-        `$${c.totalSpend?.toFixed(2) || '0.00'}`,
-        c.lastPurchaseAt ? new Date(c.lastPurchaseAt).toLocaleString() : 'N/A'
-      ]);
-      tablesData.push({
-        name: 'Customers',
-        columns: customerColumns,
-        rows: customerRows,
-        expanded: false
-      });
-    }
-
-    // Daily Sales table
     const dailySales = db.daily_sales.getByShopId(currentShop.id);
-    if (dailySales.length > 0) {
-      const dailyColumns = ['Date', 'Gross Total', 'Transactions'];
-      const dailyRows = dailySales.map(d => [
-        d.date,
-        `$${d.grossTotal?.toFixed(2) || '0.00'}`,
-        d.transactions || 0
-      ]);
-      tablesData.push({
-        name: 'Daily Sales',
-        columns: dailyColumns,
-        rows: dailyRows,
-        expanded: false
-      });
-    }
-    setTables(tablesData);
-    setLastUpdated(new Date());
+
+    setTables([
+      {
+        id: 'inventory',
+        name: 'Product Inventory',
+        columns: ['Product ID', 'Product Name', 'Category', 'Unit Price', 'Stock Level', 'Barcode'],
+        rows: products.map((product) => [
+          product.id,
+          product.name || 'Unnamed product',
+          product.category || 'Uncategorized',
+          `$${product.price?.toFixed(2) || '0.00'}`,
+          product.stock || 0,
+          product.barcode || 'Not assigned',
+        ]),
+      },
+      {
+        id: 'sales',
+        name: 'Sales Transactions',
+        columns: ['Transaction ID', 'Customer', 'Total', 'Items', 'Date and Time'],
+        rows: sales.map((sale) => [
+          sale.id,
+          sale.customerInfo?.name || sale.customerInfo?.email || 'Walk-in customer',
+          `$${sale.total?.toFixed(2) || '0.00'}`,
+          sale.items?.length || 0,
+          new Date(sale.timestamp).toLocaleString(),
+        ]),
+      },
+      {
+        id: 'customers',
+        name: 'Customer Directory',
+        columns: ['Customer ID', 'Customer Name', 'Email Address', 'Phone Number', 'Total Spend', 'Last Purchase'],
+        rows: customers.map((customer) => [
+          customer.id,
+          customer.name || 'Unnamed customer',
+          customer.email || 'Not provided',
+          customer.phone || 'Not provided',
+          `$${customer.totalSpend?.toFixed(2) || '0.00'}`,
+          customer.lastPurchaseAt ? new Date(customer.lastPurchaseAt).toLocaleString() : 'No purchases',
+        ]),
+      },
+      {
+        id: 'daily-sales',
+        name: 'Daily Sales Summary',
+        columns: ['Business Date', 'Gross Revenue', 'Transactions'],
+        rows: dailySales.map((day) => [
+          day.date,
+          `$${day.grossTotal?.toFixed(2) || '0.00'}`,
+          day.transactions || 0,
+        ]),
+      },
+    ]);
   }, [currentShop]);
 
   useEffect(() => {
     loadDatabaseData();
-
-    // Set up real-time listeners
     const unsubscribers = [
       db.on('inventoryUpdated', loadDatabaseData),
       db.on('saleCreated', loadDatabaseData),
       db.on('salesUpdated', loadDatabaseData),
       db.on('customersUpdated', loadDatabaseData),
-      db.on('dailySalesUpdated', loadDatabaseData)
+      db.on('dailySalesUpdated', loadDatabaseData),
     ];
-
-    return () => {
-      unsubscribers.forEach(unsub => unsub());
-    };
+    return () => unsubscribers.forEach((unsubscribe) => unsubscribe());
   }, [loadDatabaseData]);
 
-  const toggleTableExpansion = (tableName: string) => {
-    setTables(prev => prev.map(table => 
-      table.name === tableName 
-        ? { ...table, expanded: !table.expanded }
-        : table
-    ));
-  };
-
-  const handleRefresh = () => {
-    loadDatabaseData();
-  };
+  const activeTable = tables.find((table) => table.id === activeTableId) ?? tables[0];
 
   return (
-    <Card 
-      title={
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Database className="w-5 h-5" />
-            <span>Database Preview</span>
-          </div>
-          <div className="flex items-center gap-2 text-sm text-gray-500">
-            <span>Last updated: {lastUpdated.toLocaleTimeString()}</span>
-            <button
-              onClick={handleRefresh}
-              className="p-1 hover:bg-gray-100 rounded"
-              title="Refresh data"
-            >
-              <RefreshCw className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
-      }
-      subtitle="Shop Data"
-      className="mb-6"
-    >
-      <div className="space-y-4 max-h-96 overflow-y-auto">
-        {tables.length === 0 ? (
-          <div className="text-center text-gray-500 py-8">
-            <Database className="w-12 h-12 mx-auto mb-2 opacity-50" />
-            <p>No data available</p>
-            <p className="text-sm">Data will appear here as you use the system</p>
-          </div>
-        ) : (
-          tables.map((table) => (
-            <div key={table.name} className="border border-gray-200 rounded-lg overflow-hidden">
-              <button
-                onClick={() => toggleTableExpansion(table.name)}
-                className="w-full px-4 py-3 bg-gray-50 hover:bg-gray-100 flex items-center justify-between transition-colors"
-              >
-                <div className="flex items-center gap-2">
-                  {table.expanded ? (
-                    <ChevronDown className="w-4 h-4" />
-                  ) : (
-                    <ChevronRight className="w-4 h-4" />
-                  )}
-                  <span className="font-medium">{table.name}</span>
-                  <span className="text-sm text-gray-500">
-                    ({table.rows.length} records)
-                  </span>
-                </div>
-              </button>
-              
-              {table.expanded && (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead className="bg-gray-100 border-t border-gray-200">
-                      <tr>
-                        {table.columns.map((column, index) => (
-                          <th
-                            key={index}
-                            className="px-3 py-2 text-left font-medium text-gray-700 border-r border-gray-200 last:border-r-0"
-                          >
-                            {column}
-                          </th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {table.rows.slice(0, 10).map((row, rowIndex) => (
-                        <tr
-                          key={rowIndex}
-                          className="border-t border-gray-200 hover:bg-gray-50"
-                        >
-                          {row.map((cell, cellIndex) => (
-                            <td
-                              key={cellIndex}
-                              className="px-3 py-2 border-r border-gray-200 last:border-r-0"
-                            >
-                              {cell}
-                            </td>
-                          ))}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                  {table.rows.length > 10 && (
-                    <div className="px-4 py-2 bg-gray-50 text-center text-sm text-gray-500 border-t border-gray-200">
-                      Showing 10 of {table.rows.length} records
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          ))
-        )}
+    <Card title="Shop Data" className="mb-6">
+      <div className="module-tabs mb-4">
+        {tables.map((table) => (
+          <button
+            type="button"
+            key={table.id}
+            onClick={() => setActiveTableId(table.id)}
+            className={`module-tab ${
+              activeTable?.id === table.id
+                ? 'module-tab-active'
+                : ''
+            }`}
+          >
+            {table.name}
+            <span className="ml-1.5 text-[10px] text-[#92928c]">{table.rows.length}</span>
+          </button>
+        ))}
       </div>
+
+      {!activeTable ? (
+        <div className="py-12 text-center text-sm text-[#777773]">
+          Shop data is not available yet.
+        </div>
+      ) : (
+        <div className="max-h-[420px] overflow-auto rounded-xl border border-[#e6e6e1]">
+          <table className="w-full min-w-max text-sm">
+            <thead className="sticky top-0 z-10 bg-[#f3f4f6] shadow-[0_1px_0_#deded9]">
+              <tr>
+                {activeTable.columns.map((column) => (
+                  <th
+                    key={column}
+                    className="border-r border-[#deded9] bg-[#f3f4f6] px-3 py-3 text-left text-[10px] font-semibold uppercase tracking-[0.08em] text-[#5f5f5a] last:border-r-0"
+                  >
+                    {column}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="bg-white">
+              {activeTable.rows.length === 0 ? (
+                <tr>
+                  <td colSpan={activeTable.columns.length} className="px-4 py-14 text-center">
+                    <p className="text-sm font-medium text-[#555550]">No {activeTable.name.toLowerCase()} yet</p>
+                    <p className="mt-1 text-xs text-[#8a8a84]">New records will appear here automatically.</p>
+                  </td>
+                </tr>
+              ) : (
+                activeTable.rows.map((row, rowIndex) => (
+                  <tr key={`${activeTable.id}-${rowIndex}`} className="border-t border-[#ededE9] hover:bg-[#fafaf8]">
+                    {row.map((cell, cellIndex) => (
+                      <td
+                        key={`${rowIndex}-${cellIndex}`}
+                        className="border-r border-[#ededE9] px-3 py-2.5 text-xs text-[#4e4e4a] last:border-r-0"
+                      >
+                        {cell}
+                      </td>
+                    ))}
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
     </Card>
   );
 };

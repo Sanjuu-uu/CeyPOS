@@ -20,25 +20,25 @@ export const Card: React.FC<CardProps> = ({
   actions
 }) => {
   return (
-    <div className={`bg-white rounded-xl shadow-sm overflow-hidden ${className}`}>
+    <section className={`overflow-hidden rounded-2xl border border-[#e4e4e0] bg-white shadow-[0_1px_2px_rgba(0,0,0,0.02)] ${className}`}>
       {(title || subtitle || icon) && (
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
-          <div className="flex items-center space-x-3">
-            {icon && <div className="text-gray-400">{icon}</div>}
+        <div className="flex items-center justify-between border-b border-[#eeeeeb] px-5 py-4">
+          <div className="flex items-center gap-3">
+            {icon && <div className="text-[#5f5f5a]">{icon}</div>}
             <div>
-              {title && <h3 className="text-lg font-medium text-gray-800">{title}</h3>}
-              {subtitle && <p className="text-sm text-gray-500">{subtitle}</p>}
+              {title && <h3 className="text-[15px] font-semibold tracking-[-0.01em] text-[#181818]">{title}</h3>}
+              {subtitle && <p className="mt-1 text-xs text-[#777773]">{subtitle}</p>}
             </div>
           </div>
           {actions && <div>{actions}</div>}
         </div>
       )}
-      <div className="px-6 py-5">{children}</div>
+      <div className="px-5 py-5">{children}</div>
       {footer && (
-        <div className="px-6 py-3 bg-gray-50 border-t border-gray-100">
+        <div className="border-t border-[#eeeeeb] bg-[#f9f9f7] px-5 py-3">
           {footer}
         </div>
       )}
-    </div>
+    </section>
   );
 };

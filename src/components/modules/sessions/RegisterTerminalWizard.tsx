@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { Loader2, MonitorSpeaker, RefreshCw, Shield, X } from "lucide-react";
 import { postJSON, authFetch } from "../../../lib/api";
 import { db } from "../../../lib/db";
 
@@ -131,21 +130,16 @@ export const RegisterTerminalWizard: React.FC<RegisterTerminalWizardProps> = ({
         >
           <div className="p-6 border-b flex-shrink-0" style={{ borderColor: "var(--gray--200)" }}>
             <div className="flex justify-between items-center">
-              <div className="flex items-center gap-3">
-                <div className="p-2 rounded-lg" style={{ backgroundColor: "var(--gray--100)" }}>
-                  <MonitorSpeaker size={24} />
-                </div>
-                <div>
-                  <h2 className="text-xl font-bold" style={{ color: "var(--gray--900)" }}>
-                    Connect Register Terminal
-                  </h2>
-                  <p className="text-sm" style={{ color: "var(--gray--600)" }}>
-                    Share this code with an employee on their register device
-                  </p>
-                </div>
+              <div>
+                <h2 className="text-xl font-bold" style={{ color: "var(--gray--900)" }}>
+                  Connect Register Terminal
+                </h2>
+                <p className="text-sm" style={{ color: "var(--gray--600)" }}>
+                  Share this code with an employee on their register device
+                </p>
               </div>
-              <button onClick={onClose} className="p-2 rounded-lg hover:bg-gray-100" aria-label="Close">
-                <X size={20} />
+              <button onClick={onClose} className="rounded-full bg-[#c5f542] px-4 py-2 text-sm font-medium text-black hover:bg-[#b8ea34]" aria-label="Close">
+                Close
               </button>
             </div>
           </div>
@@ -156,7 +150,7 @@ export const RegisterTerminalWizard: React.FC<RegisterTerminalWizardProps> = ({
             <div className="rounded-xl border border-gray-200 p-5 text-center bg-gray-50">
               <p className="text-xs uppercase tracking-wide text-gray-500 mb-2">Pairing code</p>
               {loading ? (
-                <Loader2 className="animate-spin mx-auto" />
+                <p className="text-sm font-medium text-gray-500">Loading...</p>
               ) : limitReached ? (
                 <div className="space-y-3">
                   <p className="text-sm text-gray-700">
@@ -165,7 +159,7 @@ export const RegisterTerminalWizard: React.FC<RegisterTerminalWizardProps> = ({
                   <button
                     type="button"
                     onClick={onManagePlan}
-                    className="inline-flex items-center gap-2 rounded-lg bg-[#c5f542] px-4 py-2 text-sm font-semibold text-black"
+                    className="inline-flex items-center rounded-full bg-[#c5f542] px-4 py-2 text-sm font-semibold text-black hover:bg-[#b8ea34]"
                     disabled={!onManagePlan}
                   >
                     Manage plan
@@ -182,16 +176,14 @@ export const RegisterTerminalWizard: React.FC<RegisterTerminalWizardProps> = ({
               <button
                 type="button"
                 onClick={loadCode}
-                className="mt-4 inline-flex items-center gap-2 text-sm font-medium text-gray-700 hover:text-gray-900"
+                className="mt-4 inline-flex items-center rounded-full bg-[#c5f542] px-4 py-2 text-sm font-medium text-black hover:bg-[#b8ea34]"
               >
-                <RefreshCw size={14} />
                 {limitReached ? "Retry" : "Generate new code"}
               </button>
             </div>
 
             <div>
-              <div className="flex items-center gap-2 mb-3">
-                <Shield size={16} className="text-gray-600" />
+              <div className="mb-3">
                 <h3 className="font-semibold text-gray-900">Pending approvals</h3>
               </div>
               {pending.length === 0 ? (
@@ -211,7 +203,7 @@ export const RegisterTerminalWizard: React.FC<RegisterTerminalWizardProps> = ({
                         <button
                           type="button"
                           onClick={() => reject(item.request_id)}
-                          className="px-3 py-1.5 text-sm rounded-lg border border-gray-200"
+                          className="rounded-full bg-[#c5f542] px-3 py-1.5 text-sm font-medium text-black hover:bg-[#b8ea34]"
                         >
                           Reject
                         </button>
@@ -219,7 +211,7 @@ export const RegisterTerminalWizard: React.FC<RegisterTerminalWizardProps> = ({
                           type="button"
                           onClick={() => approve(item.request_id)}
                           disabled={approving === item.request_id}
-                          className="px-3 py-1.5 text-sm rounded-lg bg-[#c5f542] text-black font-medium disabled:opacity-60"
+                          className="rounded-full bg-[#c5f542] px-3 py-1.5 text-sm font-medium text-black hover:bg-[#b8ea34] disabled:opacity-60"
                         >
                           {approving === item.request_id ? "Approving…" : "Approve"}
                         </button>

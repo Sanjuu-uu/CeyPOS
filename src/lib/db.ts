@@ -80,6 +80,30 @@ export interface TransactionItem {
   subtotal: number;
 }
 
+export interface AppNotification {
+  notificationId: string;
+  shopId: string;
+  recipientEmail: string;
+  category: "sales" | "inventory" | "terminals" | "sessions" | "system";
+  severity: "info" | "success" | "warning" | "critical";
+  title: string;
+  body: string;
+  linkPath: string | null;
+  createdAt: string;
+  readAt: string | null;
+}
+
+export interface NotificationPreferences {
+  emailNotifications: boolean;
+  inAppNotifications: boolean;
+  lowStockAlerts: boolean;
+  dailyReports: boolean;
+  salesAlerts: boolean;
+  systemUpdates: boolean;
+  quietHoursStart: string | null;
+  quietHoursEnd: string | null;
+}
+
 type InventoryRow = {
   inventory_code: string;
   barcode_id?: string | null;
@@ -960,6 +984,12 @@ function handleChange(event: ChangeEventPayload | null | undefined) {
       }
       break;
     }
+    case "notifications": {
+      // Payloads intentionally contain no recipient data because the socket
+      // room is shop-wide. Consumers refresh through the scoped REST API.
+      emit("notificationsUpdated", { shopId: shopKey, action: event.action });
+      break;
+    }
     default:
       break;
   }
@@ -1500,6 +1530,38 @@ export const db = {
       return JSON.parse(JSON.stringify(cache.businessRules));
     },
     save: saveBusinessRules,
+  },
+  notifications: {
+    async list(shopId: string, userEmail: string, limit = 30): Promise<{ notifications: AppNotification[]; unreadCount: number }> {
+      const params = new URLSearchParams({ shopId: normalizeShopId(shopId), userEmail, limit: String(limit) });
+      const response = await authFetch(`${API_BASE}/api/notifications?${params}`);
+      const body = await response.json();
+      if (!response.ok) throw new Error(body?.error || "Failed to load notifications");
+      return { notifications: Array.isArray(body.notifications) ? body.notifications : [], unreadCount: Number(body.unreadCount || 0) };
+    },
+    async markRead(shopId: string, userEmail: string, notificationId: string): Promise<void> {
+      const params = new URLSearchParams({ shopId: normalizeShopId(shopId), userEmail });
+      const response = await authFetch(`${API_BASE}/api/notifications/${encodeURIComponent(notificationId)}/read?${params}`, { method: "POST" });
+      if (!response.ok) throw new Error((await response.json().catch(() => null))?.error || "Failed to mark notification read");
+    },
+    async markAllRead(shopId: string, userEmail: string): Promise<void> {
+      const params = new URLSearchParams({ shopId: normalizeShopId(shopId), userEmail });
+      const response = await authFetch(`${API_BASE}/api/notifications/read-all?${params}`, { method: "POST" });
+      if (!response.ok) throw new Error((await response.json().catch(() => null))?.error || "Failed to mark notifications read");
+    },
+    async getPreferences(shopId: string, userEmail: string): Promise<NotificationPreferences> {
+      const params = new URLSearchParams({ shopId: normalizeShopId(shopId), userEmail });
+      const response = await authFetch(`${API_BASE}/api/notifications/preferences?${params}`);
+      const body = await response.json();
+      if (!response.ok) throw new Error(body?.error || "Failed to load notification preferences");
+      return body.preferences;
+    },
+    async savePreferences(shopId: string, userEmail: string, preferences: NotificationPreferences): Promise<NotificationPreferences> {
+      const response = await authFetch(`${API_BASE}/api/notifications/preferences`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ shopId: normalizeShopId(shopId), userEmail, ...preferences }) });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body?.error || "Failed to save notification preferences");
+      return body.preferences;
+    },
   },
   shortcuts: {
     get: (userId: string = "default"): KeyboardShortcuts => {

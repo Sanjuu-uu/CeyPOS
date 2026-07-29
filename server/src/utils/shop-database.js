@@ -21,11 +21,7 @@ function resolveShopDatabaseDirectory() {
     return "/data";
   }
 
-  const normalizedCwd = cwd.replace(/\\/g, "/");
-  if (
-    normalizedCwd.endsWith("/server") ||
-    normalizedCwd.endsWith("/mcp-server")
-  ) {
+  if (cwd.endsWith("/server") || cwd.endsWith("/mcp-server")) {
     return serverParentDatabaseDir;
   }
 
@@ -115,12 +111,11 @@ function openShopDatabaseIfExists(shopId) {
   return db;
 }
 
-function selectPreferredShopDatabaseForOwnerEmail(ownerEmail) {
+function resolveShopIdByOwnerEmail(ownerEmail) {
   const normalizedEmail = String(ownerEmail || "").trim().toLowerCase();
   if (!normalizedEmail) return null;
 
   ensureShopDatabaseDirectory();
-  const matches = [];
   const entries = fs.readdirSync(SHOP_DATABASE_DIRECTORY, { withFileTypes: true });
   for (const entry of entries) {
     if (!entry.isFile() || !entry.name.toLowerCase().endsWith(".db")) continue;
@@ -132,19 +127,14 @@ function selectPreferredShopDatabaseForOwnerEmail(ownerEmail) {
       db.pragma("journal_mode = WAL");
       initializeShopDatabaseSchema(db);
       const row = db
-        .prepare(
-          "SELECT shop_id, owner_email, created_at FROM shop_meta WHERE lower(owner_email) = lower(?) LIMIT 1",
-        )
+        .prepare("SELECT shop_id, owner_email FROM shop_meta WHERE lower(owner_email) = lower(?) LIMIT 1")
         .get(normalizedEmail);
       if (row?.shop_id) {
-        const stat = fs.statSync(fullPath);
-        matches.push({
+        return {
           shopId: row.shop_id,
           ownerEmail: row.owner_email || normalizedEmail,
           dbFileName: entry.name,
-          createdAt: row.created_at || null,
-          mtimeMs: Number(stat?.mtimeMs || 0),
-        });
+        };
       }
     } catch {
       // ignore unreadable databases while searching by owner email
@@ -159,32 +149,7 @@ function selectPreferredShopDatabaseForOwnerEmail(ownerEmail) {
     }
   }
 
-  if (matches.length === 0) {
-    return null;
-  }
-
-  matches.sort((a, b) => {
-    const mtimeDelta = (b.mtimeMs || 0) - (a.mtimeMs || 0);
-    if (mtimeDelta !== 0) return mtimeDelta;
-
-    const createdDelta = (Date.parse(b.createdAt || "0") || 0) - (Date.parse(a.createdAt || "0") || 0);
-    if (createdDelta !== 0) return createdDelta;
-
-    return (a.dbFileName || "").localeCompare(b.dbFileName || "");
-  });
-
-  return matches[0];
-}
-
-function resolveShopIdByOwnerEmail(ownerEmail) {
-  const match = selectPreferredShopDatabaseForOwnerEmail(ownerEmail);
-  if (!match) return null;
-
-  return {
-    shopId: match.shopId,
-    ownerEmail: match.ownerEmail || String(ownerEmail || "").trim().toLowerCase(),
-    dbFileName: match.dbFileName,
-  };
+  return null;
 }
 
 function initializeShopDatabaseSchema(db) {
@@ -582,6 +547,42 @@ function initializeShopDatabaseSchema(db) {
 
   CREATE INDEX IF NOT EXISTS idx_shop_billing_history_shop
     ON shop_billing_history (shop_id, paid_at DESC);
+
+  CREATE TABLE IF NOT EXISTS notifications (
+    notification_id TEXT PRIMARY KEY,
+    shop_id TEXT NOT NULL,
+    recipient_email TEXT NOT NULL,
+    category TEXT NOT NULL,
+    severity TEXT NOT NULL DEFAULT 'info',
+    title TEXT NOT NULL,
+    body TEXT NOT NULL,
+    link_path TEXT,
+    source_entity TEXT,
+    source_action TEXT,
+    source_change_id TEXT,
+    payload_json TEXT,
+    created_at DATETIME NOT NULL,
+    read_at DATETIME,
+    delivered_at DATETIME
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_notifications_recipient_created
+    ON notifications (shop_id, recipient_email, created_at DESC);
+
+  CREATE TABLE IF NOT EXISTS notification_preferences (
+    shop_id TEXT NOT NULL,
+    user_email TEXT NOT NULL,
+    email_notifications INTEGER NOT NULL DEFAULT 1,
+    in_app_notifications INTEGER NOT NULL DEFAULT 1,
+    low_stock_alerts INTEGER NOT NULL DEFAULT 1,
+    daily_reports INTEGER NOT NULL DEFAULT 0,
+    sales_alerts INTEGER NOT NULL DEFAULT 1,
+    system_updates INTEGER NOT NULL DEFAULT 1,
+    quiet_hours_start TEXT,
+    quiet_hours_end TEXT,
+    updated_at DATETIME NOT NULL,
+    PRIMARY KEY (shop_id, user_email)
+  );
   `;
 
   db.exec(ddl);
@@ -837,7 +838,6 @@ export {
   createShopDatabase,
   initializeShopDatabaseSchema,
   ensureAllShopDatabasesSchema,
-  selectPreferredShopDatabaseForOwnerEmail,
   upsertShopMetadata,
   upsertShopOperatingHours,
   replaceShopPaymentMethods,
