@@ -68,7 +68,13 @@ export const AppProvider: React.FC<AppProviderProps> = ({
   shopProfile,
   accountType = 'owner',
 }) => {
-  const [currentModule, setCurrentModule] = useState<ModuleName>('pos');
+  // PayHere returns the customer to "/?module=Subscription&payhere=..." after
+  // checkout, so honour a module hint in the URL on first render.
+  const [currentModule, setCurrentModule] = useState<ModuleName>(() => {
+    if (typeof window === 'undefined') return 'pos';
+    const requested = new URLSearchParams(window.location.search).get('module');
+    return requested === 'Subscription' ? 'Subscription' : 'pos';
+  });
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [currentUser, setCurrentUser] = useState<User | null>(null);

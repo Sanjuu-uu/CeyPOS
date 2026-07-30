@@ -646,6 +646,57 @@ function initializeShopDatabaseSchema(db) {
   CREATE INDEX IF NOT EXISTS idx_phone_verification_audit_phone
     ON phone_verification_audit (normalized_phone, created_at);
 
+  CREATE TABLE IF NOT EXISTS shop_subscriptions (
+    shop_id TEXT PRIMARY KEY,
+    plan_id TEXT NOT NULL,
+    billing_period TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending',
+    currency TEXT NOT NULL,
+    amount REAL NOT NULL,
+    order_id TEXT,
+    subscription_id TEXT,
+    payhere_payment_id TEXT,
+    card_holder_name TEXT,
+    card_no TEXT,
+    card_expiry TEXT,
+    card_method TEXT,
+    recurrence TEXT,
+    duration TEXT,
+    next_charge_date TEXT,
+    installments_paid INTEGER DEFAULT 0,
+    last_message_type TEXT,
+    last_status_message TEXT,
+    started_at DATETIME,
+    cancelled_at DATETIME,
+    updated_at DATETIME
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_shop_subscriptions_order
+    ON shop_subscriptions (order_id);
+
+  CREATE TABLE IF NOT EXISTS shop_billing_history (
+    entry_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    shop_id TEXT NOT NULL,
+    order_id TEXT,
+    payment_id TEXT,
+    subscription_id TEXT,
+    plan_id TEXT,
+    description TEXT,
+    currency TEXT,
+    amount REAL,
+    status TEXT NOT NULL,
+    status_code INTEGER,
+    message_type TEXT,
+    card_no TEXT,
+    card_method TEXT,
+    paid_at DATETIME NOT NULL,
+    created_at DATETIME NOT NULL,
+    UNIQUE (shop_id, payment_id)
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_shop_billing_history_shop
+    ON shop_billing_history (shop_id, paid_at DESC);
+
   CREATE TABLE IF NOT EXISTS notifications (
     notification_id TEXT PRIMARY KEY,
     shop_id TEXT NOT NULL,

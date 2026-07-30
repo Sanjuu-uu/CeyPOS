@@ -1,17 +1,36 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Card } from "../../ui/Card";
 import { Button } from "../../ui/Button";
+import { FileText, CreditCard, AlertCircle, Loader2 } from "lucide-react";
 import { useApp } from "../../../context/AppContext";
 import { getSearchHash } from "../../../lib/navigationSearch";
+import {
+  fetchSubscription,
+  startSubscriptionCheckout,
+  cancelSubscription,
+  retrySubscription,
+  formatCurrency,
+  type BillingPeriod,
+  type PlanId,
+  type SubscriptionSnapshot,
+} from "../../../lib/subscription";
 
-// Define the plan types
-type PlanId = "basic" | "pro" | "max";
-type BillingPeriod = "monthly" | "annual";
 type ViewMode = "business" | "enterprise";
 
+const STATUS_LABELS: Record<string, { label: string; className: string }> = {
+  active: { label: "Active", className: "bg-green-50 text-green-700" },
+  pending: { label: "Awaiting payment", className: "bg-amber-50 text-amber-700" },
+  past_due: { label: "Payment failed", className: "bg-red-50 text-red-700" },
+  failed: { label: "Failed", className: "bg-red-50 text-red-700" },
+  cancelled: { label: "Cancelled", className: "bg-gray-100 text-gray-600" },
+  completed: { label: "Completed", className: "bg-gray-100 text-gray-600" },
+  chargedback: { label: "Charged back", className: "bg-red-50 text-red-700" },
+};
+
 export const Subscription: React.FC = () => {
-  const { memberScope, setCurrentModule } = useApp();
+  const { memberScope, setCurrentModule, activeShopId, currentUser, refreshShopContext } = useApp();
+  const userEmail = currentUser?.email ?? "";
 
   // State for the MAIN toggle (Business vs. Enterprise)
   const [viewMode, setViewMode] = useState<ViewMode>("business");
@@ -31,19 +50,131 @@ export const Subscription: React.FC = () => {
     return () => window.removeEventListener("hashchange", applySearchHash);
   }, []);
 
+  const [snapshot, setSnapshot] = useState<SubscriptionSnapshot | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [busyPlan, setBusyPlan] = useState<PlanId | null>(null);
+  const [actionBusy, setActionBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+
+  const subscription = snapshot?.subscription ?? null;
+  const canManage = snapshot?.canManage ?? false;
+
+  const load = useCallback(async () => {
+    if (!activeShopId || !userEmail) return;
+    try {
+      setSnapshot(await fetchSubscription(activeShopId, userEmail));
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load subscription");
+    } finally {
+      setLoading(false);
+    }
+  }, [activeShopId, userEmail]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  // Coming back from PayHere, the notify_url callback may not have landed yet —
+  // it races the browser redirect. Poll briefly so the UI settles on the real
+  // status instead of showing a stale "pending".
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const outcome = params.get("payhere");
+    if (!outcome) return;
+
+    window.history.replaceState({}, "", window.location.pathname);
+
+    if (outcome === "cancel") {
+      setNotice("Checkout was cancelled. No payment was taken.");
+      return;
+    }
+
+    setNotice("Payment received — confirming with PayHere…");
+    let attempts = 0;
+    const timer = window.setInterval(async () => {
+      attempts += 1;
+      await load();
+      await refreshShopContext();
+      if (attempts >= 6) {
+        window.clearInterval(timer);
+        setNotice(null);
+      }
+    }, 2500);
+    return () => window.clearInterval(timer);
+  }, [load, refreshShopContext]);
+
+  const handleSelectPlan = async (planId: PlanId) => {
+    if (!activeShopId || !userEmail) return;
+    setBusyPlan(planId);
+    setError(null);
+    try {
+      // Navigates away to the PayHere gateway on success.
+      await startSubscriptionCheckout(activeShopId, userEmail, planId, billingPeriod);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not start checkout");
+      setBusyPlan(null);
+    }
+  };
+
+  const handleCancel = async () => {
+    if (!activeShopId || !userEmail) return;
+    if (!window.confirm("Cancel your subscription? Your shop will drop to the Free tier at the end of this action.")) {
+      return;
+    }
+    setActionBusy(true);
+    setError(null);
+    try {
+      await cancelSubscription(activeShopId, userEmail);
+      await load();
+      await refreshShopContext();
+      setNotice("Subscription cancelled.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not cancel subscription");
+    } finally {
+      setActionBusy(false);
+    }
+  };
+
+  const handleRetry = async () => {
+    if (!activeShopId || !userEmail) return;
+    setActionBusy(true);
+    setError(null);
+    try {
+      await retrySubscription(activeShopId, userEmail);
+      setNotice("Retry requested — PayHere is charging your card.");
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not retry payment");
+    } finally {
+      setActionBusy(false);
+    }
+  };
+
   const currentShopTier = memberScope?.plan?.tier ?? "free";
-  const currentPlan: PlanId =
-    currentShopTier === "plus"
-      ? "pro"
-      : currentShopTier === "pro"
-        ? "max"
-        : "basic";
+  // The live subscription is authoritative; the tier is only a fallback for
+  // shops provisioned before billing existed.
+  const currentPlan: PlanId | null =
+    subscription?.status === "active"
+      ? subscription.planId
+      : currentShopTier === "plus"
+        ? "pro"
+        : currentShopTier === "pro"
+          ? "max"
+          : null;
+  const registerLimit = memberScope?.plan?.maxRegisterTerminals ?? 0;
+  const teamLimit = memberScope?.plan?.maxTeamMembers ?? 1;
+  const proTeamSeats = memberScope?.plan?.proTeamSeats ?? 0;
+
   // --- BUSINESS PLANS (Basic, Pro, Max) ---
+  // Prices are LKR and must stay in step with server/src/services/plan-catalog.js,
+  // which is the source of truth actually charged.
   const businessPlans = [
     {
-      id: "basic",
+      id: "basic" as PlanId,
       title: "Basic",
-      price: { monthly: 9, annual: 90 },
+      price: { monthly: 2900, annual: 29000 },
       period: { monthly: "/ month", annual: "/ year" },
       description:
         "For new businesses needing one terminal and essential POS features.",
@@ -55,9 +186,9 @@ export const Subscription: React.FC = () => {
       ],
     },
     {
-      id: "pro",
+      id: "pro" as PlanId,
       title: "Pro",
-      price: { monthly: 49, annual: 490 },
+      price: { monthly: 14900, annual: 149000 },
       period: { monthly: "/ month", annual: "/ year" },
       description:
         "For established businesses needing advanced inventory and analytics.",
@@ -70,9 +201,9 @@ export const Subscription: React.FC = () => {
       ],
     },
     {
-      id: "max",
+      id: "max" as PlanId,
       title: "Max",
-      price: { monthly: 99, annual: 990 },
+      price: { monthly: 29900, annual: 299000 },
       period: { monthly: "/ month", annual: "/ year" },
       description:
         "For multi-location businesses needing unlimited staff and terminals.",
@@ -104,12 +235,7 @@ export const Subscription: React.FC = () => {
     "24/7/365 Dedicated Support",
   ];
 
-  const billingHistory: Array<{
-    id: string;
-    date: string;
-    description: string;
-    amount: string;
-  }> = [];
+  const billingHistory = snapshot?.billingHistory ?? [];
 
   const cardVariants = {
     hidden: { opacity: 0, y: 20 },
@@ -128,6 +254,107 @@ export const Subscription: React.FC = () => {
           </Button>
         </div>
       </div>
+
+      {/* Inline feedback */}
+      {notice && (
+        <div className="flex items-center gap-2 rounded-lg bg-blue-50 px-4 py-3 text-sm text-blue-800">
+          <Loader2 size={16} className="animate-spin" />
+          {notice}
+        </div>
+      )}
+      {error && (
+        <div className="flex items-center gap-2 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
+          <AlertCircle size={16} />
+          {error}
+        </div>
+      )}
+
+      {/* "Your Current Plan" Card */}
+      <Card className="border border-gray-100">
+        <div className="p-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+          <div>
+            <div className="flex items-center gap-2">
+              <h2 className="font-semibold text-gray-900">Your Current Plan</h2>
+              {subscription && (
+                <span
+                  className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+                    STATUS_LABELS[subscription.status]?.className ?? "bg-gray-100 text-gray-600"
+                  }`}
+                >
+                  {STATUS_LABELS[subscription.status]?.label ?? subscription.status}
+                </span>
+              )}
+            </div>
+
+            <p className="text-gray-600 text-sm mt-1">
+              You are currently on the{" "}
+              <span className="font-medium capitalize">{currentShopTier}</span> tier.
+            </p>
+
+            {subscription?.status === "active" && (
+              <p className="text-gray-600 text-sm mt-1">
+                {formatCurrency(subscription.amount, subscription.currency)}{" "}
+                {subscription.billingPeriod === "annual" ? "per year" : "per month"}
+                {subscription.nextChargeDate && ` · Next charge ${subscription.nextChargeDate}`}
+              </p>
+            )}
+
+            {/* Card currently on file */}
+            {subscription?.card && (
+              <p className="flex items-center gap-2 text-gray-600 text-sm mt-2">
+                <CreditCard size={14} className="text-gray-400" />
+                <span className="font-medium">{subscription.card.method ?? "Card"}</span>
+                <span className="font-mono">{subscription.card.maskedNumber}</span>
+                {subscription.card.expiry && (
+                  <span className="text-gray-400">
+                    exp {subscription.card.expiry.slice(0, 2)}/{subscription.card.expiry.slice(2)}
+                  </span>
+                )}
+              </p>
+            )}
+
+            <p className="text-gray-500 text-xs mt-2">
+              Register terminals: {registerLimit} · Employees: {teamLimit} · Pro team seats:{" "}
+              {proTeamSeats}
+            </p>
+
+            {subscription?.status === "past_due" && subscription.statusMessage && (
+              <p className="text-red-600 text-xs mt-2">{subscription.statusMessage}</p>
+            )}
+          </div>
+
+          <div className="flex gap-3 w-full sm:w-auto">
+            {canManage && subscription?.status === "past_due" && (
+              <Button
+                variant="outline"
+                className="w-1/2 sm:w-auto"
+                onClick={handleRetry}
+                disabled={actionBusy}
+              >
+                {actionBusy ? "Working…" : "Retry Payment"}
+              </Button>
+            )}
+            {canManage && subscription?.status === "active" ? (
+              <Button
+                variant="secondary"
+                className="w-1/2 sm:w-auto text-red-600 hover:bg-red-50 hover:border-red-200"
+                onClick={handleCancel}
+                disabled={actionBusy}
+              >
+                {actionBusy ? "Working…" : "Cancel Plan"}
+              </Button>
+            ) : (
+              <Button
+                variant="secondary"
+                className="w-1/2 sm:w-auto"
+                onClick={() => setCurrentModule("support")}
+              >
+                Contact Support
+              </Button>
+            )}
+          </div>
+        </div>
+      </Card>
 
       {/* TOP-LEVEL TOGGLE (Business / Enterprise) */}
       <div className="module-tabs">
@@ -226,7 +453,7 @@ export const Subscription: React.FC = () => {
                           // MONTHLY VIEW
                           <div className="flex items-baseline pt-2">
                             <span className="text-3xl font-bold text-gray-900">
-                              ${plan.price.monthly}
+                              {formatCurrency(plan.price.monthly, "LKR")}
                             </span>
                             <span className="text-gray-500 ml-1">/ month</span>
                           </div>
@@ -235,23 +462,23 @@ export const Subscription: React.FC = () => {
                           <div className="pt-2">
                             <div className="flex items-baseline">
                               <span className="text-3xl font-bold text-gray-900">
-                                {/* Calculate monthly equivalent */}$
-                                {(plan.price.annual / 12).toFixed(2)}
+                                {/* Calculate monthly equivalent */}
+                                {formatCurrency(plan.price.annual / 12, "LKR")}
                               </span>
                               <span className="text-lg font-normal text-gray-400 line-through ml-2">
-                                ${plan.price.monthly}
+                                {formatCurrency(plan.price.monthly, "LKR")}
                               </span>
                               <span className="text-gray-500 ml-1">
                                 / month
                               </span>
                             </div>
-                            {/* "Save 20%" and "Billed as" text */}
+                            {/* "Save" and "Billed as" text */}
                             <div className="flex items-center justify-between mt-1.5">
                               <span className="text-green-600 text-xs font-medium px-2 py-0.5 bg-green-50 rounded-full">
-                                Save 20%
+                                Save 2 months
                               </span>
                               <p className="text-xs text-gray-500">
-                                Billed as ${plan.price.annual} per year
+                                Billed as {formatCurrency(plan.price.annual, "LKR")} per year
                               </p>
                             </div>
                           </div>
@@ -275,27 +502,41 @@ export const Subscription: React.FC = () => {
                         </ul>
                       </div>
                       <div className="p-6 pt-0">
-                        <Button
-                          variant={
-                            currentPlan === plan.id ? "secondary" : "primary"
-                          }
-                          onClick={() => setCurrentModule("support")}
-                          className="w-full mt-4"
-                          disabled={currentPlan === plan.id}
-                          style={
-                            currentPlan !== plan.id
-                              ? {
-                                  backgroundColor: "#c5f542",
-                                  color: "black",
-                                  border: "none",
-                                }
-                              : {}
-                          }
-                        >
-                          {currentPlan === plan.id
-                            ? "Current Plan"
-                            : "Talk to Sales"}
-                        </Button>
+                        {(() => {
+                          const isCurrent =
+                            currentPlan === plan.id &&
+                            (!subscription || subscription.billingPeriod === billingPeriod);
+                          const isBusy = busyPlan === plan.id;
+                          const disabled = isCurrent || isBusy || loading || !canManage;
+
+                          return (
+                            <Button
+                              variant={isCurrent ? "secondary" : "primary"}
+                              onClick={() => handleSelectPlan(plan.id)}
+                              className="w-full mt-4"
+                              disabled={disabled}
+                              style={
+                                !isCurrent && !disabled
+                                  ? {
+                                      backgroundColor: "#c5f542",
+                                      color: "black",
+                                      border: "none",
+                                    }
+                                  : {}
+                              }
+                            >
+                              {isCurrent
+                                ? "Current Plan"
+                                : isBusy
+                                  ? "Redirecting…"
+                                  : !canManage
+                                    ? "Owner only"
+                                    : subscription?.status === "active"
+                                      ? "Switch Plan"
+                                      : "Subscribe"}
+                            </Button>
+                          );
+                        })()}
                       </div>
                     </Card>
                   </motion.div>
@@ -416,39 +657,60 @@ export const Subscription: React.FC = () => {
                   Description
                 </th>
                 <th className="px-3 py-3 text-left text-[11px] font-medium uppercase tracking-[0.1em] text-[#666661]">
+                  Card
+                </th>
+                <th className="px-3 py-3 text-left text-[11px] font-medium uppercase tracking-[0.1em] text-[#666661]">
                   Amount
                 </th>
                 <th className="px-3 py-3 text-right text-[11px] font-medium uppercase tracking-[0.1em] text-[#666661]">
-                  Invoice
+                  Status
                 </th>
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {billingHistory.length > 0 ? (
+              {loading ? (
+                <tr>
+                  <td colSpan={5} className="px-3 py-4 text-sm text-center text-gray-500">
+                    Loading billing history…
+                  </td>
+                </tr>
+              ) : billingHistory.length > 0 ? (
                 billingHistory.map((invoice) => (
                   <tr key={invoice.id}>
                     <td className="px-3 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {invoice.date}
+                      {new Date(invoice.paidAt).toLocaleDateString()}
                     </td>
                     <td className="px-3 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {invoice.description}
+                      <span className="inline-flex items-center gap-1.5">
+                        <FileText size={14} className="text-gray-400" />
+                        {invoice.description}
+                      </span>
+                    </td>
+                    <td className="px-3 py-4 whitespace-nowrap text-sm text-gray-500 font-mono">
+                      {invoice.cardNo ?? "—"}
                     </td>
                     <td className="px-3 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                      {invoice.amount}
+                      {invoice.amount != null
+                        ? formatCurrency(invoice.amount, invoice.currency ?? "LKR")
+                        : "—"}
                     </td>
                     <td className="px-3 py-4 whitespace-nowrap text-right text-sm">
-                      <Button
-                        className="text-blue-600 p-0 h-auto hover:text-blue-800"
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+                          invoice.status === "paid"
+                            ? "bg-green-50 text-green-700"
+                            : "bg-red-50 text-red-700"
+                        }`}
                       >
-                        Download
-                      </Button>
+                        {invoice.status === "paid" ? "Paid" : invoice.status}
+                      </span>
                     </td>
                   </tr>
                 ))
               ) : (
                 <tr>
                   <td
-                    colSpan={4}
+                    colSpan={5}
                     className="px-3 py-4 text-sm text-center text-gray-500"
                   >
                     No billing history synced yet.
