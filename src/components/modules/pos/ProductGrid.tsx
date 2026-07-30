@@ -1,7 +1,109 @@
-import React, { useState, useMemo, memo } from "react";
+import React, { useEffect, useMemo, useState, memo } from "react";
 import { Product } from "../../../types";
 import { useApp } from "../../../context/AppContext";
-import { Plus, Minus, LayoutGrid, List, Package } from "lucide-react";
+import {
+  Plus,
+  Minus,
+  LayoutGrid,
+  List,
+  Package,
+  ZoomIn,
+  ZoomOut,
+} from "lucide-react";
+
+const PRODUCT_CARD_WIDTHS = [120, 140, 165, 195] as const;
+const DEFAULT_PRODUCT_ZOOM = 1;
+
+const normalizeImageUrl = (value?: string): string | null => {
+  if (!value) return null;
+  let url = value.trim().replace(/^['"]|['"]$/g, "");
+  if (!url) return null;
+
+  url = url.replace(/\\/g, "/");
+
+  const driveMatch =
+    url.match(/drive\.google\.com\/file\/d\/([^/]+)/i) ||
+    url.match(/drive\.google\.com\/open\?id=([^&]+)/i);
+  if (driveMatch?.[1]) {
+    return `https://drive.google.com/uc?export=view&id=${encodeURIComponent(driveMatch[1])}`;
+  }
+
+  if (/dropbox\.com/i.test(url)) {
+    url = url.replace("www.dropbox.com", "dl.dropboxusercontent.com");
+    url = url.replace(/[?&]dl=0/i, "");
+  }
+
+  if (url.startsWith("//")) return `https:${encodeURI(url)}`;
+  if (/^(data:image\/|blob:|https?:\/\/|\/)/i.test(url)) return encodeURI(url);
+  if (/^(localhost|127\.0\.0\.1)(:\d+)?\//i.test(url)) return `http://${encodeURI(url)}`;
+  if (/^[\w.-]+\.[a-z]{2,}([/:?#].*)?$/i.test(url)) return `https://${encodeURI(url)}`;
+
+  return encodeURI(url);
+};
+
+const ProductImageFallback: React.FC<{
+  compact: boolean;
+  hasBrokenUrl: boolean;
+  mode: "grid" | "row";
+}> = ({ compact, hasBrokenUrl, mode }) => {
+  return (
+    <div className="flex h-full w-full flex-col items-center justify-center gap-1.5 bg-white text-gray-300">
+      <div
+        className={`flex items-center justify-center rounded-2xl border border-gray-100 bg-white ${
+          compact ? "h-9 w-9" : "h-12 w-12"
+        }`}
+      >
+        <Package
+          size={compact ? 22 : 30}
+          strokeWidth={1.8}
+          className="text-gray-300"
+        />
+      </div>
+      {hasBrokenUrl && mode === "grid" && (
+        <span className={`rounded-full bg-gray-50 px-2 py-0.5 font-semibold text-gray-400 ${
+          compact ? "max-w-[92%] truncate text-[9px]" : "text-[10px]"
+        }`}>
+          Try another image URL
+        </span>
+      )}
+    </div>
+  );
+};
+
+const ProductImage: React.FC<{ product: Product; compact: boolean; mode: "grid" | "row" }> = ({
+  product,
+  compact,
+  mode,
+}) => {
+  const imageUrl = useMemo(() => normalizeImageUrl(product.imageUrl), [product.imageUrl]);
+  const [hasError, setHasError] = useState(false);
+
+  useEffect(() => {
+    setHasError(false);
+  }, [imageUrl]);
+
+  if (!imageUrl || hasError) {
+    return (
+      <ProductImageFallback
+        compact={compact || mode === "row"}
+        hasBrokenUrl={Boolean(imageUrl && hasError)}
+        mode={mode}
+      />
+    );
+  }
+
+  return (
+    <img
+      src={imageUrl}
+      alt={product.name}
+      className={`h-full w-full object-contain ${compact ? "p-1" : "p-2"} transition-transform group-hover:scale-[1.03]`}
+      loading="lazy"
+      decoding="async"
+      referrerPolicy="no-referrer"
+      onError={() => setHasError(true)}
+    />
+  );
+};
 
 const ProductCard = memo(
   ({
@@ -11,6 +113,7 @@ const ProductCard = memo(
     currencySymbol,
     onAdd,
     onUpdate,
+    compact,
   }: {
     product: Product;
     quantityInCart: number;
@@ -18,6 +121,7 @@ const ProductCard = memo(
     currencySymbol: string;
     onAdd: (p: Product) => void;
     onUpdate: (p: Product, change: number) => void;
+    compact: boolean;
   }) => {
     // availableStock = real stock minus what's held across ALL terminals' carts
     // (including this one). Fall back to stock when reservation data isn't
@@ -30,19 +134,8 @@ const ProductCard = memo(
     if (viewMode === "row") {
       return (
         <div className="bg-white rounded-xl p-3 shadow-[0_1px_2px_rgba(0,0,0,0.02)] border border-[#e4e4e0] hover:border-[#c5f542]/70 transition-all flex items-center gap-3">
-          <div className="h-14 w-14 bg-gray-100 rounded-md overflow-hidden flex-shrink-0">
-            {product.imageUrl ? (
-              <img
-                src={product.imageUrl}
-                alt={product.name}
-                className="w-full h-full object-cover"
-                loading="lazy"
-              />
-            ) : (
-              <div className="w-full h-full flex items-center justify-center text-gray-300">
-                <Package size={20} />
-              </div>
-            )}
+          <div className="h-14 w-14 flex-shrink-0 overflow-hidden rounded-md border border-gray-100 bg-white">
+            <ProductImage product={product} compact mode="row" />
           </div>
           <div className="flex-1 min-w-0">
             <h3 className="font-semibold text-gray-800 text-sm truncate">
@@ -94,20 +187,13 @@ const ProductCard = memo(
 
     return (
       <div className="group bg-white rounded-2xl shadow-[0_1px_2px_rgba(0,0,0,0.02)] border border-[#e4e4e0] hover:shadow-md hover:border-[#c5f542] transition-all flex flex-col h-full overflow-hidden relative">
-        <div className="aspect-[4/3] bg-gray-100 relative overflow-hidden">
-          {product.imageUrl ? (
-            <img
-              src={product.imageUrl}
-              alt={product.name}
-              className="w-full h-full object-cover transition-transform group-hover:scale-105"
-              loading="lazy"
-            />
-          ) : (
-            <div className="w-full h-full flex items-center justify-center text-gray-300">
-              <Package size={32} />
-            </div>
-          )}
-          <div className="absolute top-2 right-2 bg-white/90 backdrop-blur-sm px-2 py-1 rounded-md text-sm font-bold shadow-sm border border-gray-100">
+        <div className="aspect-[4/3] bg-white relative overflow-hidden border-b border-gray-100">
+          <ProductImage product={product} compact={compact} mode="grid" />
+            <div
+              className={`absolute bg-white/90 backdrop-blur-sm rounded-md font-bold shadow-sm border border-gray-100 ${
+                compact ? "top-1.5 right-1.5 px-1.5 py-0.5 text-xs" : "top-2 right-2 px-2 py-1 text-sm"
+              }`}
+            >
             {currencySymbol}
             {product.price.toFixed(2)}
           </div>
@@ -117,11 +203,15 @@ const ProductCard = memo(
             </div>
           )}
         </div>
-        <div className="p-3 flex flex-col flex-1">
-          <h3 className="font-semibold text-gray-800 text-sm leading-tight mb-1 line-clamp-2">
+        <div className={`${compact ? "p-2" : "p-3"} flex flex-col flex-1`}>
+          <h3
+            className={`font-semibold text-gray-800 leading-tight mb-1 line-clamp-2 ${
+              compact ? "text-xs" : "text-sm"
+            }`}
+          >
             {product.name}
           </h3>
-          <p className="text-xs text-gray-500 mb-3">
+          <p className={`text-gray-500 ${compact ? "text-[10px] mb-2" : "text-xs mb-3"}`}>
             {available} available
           </p>
           <div className="mt-auto">
@@ -129,7 +219,9 @@ const ProductCard = memo(
               <button
                 onClick={() => onAdd(product)}
                 disabled={isOutOfStock}
-                className="w-full h-9 flex items-center justify-center bg-gray-100 text-gray-800 text-sm font-medium rounded-lg hover:bg-[#c5f542] hover:text-gray-900 disabled:bg-gray-50 disabled:text-gray-300 transition-all active:scale-95"
+                className={`w-full flex items-center justify-center bg-gray-100 text-gray-800 font-medium rounded-lg hover:bg-[#c5f542] hover:text-gray-900 disabled:bg-gray-50 disabled:text-gray-300 transition-all active:scale-95 ${
+                  compact ? "h-8 text-xs" : "h-9 text-sm"
+                }`}
               >
                 {isOutOfStock ? "Out of Stock" : "Add to Cart"}
               </button>
@@ -168,6 +260,9 @@ export const ProductGrid: React.FC<{ products: Product[] }> = ({
   // Extract currentShop from useApp
   const { addToCart, cart, updateCartItemQuantity, currentShop } = useApp();
   const [viewMode, setViewMode] = useState<"grid" | "row">("grid");
+  const [productZoom, setProductZoom] = useState(DEFAULT_PRODUCT_ZOOM);
+  const cardWidth = PRODUCT_CARD_WIDTHS[productZoom];
+  const isCompact = productZoom <= 1;
 
   // Determine the currency symbol, defaulting to "$"
   const currencySymbol = currentShop?.currency ?? "$";
@@ -193,27 +288,68 @@ export const ProductGrid: React.FC<{ products: Product[] }> = ({
         <span className="text-sm text-gray-500 font-medium">
           {products.length} Products Found
         </span>
-        <div className="flex bg-gray-100 rounded-lg p-1 gap-1">
-          <button
-            onClick={() => setViewMode("grid")}
-            className={`p-1.5 rounded-md transition-all ${viewMode === "grid" ? "bg-white shadow-sm text-black" : "text-gray-400 hover:text-gray-600"}`}
-          >
-            <LayoutGrid size={18} />
-          </button>
-          <button
-            onClick={() => setViewMode("row")}
-            className={`p-1.5 rounded-md transition-all ${viewMode === "row" ? "bg-white shadow-sm text-black" : "text-gray-400 hover:text-gray-600"}`}
-          >
-            <List size={18} />
-          </button>
+        <div className="flex items-center gap-2">
+          {viewMode === "grid" && (
+            <div className="flex items-center bg-gray-100 rounded-lg p-1 gap-1">
+              <button
+                type="button"
+                onClick={() => setProductZoom((zoom) => Math.max(0, zoom - 1))}
+                disabled={productZoom === 0}
+                aria-label="Zoom products out"
+                title="Show smaller products"
+                className="p-1.5 rounded-md text-gray-600 hover:bg-white hover:shadow-sm disabled:opacity-30 disabled:pointer-events-none transition-all"
+              >
+                <ZoomOut size={18} />
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  setProductZoom((zoom) =>
+                    Math.min(PRODUCT_CARD_WIDTHS.length - 1, zoom + 1),
+                  )
+                }
+                disabled={productZoom === PRODUCT_CARD_WIDTHS.length - 1}
+                aria-label="Zoom products in"
+                title="Show larger products"
+                className="p-1.5 rounded-md text-gray-600 hover:bg-white hover:shadow-sm disabled:opacity-30 disabled:pointer-events-none transition-all"
+              >
+                <ZoomIn size={18} />
+              </button>
+            </div>
+          )}
+          <div className="flex bg-gray-100 rounded-lg p-1 gap-1">
+            <button
+              type="button"
+              onClick={() => setViewMode("grid")}
+              aria-label="Grid view"
+              className={`p-1.5 rounded-md transition-all ${viewMode === "grid" ? "bg-white shadow-sm text-black" : "text-gray-400 hover:text-gray-600"}`}
+            >
+              <LayoutGrid size={18} />
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode("row")}
+              aria-label="List view"
+              className={`p-1.5 rounded-md transition-all ${viewMode === "row" ? "bg-white shadow-sm text-black" : "text-gray-400 hover:text-gray-600"}`}
+            >
+              <List size={18} />
+            </button>
+          </div>
         </div>
       </div>
       {products.length > 0 ? (
         <div
           className={
             viewMode === "grid"
-              ? "grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 pb-20"
+              ? "grid justify-center content-start gap-3 pb-20"
               : "flex flex-col gap-2 pb-20"
+          }
+          style={
+            viewMode === "grid"
+              ? {
+                  gridTemplateColumns: `repeat(auto-fill, minmax(min(100%, ${cardWidth}px), ${cardWidth}px))`,
+                }
+              : undefined
           }
         >
           {products.map((product) => (
@@ -225,6 +361,7 @@ export const ProductGrid: React.FC<{ products: Product[] }> = ({
               currencySymbol={currencySymbol} // Passed down here
               onAdd={handleAddToCart}
               onUpdate={handleUpdateQuantity}
+              compact={isCompact}
             />
           ))}
         </div>

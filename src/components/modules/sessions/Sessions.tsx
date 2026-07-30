@@ -227,10 +227,10 @@ const SessionWizard: React.FC<SessionWizardProps> = ({
   return (
     <div className="fixed inset-0 z-40">
       <div
-        className={`absolute right-0 bottom-0 top-[40px] ${sidebarCollapsed ? "md:left-16" : "md:left-60"} bg-black/10 backdrop-blur-sm`}
+        className={`absolute right-0 bottom-0 top-[60px] left-0 ${sidebarCollapsed ? "md:left-16" : "md:left-60"} bg-black/10 backdrop-blur-sm`}
       />
       <div
-        className={`absolute right-0 bottom-0 top-[65px] ${sidebarCollapsed ? "md:left-16" : "md:left-60"} flex items-center justify-center px-3 py-2 md:px-5 md:py-3`}
+        className={`absolute right-0 bottom-0 top-[60px] left-0 ${sidebarCollapsed ? "md:left-16" : "md:left-60"} flex items-center justify-center p-4 md:p-6`}
       >
         <div className="relative z-10 flex w-full max-w-xl max-h-[min(900px,calc(100dvh-120px))] flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl">
           <div className="flex items-start justify-between border-b border-gray-200 p-6">

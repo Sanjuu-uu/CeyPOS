@@ -2,7 +2,18 @@ import express from "express";
 import multer from "multer";
 import ExcelJS from "exceljs";
 import { openShopDatabase, shopDatabaseExists } from "../utils/shop-database.js";
-import { upsertProducts, deleteProducts } from "../services/inventory-service.js";
+import {
+  upsertProducts,
+  deleteProducts,
+  getInventoryOperations,
+  upsertSupplier,
+  createPurchaseOrder,
+  receiveGoods,
+  createPurchaseReturn,
+  adjustInventoryStock,
+  createStockCount,
+  upsertVariant,
+} from "../services/inventory-service.js";
 
 const router = express.Router();
 const upload = multer({
@@ -189,9 +200,13 @@ router.post("/upload", (req, res, next) => {
           category: String(r.category || "").trim() || null,
           sku: String(r.sku || "").trim() || null,
           price: r.price === "" || r.price === null ? null : Number(r.price),
+          cost_price: r.cost_price === "" || r.cost_price === null ? 0 : Number(r.cost_price || 0),
           stock: r.stock === "" || r.stock === null ? 0 : Number(r.stock),
           stock_last_month: r.stock_last_month === "" || r.stock_last_month === null ? 0 : Number(r.stock_last_month || 0),
           restock_suggestion: r.restock_suggestion === "" || r.restock_suggestion === null ? 0 : Number(r.restock_suggestion || 0),
+          reorder_threshold: r.reorder_threshold === "" || r.reorder_threshold === null ? 0 : Number(r.reorder_threshold || 0),
+          unit_name: String(r.unit_name || "unit").trim() || "unit",
+          pack_size: r.pack_size === "" || r.pack_size === null ? 1 : Number(r.pack_size || 1),
           image_url: r.image_url || r.imageUrl || null,
           created_at: now,
           updated_at: now,
@@ -286,17 +301,21 @@ router.get("/template", async (req, res) => {
       'category',
       'sku',
       'price',
+      'cost_price',
       'stock',
       'stock_last_month',
       'restock_suggestion',
+      'reorder_threshold',
+      'unit_name',
+      'pack_size',
       'image_url'
     ];
 
     sheet.addRow(header);
 
     // Add couple of sample rows
-    sheet.addRow(['INV-001', 'BAR-001', 'Sample Item A', 'Beverages', 'SKU-001', 199.99, 20, 15, 5, 'https://example.com/image-a.jpg']);
-    sheet.addRow(['INV-002', 'BAR-002', 'Sample Item B', 'Snacks', 'SKU-002', 59.50, 100, 80, 50, 'https://example.com/image-b.jpg']);
+    sheet.addRow(['INV-001', 'BAR-001', 'Sample Item A', 'Beverages', 'SKU-001', 199.99, 120.00, 20, 15, 5, 8, 'bottle', 1, 'https://example.com/image-a.jpg']);
+    sheet.addRow(['INV-002', 'BAR-002', 'Sample Item B', 'Snacks', 'SKU-002', 59.50, 35.00, 100, 80, 50, 25, 'pack', 12, 'https://example.com/image-b.jpg']);
 
     // Apply basic styling for header row
     const headerRow = sheet.getRow(1);
@@ -304,7 +323,7 @@ router.get("/template", async (req, res) => {
     headerRow.alignment = { vertical: 'middle', horizontal: 'center' };
 
     // Adjust column widths
-    const colWidths = [20, 20, 30, 20, 18, 12, 10, 14, 18, 40];
+    const colWidths = [20, 20, 30, 20, 18, 12, 12, 10, 14, 18, 18, 14, 12, 40];
     sheet.columns.forEach((col, idx) => {
       col.width = colWidths[idx] || 15;
     });
@@ -317,6 +336,125 @@ router.get("/template", async (req, res) => {
   } catch (err) {
     console.error('Failed to generate inventory template', err);
     res.status(500).json({ error: 'Failed to generate Excel template' });
+  }
+});
+
+function requireShop(req, res) {
+  const shopId = req.params.shopId || req.query.shopId || req.body?.shopId;
+  if (!shopId) {
+    res.status(400).json({ ok: false, error: "missing_shop_id" });
+    return null;
+  }
+  if (!shopDatabaseExists(shopId)) {
+    res.status(404).json({ ok: false, error: "shop_not_found" });
+    return null;
+  }
+  return shopId;
+}
+
+router.get("/:shopId/operations", (req, res) => {
+  const shopId = requireShop(req, res);
+  if (!shopId) return;
+  try {
+    res.json({ ok: true, data: getInventoryOperations(shopId) });
+  } catch (err) {
+    console.error("[INVENTORY OPERATIONS LOAD ERROR]", err);
+    res.status(500).json({ ok: false, error: "failed_to_load_inventory_operations" });
+  }
+});
+
+router.post("/:shopId/suppliers", (req, res) => {
+  const shopId = requireShop(req, res);
+  if (!shopId) return;
+  if (!String(req.body?.name || "").trim()) {
+    return res.status(400).json({ ok: false, error: "supplier_name_required" });
+  }
+  try {
+    res.json({ ok: true, data: upsertSupplier(shopId, req.body, { actor: req.user?.id || null }) });
+  } catch (err) {
+    console.error("[SUPPLIER UPSERT ERROR]", err);
+    res.status(500).json({ ok: false, error: "failed_to_save_supplier" });
+  }
+});
+
+router.post("/:shopId/purchase-orders", (req, res) => {
+  const shopId = requireShop(req, res);
+  if (!shopId) return;
+  if (!Array.isArray(req.body?.items) || !req.body.items.length) {
+    return res.status(400).json({ ok: false, error: "purchase_order_items_required" });
+  }
+  try {
+    res.json({ ok: true, data: createPurchaseOrder(shopId, req.body, { actor: req.user?.id || null }) });
+  } catch (err) {
+    console.error("[PO CREATE ERROR]", err);
+    res.status(500).json({ ok: false, error: "failed_to_create_purchase_order" });
+  }
+});
+
+router.post("/:shopId/goods-received", (req, res) => {
+  const shopId = requireShop(req, res);
+  if (!shopId) return;
+  if (!Array.isArray(req.body?.items) || !req.body.items.length) {
+    return res.status(400).json({ ok: false, error: "goods_received_items_required" });
+  }
+  try {
+    res.json({ ok: true, data: receiveGoods(shopId, req.body, { actor: req.user?.id || null }) });
+  } catch (err) {
+    console.error("[GOODS RECEIVED ERROR]", err);
+    res.status(500).json({ ok: false, error: "failed_to_receive_goods" });
+  }
+});
+
+router.post("/:shopId/purchase-returns", (req, res) => {
+  const shopId = requireShop(req, res);
+  if (!shopId) return;
+  if (!Array.isArray(req.body?.items) || !req.body.items.length) {
+    return res.status(400).json({ ok: false, error: "purchase_return_items_required" });
+  }
+  try {
+    res.json({ ok: true, data: createPurchaseReturn(shopId, req.body, { actor: req.user?.id || null }) });
+  } catch (err) {
+    console.error("[PURCHASE RETURN ERROR]", err);
+    res.status(500).json({ ok: false, error: "failed_to_create_purchase_return" });
+  }
+});
+
+router.post("/:shopId/adjustments", (req, res) => {
+  const shopId = requireShop(req, res);
+  if (!shopId) return;
+  try {
+    res.json({ ok: true, data: adjustInventoryStock(shopId, req.body, { actor: req.user?.id || null }) });
+  } catch (err) {
+    console.error("[INVENTORY ADJUSTMENT ERROR]", err);
+    res.status(500).json({ ok: false, error: "failed_to_adjust_inventory" });
+  }
+});
+
+router.post("/:shopId/stock-counts", (req, res) => {
+  const shopId = requireShop(req, res);
+  if (!shopId) return;
+  if (!Array.isArray(req.body?.items) || !req.body.items.length) {
+    return res.status(400).json({ ok: false, error: "stock_count_items_required" });
+  }
+  try {
+    res.json({ ok: true, data: createStockCount(shopId, req.body, { actor: req.user?.id || null }) });
+  } catch (err) {
+    console.error("[STOCK COUNT ERROR]", err);
+    res.status(500).json({ ok: false, error: "failed_to_create_stock_count" });
+  }
+});
+
+router.post("/:shopId/variants", (req, res) => {
+  const shopId = requireShop(req, res);
+  if (!shopId) return;
+  if (!req.body?.parent_inventory_code && !req.body?.parentInventoryCode) {
+    return res.status(400).json({ ok: false, error: "parent_inventory_code_required" });
+  }
+  try {
+    res.json({ ok: true, data: upsertVariant(shopId, req.body, { actor: req.user?.id || null }) });
+  } catch (err) {
+    console.error("[VARIANT UPSERT ERROR]", err);
+    res.status(500).json({ ok: false, error: "failed_to_save_variant" });
   }
 });
 

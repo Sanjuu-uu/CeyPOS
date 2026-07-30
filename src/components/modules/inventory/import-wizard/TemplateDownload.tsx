@@ -70,7 +70,7 @@ export const TemplateDownload: React.FC<TemplateDownloadProps> = ({ onNext }) =>
             color: 'var(--gray--700)',
           }}
         >
-          <strong>Required columns:</strong> inventory_code, barcode_id, name, category, sku, price, stock, stock_last_month, restock_suggestion, image_url
+          <strong>Required columns:</strong> inventory_code, barcode_id, name, category, sku, price, cost_price, stock, stock_last_month, restock_suggestion, reorder_threshold, unit_name, pack_size, image_url
         </div>
           <button
           onClick={handleDownloadTemplate}

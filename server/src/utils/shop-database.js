@@ -197,12 +197,161 @@ function initializeShopDatabaseSchema(db) {
     category TEXT,
     sku TEXT UNIQUE,
     price DECIMAL(10,2),
+    cost_price DECIMAL(10,2) DEFAULT 0,
     stock INTEGER DEFAULT 0,
     stock_last_month INTEGER DEFAULT 0,
     restock_suggestion INTEGER DEFAULT 0,
+    reorder_threshold INTEGER DEFAULT 0,
+    unit_name TEXT DEFAULT 'unit',
+    pack_size DECIMAL(10,3) DEFAULT 1,
+    preferred_supplier_id INTEGER,
     image_url TEXT,
     created_at DATETIME,
-    updated_at DATETIME
+    updated_at DATETIME,
+    FOREIGN KEY(preferred_supplier_id) REFERENCES inventory_suppliers(supplier_id)
+  );
+
+  CREATE TABLE IF NOT EXISTS inventory_suppliers (
+    supplier_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    contact_name TEXT,
+    phone TEXT,
+    email TEXT,
+    address TEXT,
+    notes TEXT,
+    status TEXT NOT NULL DEFAULT 'active',
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS inventory_purchase_orders (
+    po_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    po_number TEXT UNIQUE NOT NULL,
+    supplier_id INTEGER,
+    status TEXT NOT NULL DEFAULT 'draft',
+    expected_at DATETIME,
+    notes TEXT,
+    subtotal DECIMAL(10,2) DEFAULT 0,
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL,
+    FOREIGN KEY(supplier_id) REFERENCES inventory_suppliers(supplier_id)
+  );
+
+  CREATE TABLE IF NOT EXISTS inventory_purchase_order_items (
+    po_item_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    po_id INTEGER NOT NULL,
+    inventory_code TEXT NOT NULL,
+    quantity_ordered DECIMAL(10,3) NOT NULL DEFAULT 0,
+    quantity_received DECIMAL(10,3) NOT NULL DEFAULT 0,
+    unit_cost DECIMAL(10,2) NOT NULL DEFAULT 0,
+    FOREIGN KEY(po_id) REFERENCES inventory_purchase_orders(po_id),
+    FOREIGN KEY(inventory_code) REFERENCES inventory(inventory_code)
+  );
+
+  CREATE TABLE IF NOT EXISTS inventory_goods_received (
+    receipt_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    receipt_number TEXT UNIQUE NOT NULL,
+    po_id INTEGER,
+    supplier_id INTEGER,
+    received_at DATETIME NOT NULL,
+    notes TEXT,
+    created_at DATETIME NOT NULL,
+    FOREIGN KEY(po_id) REFERENCES inventory_purchase_orders(po_id),
+    FOREIGN KEY(supplier_id) REFERENCES inventory_suppliers(supplier_id)
+  );
+
+  CREATE TABLE IF NOT EXISTS inventory_goods_received_items (
+    receipt_item_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    receipt_id INTEGER NOT NULL,
+    inventory_code TEXT NOT NULL,
+    quantity DECIMAL(10,3) NOT NULL DEFAULT 0,
+    unit_cost DECIMAL(10,2) NOT NULL DEFAULT 0,
+    FOREIGN KEY(receipt_id) REFERENCES inventory_goods_received(receipt_id),
+    FOREIGN KEY(inventory_code) REFERENCES inventory(inventory_code)
+  );
+
+  CREATE TABLE IF NOT EXISTS inventory_purchase_returns (
+    return_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    return_number TEXT UNIQUE NOT NULL,
+    supplier_id INTEGER,
+    po_id INTEGER,
+    returned_at DATETIME NOT NULL,
+    reason TEXT,
+    notes TEXT,
+    created_at DATETIME NOT NULL,
+    FOREIGN KEY(supplier_id) REFERENCES inventory_suppliers(supplier_id),
+    FOREIGN KEY(po_id) REFERENCES inventory_purchase_orders(po_id)
+  );
+
+  CREATE TABLE IF NOT EXISTS inventory_purchase_return_items (
+    return_item_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    return_id INTEGER NOT NULL,
+    inventory_code TEXT NOT NULL,
+    quantity DECIMAL(10,3) NOT NULL DEFAULT 0,
+    unit_cost DECIMAL(10,2) NOT NULL DEFAULT 0,
+    FOREIGN KEY(return_id) REFERENCES inventory_purchase_returns(return_id),
+    FOREIGN KEY(inventory_code) REFERENCES inventory(inventory_code)
+  );
+
+  CREATE TABLE IF NOT EXISTS inventory_stock_counts (
+    count_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    count_number TEXT UNIQUE NOT NULL,
+    status TEXT NOT NULL DEFAULT 'open',
+    started_at DATETIME NOT NULL,
+    completed_at DATETIME,
+    notes TEXT
+  );
+
+  CREATE TABLE IF NOT EXISTS inventory_stock_count_items (
+    count_item_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    count_id INTEGER NOT NULL,
+    inventory_code TEXT NOT NULL,
+    expected_quantity DECIMAL(10,3) NOT NULL DEFAULT 0,
+    counted_quantity DECIMAL(10,3),
+    variance DECIMAL(10,3) DEFAULT 0,
+    reason TEXT,
+    FOREIGN KEY(count_id) REFERENCES inventory_stock_counts(count_id),
+    FOREIGN KEY(inventory_code) REFERENCES inventory(inventory_code)
+  );
+
+  CREATE TABLE IF NOT EXISTS inventory_adjustment_reasons (
+    reason_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT UNIQUE NOT NULL,
+    stock_type TEXT NOT NULL DEFAULT 'adjustment',
+    direction TEXT NOT NULL DEFAULT 'decrease',
+    is_active INTEGER NOT NULL DEFAULT 1
+  );
+
+  CREATE TABLE IF NOT EXISTS inventory_movements (
+    movement_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    inventory_code TEXT NOT NULL,
+    movement_type TEXT NOT NULL,
+    stock_type TEXT NOT NULL DEFAULT 'sellable',
+    quantity_delta DECIMAL(10,3) NOT NULL,
+    quantity_after DECIMAL(10,3) NOT NULL,
+    unit_cost DECIMAL(10,2) DEFAULT 0,
+    source_type TEXT,
+    source_id TEXT,
+    reason TEXT,
+    notes TEXT,
+    created_at DATETIME NOT NULL,
+    FOREIGN KEY(inventory_code) REFERENCES inventory(inventory_code)
+  );
+
+  CREATE TABLE IF NOT EXISTS inventory_product_variants (
+    variant_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    parent_inventory_code TEXT NOT NULL,
+    inventory_code TEXT UNIQUE NOT NULL,
+    name TEXT NOT NULL,
+    barcode_id TEXT UNIQUE,
+    sku TEXT UNIQUE,
+    price DECIMAL(10,2),
+    cost_price DECIMAL(10,2) DEFAULT 0,
+    attributes_json TEXT,
+    is_active INTEGER NOT NULL DEFAULT 1,
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL,
+    FOREIGN KEY(parent_inventory_code) REFERENCES inventory(inventory_code)
   );
   
   CREATE TABLE IF NOT EXISTS customers (
@@ -532,6 +681,14 @@ function initializeShopDatabaseSchema(db) {
     updated_at DATETIME NOT NULL,
     PRIMARY KEY (shop_id, user_email)
   );
+
+  INSERT OR IGNORE INTO inventory_adjustment_reasons (name, stock_type, direction)
+  VALUES
+    ('Damaged stock', 'damaged', 'decrease'),
+    ('Expired stock', 'expired', 'decrease'),
+    ('Missing stock', 'missing', 'decrease'),
+    ('Promotional stock', 'promotional', 'decrease'),
+    ('Manual correction', 'adjustment', 'either');
   `;
 
   db.exec(ddl);
@@ -585,6 +742,26 @@ function initializeShopDatabaseSchema(db) {
   }
 
   runTeamWorkflowColumnMigrations(db);
+  runInventoryLifecycleColumnMigrations(db);
+}
+
+function runInventoryLifecycleColumnMigrations(db) {
+  const addColumnIfMissing = (table, column, definition) => {
+    try {
+      const cols = db.prepare(`PRAGMA table_info(${table})`).all().map((c) => c.name);
+      if (cols.length && !cols.includes(column)) {
+        db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+      }
+    } catch {
+      // ignore
+    }
+  };
+
+  addColumnIfMissing("inventory", "cost_price", "DECIMAL(10,2) DEFAULT 0");
+  addColumnIfMissing("inventory", "reorder_threshold", "INTEGER DEFAULT 0");
+  addColumnIfMissing("inventory", "unit_name", "TEXT DEFAULT 'unit'");
+  addColumnIfMissing("inventory", "pack_size", "DECIMAL(10,3) DEFAULT 1");
+  addColumnIfMissing("inventory", "preferred_supplier_id", "INTEGER");
 }
 
 function runTeamWorkflowColumnMigrations(db) {
@@ -752,17 +929,22 @@ function ensureAllShopDatabasesSchema() {
 function insertInventoryRows(db, rows) {
   const insert = db.prepare(`
     INSERT INTO inventory (
-      inventory_code, barcode_id, name, category, sku, price, stock, stock_last_month, restock_suggestion, image_url, created_at, updated_at
-    ) VALUES (@inventory_code, @barcode_id, @name, @category, @sku, @price, @stock, @stock_last_month, @restock_suggestion, @image_url, @created_at, @updated_at)
+      inventory_code, barcode_id, name, category, sku, price, cost_price, stock, stock_last_month, restock_suggestion, reorder_threshold, unit_name, pack_size, preferred_supplier_id, image_url, created_at, updated_at
+    ) VALUES (@inventory_code, @barcode_id, @name, @category, @sku, @price, @cost_price, @stock, @stock_last_month, @restock_suggestion, @reorder_threshold, @unit_name, @pack_size, @preferred_supplier_id, @image_url, @created_at, @updated_at)
     ON CONFLICT(inventory_code) DO UPDATE SET
       barcode_id=excluded.barcode_id,
       name=excluded.name,
       category=excluded.category,
       sku=excluded.sku,
       price=excluded.price,
+      cost_price=excluded.cost_price,
       stock=excluded.stock,
       stock_last_month=excluded.stock_last_month,
       restock_suggestion=excluded.restock_suggestion,
+      reorder_threshold=excluded.reorder_threshold,
+      unit_name=excluded.unit_name,
+      pack_size=excluded.pack_size,
+      preferred_supplier_id=excluded.preferred_supplier_id,
       image_url=excluded.image_url,
       updated_at=excluded.updated_at
   `);

@@ -327,7 +327,16 @@ router.post("/complete", (req, res) => {
         }
 
         if (it.quantity > 0) {
-          stockAdjustments.push({ inventory_code: it.inventoryCode, delta: -it.quantity });
+          stockAdjustments.push({
+            inventory_code: it.inventoryCode,
+            delta: -it.quantity,
+            movement_type: "sale",
+            stock_type: "sellable",
+            source_type: "transaction",
+            source_id: String(transactionId),
+            reason: "POS sale",
+            notes: receiptId || transactionCode || null,
+          });
         }
       }
 

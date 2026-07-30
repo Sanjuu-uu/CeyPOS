@@ -28,7 +28,7 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ onClose, onImportCom
     validationIssues: [],
   });
   const { shopId: wizardShopId } = useShopWizard();
-  const { currentShop } = useApp();
+  const { currentShop, isSidebarCollapsed } = useApp();
 
   const shopId = useMemo(() => {
     if (wizardShopId) {
@@ -142,7 +142,7 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ onClose, onImportCom
       case 2:
         return <FileUpload uploadedFile={uploadedFile} uploadProgress={uploadProgress} onFileUpload={handleFileUpload} />;
       case 3:
-        return <DataValidation data={validationData} onValidationComplete={nextStep} />;
+        return <DataValidation data={validationData} />;
       case 4:
         return <ImportConfirmation data={validationData} onConfirm={handleComplete} />;
       default:
@@ -151,27 +151,31 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ onClose, onImportCom
   };
 
   return (
-    <div className="fixed inset-0 flex items-center justify-center z-40">
+    <div
+      className={`fixed bottom-0 right-0 top-[60px] z-40 flex items-center justify-center p-4 md:p-6 ${
+        isSidebarCollapsed ? 'left-0 md:left-16' : 'left-0 md:left-60'
+      }`}
+    >
       {/* The backdrop that sits behind the modal */}
-      <div className="absolute inset-0 top-[40px] bg-black/5 backdrop-blur-sm"></div>
+      <div className="absolute inset-0 bg-black/5 backdrop-blur-sm"></div>
       
-      <div 
-        className="bg-white shadow-2xl w-full max-w-4xl h-[85vh] flex flex-col relative z-10 mt-[40px]"
+      <div
+        className="relative z-10 flex h-[min(85vh,820px)] max-h-full w-full max-w-5xl flex-col overflow-hidden bg-white shadow-2xl"
         style={{ 
           borderRadius: 'var(--radius--16px)',
           border: '1px solid var(--gray--200)',
         }}
       >
         {/* Header */}
-        <div 
-          className="p-6 border-b flex-shrink-0"
+        <div
+          className="flex-shrink-0 border-b px-6 py-5"
           style={{ 
             borderColor: 'var(--gray--200)',
             borderTopLeftRadius: 'var(--radius--16px)',
             borderTopRightRadius: 'var(--radius--16px)',
           }}
         >
-          <div className="flex justify-between items-center mb-6">
+          <div className="mb-5 flex items-start justify-between gap-4">
             <div>
               <h2 
                 className="text-2xl font-bold mb-1"
@@ -203,7 +207,7 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ onClose, onImportCom
         </div>
 
         {/* Content */}
-        <div className="flex-1 p-6 overflow-y-auto min-h-0">
+        <div className="flex min-h-0 flex-1 items-center overflow-y-auto px-6 py-6">
           <AnimatePresence mode="wait">
             <motion.div
               key={currentStep}
@@ -211,7 +215,7 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ onClose, onImportCom
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -20 }}
               transition={{ duration: 0.3, ease: "easeInOut" }}
-              className="h-full"
+              className="w-full"
             >
               {renderStep()}
             </motion.div>
@@ -219,8 +223,8 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ onClose, onImportCom
         </div>
 
         {/* Footer */}
-        <div 
-          className="p-6 border-t flex justify-between items-center flex-shrink-0"
+        <div
+          className="flex flex-shrink-0 items-center justify-between gap-4 border-t bg-gray-50/80 px-6 py-4"
           style={{ 
             borderColor: 'var(--gray--200)',
             borderBottomLeftRadius: 'var(--radius--16px)',

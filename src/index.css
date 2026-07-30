@@ -120,15 +120,52 @@ body {
 }
 
 .module-tabs {
-  @apply flex min-h-11 items-center gap-1 overflow-x-auto rounded-xl bg-gradient-to-r from-gray-100 to-gray-200 p-1;
+  @apply flex min-h-[78px] w-full items-center gap-2 overflow-x-auto rounded-2xl border border-gray-200 bg-white px-5 py-4 shadow-[0_1px_2px_rgba(15,23,42,0.03)];
+}
+
+.module-tabs > nav {
+  @apply flex flex-nowrap items-center gap-2;
 }
 
 .module-tab {
-  @apply whitespace-nowrap rounded-lg px-4 py-2.5 text-sm font-medium text-gray-500 transition-colors hover:text-gray-900;
+  @apply inline-flex h-10 shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-full border border-gray-200 bg-white px-4 text-sm font-medium text-gray-700 transition-colors hover:border-gray-300 hover:bg-gray-50 hover:text-gray-950;
+}
+
+.module-tab svg {
+  @apply h-4 w-4 shrink-0;
 }
 
 .module-tab-active {
-  @apply bg-white text-gray-900 shadow-sm;
+  @apply border-gray-950 bg-gray-950 text-white shadow-none hover:border-gray-950 hover:bg-gray-950 hover:text-white;
+}
+
+.section-header {
+  @apply flex min-h-[58px] w-full items-center justify-between gap-3 rounded-2xl border border-gray-200 bg-white px-4 py-3 shadow-[0_1px_2px_rgba(15,23,42,0.03)];
+}
+
+.section-header-title {
+  @apply truncate text-lg font-semibold text-gray-950;
+}
+
+.section-header-actions {
+  @apply flex shrink-0 items-center gap-2;
+}
+
+.section-segmented {
+  @apply relative flex h-10 shrink-0 items-center rounded-xl border border-gray-200 bg-gray-100 p-1;
+}
+
+.section-segmented-option {
+  @apply relative z-10 inline-flex h-8 min-w-[64px] items-center justify-center rounded-lg px-3 text-sm font-medium text-gray-500 transition-colors hover:text-gray-900;
+}
+
+.section-segmented-option-active {
+  @apply text-gray-950;
+}
+
+.section-segmented-indicator {
+  @apply absolute left-1 top-1 h-8 rounded-lg bg-white shadow-sm;
+  width: calc(50% - 0.25rem);
 }
 
 /* Codex-style chat step animations */

@@ -27,6 +27,7 @@ export interface Product {
   name: string;
   category: string;
   price: number;
+  costPrice?: number;
   stock: number;
   /**
    * Stock still sellable right now = stock − quantity reserved in other
@@ -35,6 +36,11 @@ export interface Product {
    */
   availableStock?: number;
   barcode: string;
+  sku?: string;
+  reorderThreshold?: number;
+  unitName?: string;
+  packSize?: number;
+  preferredSupplierId?: number | null;
   imageUrl?: string;
 }
 

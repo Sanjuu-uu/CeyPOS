@@ -55,7 +55,7 @@ export const Support: React.FC = () => {
     {
       id: '1',
       question: 'How do I add a new product to inventory?',
-      answer: 'Navigate to the Inventory module, click the "Add Product" button, fill in the product details including name, category, price, and stock quantity, then click Save.',
+      answer: 'Navigate to the Inventory module, click "Add Product", then enter the product name, category, selling price, cost price, stock quantity, reorder threshold, unit or pack size, barcode, SKU and supplier if needed.',
       category: 'Inventory'
     },
     {

@@ -1,4 +1,4 @@
-import * as sqlite3 from 'sqlite3';
+import { createRequire } from 'module';
 import {
   getShopDatabasePath,
   sanitizeShopIdentifier,
@@ -8,6 +8,8 @@ import { applyReadLimit, validateReadOnlySql } from './sql-safety.js';
 import { applySearchFallback, normalizeToolResult } from './search-fallback.js';
 
 type QueryRow = Record<string, unknown>;
+const require = createRequire(import.meta.url);
+const sqlite3 = require('sqlite3') as typeof import('sqlite3');
 
 function normalizeShopId(shopId: string): string {
   const trimmed = String(shopId ?? '')
@@ -26,7 +28,7 @@ function normalizeShopId(shopId: string): string {
 
 function sanitizeSqlQuery(rawQuery: string): string {
   const validation = validateReadOnlySql(rawQuery);
-  if (!validation.ok) {
+  if (validation.ok === false) {
     throw new Error(validation.error);
   }
   return applyReadLimit(validation.sql, 80);

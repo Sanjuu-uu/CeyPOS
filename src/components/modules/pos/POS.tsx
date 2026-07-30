@@ -6,12 +6,10 @@ import {
   X,
   ScanBarcode,
   AlertCircle,
-  MonitorPlay,
 } from "lucide-react";
 import { db, normalizeKey } from "../../../lib/db";
 import { useApp } from "../../../context/AppContext";
 import { Product, CartItem, KeyboardShortcuts } from "../../../types";
-import { Button } from "../../ui/Button";
 
 type InventoryUpdatedPayload = { shopId?: string; items?: Product[] };
 const isInventoryUpdatedPayload = (
@@ -497,29 +495,9 @@ export const POS: React.FC = () => {
     return () => unsubscribe();
   }, [currentShop]);
 
-  const simulateScan = () => {
-    keepScannerAwake();
-    if (products.length > 0) {
-      pushToQueue(
-        products[Math.floor(Math.random() * products.length)].barcode,
-      );
-    }
-  };
-
   return (
-    <div className="flex h-[calc(100vh-80px)] flex-col overflow-hidden">
-      <div className="page-action-row mb-4 shrink-0">
-        <p className="page-subheading">Process sales and manage customer orders</p>
-        <Button
-          variant="outline"
-          icon={<MonitorPlay size={16} />}
-          onClick={simulateScan}
-        >
-          Simulate Scan
-        </Button>
-      </div>
-
-      <div className="flex flex-col md:flex-row flex-1 gap-4 min-h-0 relative">
+    <div className="flex h-full min-h-0 flex-col items-center overflow-hidden">
+      <div className="relative flex w-full max-w-[1440px] flex-1 flex-col gap-4 min-h-0 md:flex-row">
         {scanError && (
           <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded-xl shadow-lg flex items-center gap-3 animate-in slide-in-from-top-4 fade-in duration-300">
             <div className="bg-red-100 p-2 rounded-full">
@@ -611,7 +589,7 @@ export const POS: React.FC = () => {
           </div>
         </div>
 
-        <div className="w-full md:w-[400px] flex-shrink-0 bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden flex flex-col">
+        <div className="w-full flex-shrink-0 bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden flex flex-col md:w-[360px]">
           <ShoppingCart />
         </div>
       </div>

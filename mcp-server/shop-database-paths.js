@@ -12,6 +12,8 @@ const SHOP_DATABASE_DIRECTORY = process.env.RAILWAY_VOLUME_MOUNT_PATH
 const SHOP_DATABASE_DIRECTORIES = Array.from(
   new Set([
     SHOP_DATABASE_DIRECTORY,
+    path.resolve(__dirname, '../server/database'),
+    path.resolve(process.cwd(), 'server/database'),
     path.resolve(process.cwd(), '../database'),
     path.resolve(process.cwd(), 'database'),
   ]),

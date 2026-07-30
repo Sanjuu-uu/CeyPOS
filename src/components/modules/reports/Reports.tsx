@@ -566,20 +566,23 @@ export const Reports: React.FC = () => {
   /* ---- inventory report ---- */
   const inventoryReport = useMemo(() => {
     const totalProducts = products.length;
-    const totalValue = products.reduce((s, p) => s + (p.price || 0) * (p.stock || 0), 0);
+    const stockValue = products.reduce((s, p) => s + (p.costPrice || 0) * (p.stock || 0), 0);
+    const retailValue = products.reduce((s, p) => s + (p.price || 0) * (p.stock || 0), 0);
+    const grossProfit = retailValue - stockValue;
     const totalUnits = products.reduce((s, p) => s + (p.stock || 0), 0);
     const lowStockItems = products
-      .filter((p) => (p.stock || 0) < 10)
+      .filter((p) => (p.stock || 0) <= (p.reorderThreshold || 10))
       .sort((a, b) => (a.stock || 0) - (b.stock || 0));
     const outOfStock = products.filter((p) => (p.stock || 0) === 0).length;
     const inStock = products.filter((p) => (p.stock || 0) >= 10).length;
+    const reorderItems = products.filter((p) => (p.stock || 0) <= (p.reorderThreshold || 10)).length;
 
     const catMap: Record<string, { count: number; value: number }> = {};
     products.forEach((p) => {
       const c = p.category || 'Uncategorized';
       if (!catMap[c]) catMap[c] = { count: 0, value: 0 };
       catMap[c].count++;
-      catMap[c].value += (p.price || 0) * (p.stock || 0);
+      catMap[c].value += (p.costPrice || 0) * (p.stock || 0);
     });
     const sortedCats = Object.entries(catMap)
       .map(([label, d]) => ({ label, value: d.value, count: d.count }))
@@ -607,7 +610,7 @@ export const Reports: React.FC = () => {
 
     const availability = totalProducts ? ((totalProducts - outOfStock) / totalProducts) * 100 : 0;
 
-    return { totalProducts, totalValue, totalUnits, lowStockItems, outOfStock, categoryBars, stockHealth, availability };
+    return { totalProducts, stockValue, retailValue, grossProfit, totalUnits, lowStockItems, outOfStock, reorderItems, categoryBars, stockHealth, availability };
   }, [products]);
 
   /* ---- customer report ---- */
@@ -642,9 +645,9 @@ export const Reports: React.FC = () => {
 
   /* ---- tabs ---- */
   const reportTypes = [
-    { id: 'sales' as const, name: 'Sales', icon: <DollarSign size={18} /> },
-    { id: 'inventory' as const, name: 'Inventory', icon: <Package size={18} /> },
-    { id: 'customers' as const, name: 'Customers', icon: <Users size={18} /> },
+    { id: 'sales' as const, name: 'Sales' },
+    { id: 'inventory' as const, name: 'Inventory' },
+    { id: 'customers' as const, name: 'Customers' },
   ];
 
   /* ---- CSV export ---- */
@@ -665,9 +668,12 @@ export const Reports: React.FC = () => {
       rows = [
         ['Metric', 'Value'],
         ['Total Products', inventoryReport.totalProducts],
-        ['Inventory Value', inventoryReport.totalValue.toFixed(2)],
+        ['Stock Valuation', inventoryReport.stockValue.toFixed(2)],
+        ['Retail Value', inventoryReport.retailValue.toFixed(2)],
+        ['Gross Profit', inventoryReport.grossProfit.toFixed(2)],
         ['Units in Stock', inventoryReport.totalUnits],
         ['Out of Stock', inventoryReport.outOfStock],
+        ['Reorder Items', inventoryReport.reorderItems],
         [],
         ['Category', 'Value', 'Products'],
         ...inventoryReport.categoryBars.map((c) => [c.label, c.value.toFixed(2), c.sub || '']),
@@ -707,20 +713,19 @@ export const Reports: React.FC = () => {
       </div>
 
       {/* Controls */}
-      <div className="flex flex-col lg:flex-row gap-4 lg:items-center lg:justify-between">
-        <div className="inline-flex bg-gray-100 rounded-full p-1 w-fit">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        <div className="module-tabs lg:flex-1">
+          <nav>
           {reportTypes.map((report) => (
             <button
               key={report.id}
               onClick={() => setSelectedReport(report.id)}
-              className={`inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-all ${
-                selectedReport === report.id ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-800'
-              }`}
+              className={`module-tab ${selectedReport === report.id ? 'module-tab-active' : ''}`}
             >
-              {report.icon}
               {report.name}
             </button>
           ))}
+          </nav>
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
@@ -911,14 +916,14 @@ export const Reports: React.FC = () => {
       {selectedReport === 'inventory' && (
         <div className="space-y-6">
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <KpiCard label="Inventory Value" value={formatCurrency(inventoryReport.totalValue)} icon={<DollarSign size={18} />} accent />
+            <KpiCard label="Stock Valuation" value={formatCurrency(inventoryReport.stockValue)} icon={<DollarSign size={18} />} accent />
+            <KpiCard label="Gross Profit" value={formatCurrency(inventoryReport.grossProfit)} icon={<DollarSign size={18} />} />
             <KpiCard label="Total Products" value={String(inventoryReport.totalProducts)} icon={<Package size={18} />} />
-            <KpiCard label="Units in Stock" value={inventoryReport.totalUnits.toLocaleString()} icon={<Boxes size={18} />} />
-            <KpiCard label="Out of Stock" value={String(inventoryReport.outOfStock)} icon={<AlertTriangle size={18} />} />
+            <KpiCard label="Reorder Items" value={String(inventoryReport.reorderItems)} icon={<AlertTriangle size={18} />} />
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <Card title="Value by Category" subtitle="Top categories by stock value" className="border border-gray-100 lg:col-span-2">
+            <Card title="Valuation by Category" subtitle="Top categories by stock value at cost" className="border border-gray-100 lg:col-span-2">
               <HorizontalBarChart data={inventoryReport.categoryBars} formatter={formatCurrency} />
             </Card>
             <Card title="Availability" subtitle="Products in stock" className="border border-gray-100 self-start">
@@ -930,14 +935,14 @@ export const Reports: React.FC = () => {
             <Card title="Stock Health" className="border border-gray-100">
               <Donut data={inventoryReport.stockHealth} centerValue={String(inventoryReport.totalProducts)} centerLabel="products" />
             </Card>
-            <Card title="Low Stock Alert" subtitle="Fewer than 10 units" className="border border-gray-100 lg:col-span-2">
+            <Card title="Reorder Alert" subtitle="At or below reorder threshold" className="border border-gray-100 lg:col-span-2">
               {inventoryReport.lowStockItems.length > 0 ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-72 overflow-y-auto">
                   {inventoryReport.lowStockItems.map((product) => (
                     <div key={product.id} className="flex items-center justify-between p-3 rounded-lg bg-gray-50">
                       <div className="min-w-0">
                         <p className="font-medium text-gray-800 truncate">{product.name}</p>
-                        <p className="text-xs text-gray-500">{product.category || 'Uncategorized'}</p>
+                        <p className="text-xs text-gray-500">{product.category || 'Uncategorized'} · reorder at {product.reorderThreshold || 10}</p>
                       </div>
                       <span
                         className={`text-sm font-semibold px-2.5 py-1 rounded-full whitespace-nowrap ml-2 ${

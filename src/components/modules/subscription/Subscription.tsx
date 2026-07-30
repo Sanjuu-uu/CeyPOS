@@ -177,55 +177,48 @@ export const Subscription: React.FC = () => {
                       } hover:shadow-lg transition-all duration-200 flex flex-col`}
                     >
                       <div className="p-6 space-y-4 flex-grow">
-                        {/* --- CHANGE: Toggle ADDED back here --- */}
-                        <div className="flex justify-between items-start">
-                          <div className="flex items-center gap-3">
-                            <div
-                              className="hidden"
-                            >
-                            </div>
-                            <h3 className="font-semibold text-lg text-gray-900">
-                              {plan.title}
-                            </h3>
-                          </div>
+                        <div className="section-header">
+                          <h3 className="section-header-title">
+                            {plan.title}
+                          </h3>
 
-                          {/* --- FIX: Re-engineered Toggle --- */}
-                          <div className="relative flex-shrink-0 flex w-36 items-center rounded-lg bg-gray-100 p-1 border border-transparent hover:border-gray-300 transition-colors">
-                            <button
-                              onClick={() => setBillingPeriod("monthly")}
-                              className={`relative z-10 h-7 w-1/2 rounded-md px-1 py-0 text-xs text-center font-medium transition-colors ${
-                                billingPeriod === "monthly"
-                                  ? "text-gray-900"
-                                  : "text-gray-500 hover:text-gray-700"
-                              }`}
-                            >
-                              Monthly
-                            </button>
-                            <button
-                              onClick={() => setBillingPeriod("annual")}
-                              className={`relative z-10 h-7 w-1/2 rounded-md px-1 py-0 text-xs text-center font-medium transition-colors ${
-                                billingPeriod === "annual"
-                                  ? "text-gray-900"
-                                  : "text-gray-500 hover:text-gray-700"
-                              }`}
-                            >
-                              Annual
-                            </button>
-                            <motion.div
-                              layout
-                              transition={{
-                                type: "spring",
-                                stiffness: 300,
-                                damping: 30,
-                              }}
-                              className={`absolute left-0.5 top-0.5 h-8 w-1/2 rounded-md bg-white shadow-sm ${
-                                billingPeriod === "annual"
-                                  ? "translate-x-full"
-                                  : "translate-x-0"
-                              }`}
-                            />
+                          <div className="section-header-actions">
+                            <div className="section-segmented">
+                              <button
+                                onClick={() => setBillingPeriod("monthly")}
+                                className={`section-segmented-option ${
+                                  billingPeriod === "monthly"
+                                    ? "section-segmented-option-active"
+                                    : ""
+                                }`}
+                              >
+                                Monthly
+                              </button>
+                              <button
+                                onClick={() => setBillingPeriod("annual")}
+                                className={`section-segmented-option ${
+                                  billingPeriod === "annual"
+                                    ? "section-segmented-option-active"
+                                    : ""
+                                }`}
+                              >
+                                Annual
+                              </button>
+                              <motion.div
+                                layout
+                                transition={{
+                                  type: "spring",
+                                  stiffness: 300,
+                                  damping: 30,
+                                }}
+                                className={`section-segmented-indicator ${
+                                  billingPeriod === "annual"
+                                    ? "translate-x-full"
+                                    : "translate-x-0"
+                                }`}
+                              />
+                            </div>
                           </div>
-                          {/* --- END FIX --- */}
                         </div>
 
                         {/* Conditional Price Display */}

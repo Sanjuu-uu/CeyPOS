@@ -110,10 +110,64 @@ type InventoryRow = {
   name: string;
   category?: string | null;
   price?: number | null;
+  cost_price?: number | null;
   stock?: number | null;
   image_url?: string | null;
   sku?: string | null;
+  reorder_threshold?: number | null;
+  unit_name?: string | null;
+  pack_size?: number | null;
+  preferred_supplier_id?: number | null;
 };
+
+export interface InventorySupplier {
+  supplier_id: number;
+  name: string;
+  contact_name?: string | null;
+  phone?: string | null;
+  email?: string | null;
+  address?: string | null;
+  notes?: string | null;
+  status: string;
+}
+
+export interface InventoryPurchaseOrder {
+  po_id: number;
+  po_number: string;
+  supplier_id?: number | null;
+  supplier_name?: string | null;
+  status: string;
+  expected_at?: string | null;
+  notes?: string | null;
+  subtotal?: number | null;
+  created_at: string;
+}
+
+export interface InventoryMovement {
+  movement_id: number;
+  inventory_code: string;
+  product_name?: string | null;
+  movement_type: string;
+  stock_type: string;
+  quantity_delta: number;
+  quantity_after: number;
+  unit_cost?: number | null;
+  source_type?: string | null;
+  reason?: string | null;
+  notes?: string | null;
+  created_at: string;
+}
+
+export interface InventoryOperationsSnapshot {
+  suppliers: InventorySupplier[];
+  purchaseOrders: InventoryPurchaseOrder[];
+  goodsReceived: Array<Record<string, unknown>>;
+  purchaseReturns: Array<Record<string, unknown>>;
+  stockCounts: Array<Record<string, unknown>>;
+  adjustmentReasons: Array<Record<string, unknown>>;
+  movements: InventoryMovement[];
+  variants: Array<Record<string, unknown>>;
+}
 
 type CustomerRow = {
   customer_id: number;
@@ -476,9 +530,15 @@ function toProduct(shopKey: string, row: InventoryRow): Product {
     name: row.name,
     category: row.category || "Uncategorized",
     price: Number(row.price ?? 0),
+    costPrice: Number(row.cost_price ?? 0),
     stock,
     availableStock: Math.max(0, stock - reserved),
     barcode: row.barcode_id || "",
+    sku: row.sku || undefined,
+    reorderThreshold: Number(row.reorder_threshold ?? row.restock_suggestion ?? 0),
+    unitName: row.unit_name || "unit",
+    packSize: Number(row.pack_size ?? 1),
+    preferredSupplierId: row.preferred_supplier_id ?? null,
     imageUrl: row.image_url || undefined,
   };
 }
@@ -1445,6 +1505,96 @@ export const db = {
       const codes = payload?.codes ? toStringArray(payload.codes) : uniqueIds;
       removeInventoryRows(shopKey, codes);
       return codes;
+    },
+  },
+  inventoryOperations: {
+    async load(shopId: string): Promise<InventoryOperationsSnapshot> {
+      const cleanShopId = normalizeShopId(shopId);
+      const response = await authFetch(
+        `${API_BASE}/api/inventory/${encodeURIComponent(cleanShopId)}/operations`,
+      );
+      const body = await response.json();
+      if (!response.ok || body?.ok === false) {
+        throw new Error(body?.error || "Failed to load inventory operations");
+      }
+      return body.data as InventoryOperationsSnapshot;
+    },
+    async saveSupplier(shopId: string, supplier: Record<string, unknown>): Promise<InventoryOperationsSnapshot> {
+      const cleanShopId = normalizeShopId(shopId);
+      const response = await authFetch(`${API_BASE}/api/inventory/${encodeURIComponent(cleanShopId)}/suppliers`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(supplier),
+      });
+      const body = await response.json();
+      if (!response.ok || body?.ok === false) throw new Error(body?.error || "Failed to save supplier");
+      return body.data as InventoryOperationsSnapshot;
+    },
+    async createPurchaseOrder(shopId: string, payload: Record<string, unknown>): Promise<InventoryOperationsSnapshot> {
+      const cleanShopId = normalizeShopId(shopId);
+      const response = await authFetch(`${API_BASE}/api/inventory/${encodeURIComponent(cleanShopId)}/purchase-orders`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const body = await response.json();
+      if (!response.ok || body?.ok === false) throw new Error(body?.error || "Failed to create purchase order");
+      return body.data as InventoryOperationsSnapshot;
+    },
+    async receiveGoods(shopId: string, payload: Record<string, unknown>): Promise<{ operations: InventoryOperationsSnapshot; rows?: InventoryRow[] }> {
+      const cleanShopId = normalizeShopId(shopId);
+      const response = await authFetch(`${API_BASE}/api/inventory/${encodeURIComponent(cleanShopId)}/goods-received`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const body = await response.json();
+      if (!response.ok || body?.ok === false) throw new Error(body?.error || "Failed to receive goods");
+      return body.data;
+    },
+    async createPurchaseReturn(shopId: string, payload: Record<string, unknown>): Promise<{ operations: InventoryOperationsSnapshot; rows?: InventoryRow[] }> {
+      const cleanShopId = normalizeShopId(shopId);
+      const response = await authFetch(`${API_BASE}/api/inventory/${encodeURIComponent(cleanShopId)}/purchase-returns`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const body = await response.json();
+      if (!response.ok || body?.ok === false) throw new Error(body?.error || "Failed to create purchase return");
+      return body.data;
+    },
+    async adjustStock(shopId: string, payload: Record<string, unknown>): Promise<{ operations: InventoryOperationsSnapshot; rows?: InventoryRow[] }> {
+      const cleanShopId = normalizeShopId(shopId);
+      const response = await authFetch(`${API_BASE}/api/inventory/${encodeURIComponent(cleanShopId)}/adjustments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const body = await response.json();
+      if (!response.ok || body?.ok === false) throw new Error(body?.error || "Failed to adjust stock");
+      return body.data;
+    },
+    async createStockCount(shopId: string, payload: Record<string, unknown>): Promise<{ operations: InventoryOperationsSnapshot; rows?: InventoryRow[] }> {
+      const cleanShopId = normalizeShopId(shopId);
+      const response = await authFetch(`${API_BASE}/api/inventory/${encodeURIComponent(cleanShopId)}/stock-counts`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const body = await response.json();
+      if (!response.ok || body?.ok === false) throw new Error(body?.error || "Failed to create stock count");
+      return body.data;
+    },
+    async saveVariant(shopId: string, payload: Record<string, unknown>): Promise<InventoryOperationsSnapshot> {
+      const cleanShopId = normalizeShopId(shopId);
+      const response = await authFetch(`${API_BASE}/api/inventory/${encodeURIComponent(cleanShopId)}/variants`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const body = await response.json();
+      if (!response.ok || body?.ok === false) throw new Error(body?.error || "Failed to save variant");
+      return body.data as InventoryOperationsSnapshot;
     },
   },
   sales: {

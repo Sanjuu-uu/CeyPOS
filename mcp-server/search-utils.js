@@ -10,7 +10,14 @@ export const SEARCH_ENTITIES = {
     table: 'inventory',
     columns: ['name', 'category', 'sku', 'inventory_code', 'barcode_id'],
     select:
-      'item_id, inventory_code, barcode_id, name, category, sku, price, stock, restock_suggestion',
+      'item_id, inventory_code, barcode_id, name, category, sku, price, cost_price, stock, restock_suggestion, reorder_threshold, unit_name, pack_size, preferred_supplier_id',
+    primaryColumn: 'name',
+  },
+  query_inventory_operations: {
+    table: 'inventory_suppliers',
+    columns: ['name', 'contact_name', 'phone', 'email', 'address', 'notes', 'status'],
+    select:
+      'supplier_id, name, contact_name, phone, email, address, notes, status, created_at, updated_at',
     primaryColumn: 'name',
   },
   query_customers: {
@@ -141,6 +148,12 @@ export function detectSearchableEntityFromSql(query) {
   if (/\bfrom\s+customers\b/.test(normalized) || /\bjoin\s+customers\b/.test(normalized)) {
     return 'query_customers';
   }
+  if (
+    /\bfrom\s+inventory_(suppliers|purchase_orders|purchase_order_items|goods_received|goods_received_items|purchase_returns|purchase_return_items|stock_counts|stock_count_items|adjustment_reasons|movements|product_variants)\b/.test(normalized) ||
+    /\bjoin\s+inventory_(suppliers|purchase_orders|purchase_order_items|goods_received|goods_received_items|purchase_returns|purchase_return_items|stock_counts|stock_count_items|adjustment_reasons|movements|product_variants)\b/.test(normalized)
+  ) {
+    return 'query_inventory_operations';
+  }
   if (/\bfrom\s+inventory\b/.test(normalized) || /\bjoin\s+inventory\b/.test(normalized)) {
     return 'query_inventory';
   }
@@ -158,8 +171,8 @@ export function extractSearchTermsFromSql(query) {
   const terms = new Set();
   const sqlNoise = new Set(['select', 'from', 'where', 'and', 'or', 'in', 'null', 'like', 'not', 'is']);
   const patterns = [
-    /(?:name|sku|barcode_id|inventory_code|email|phone|category)\s*(?:=|LIKE)\s*'([^']+)'/gi,
-    /(?:name|sku|barcode_id|inventory_code|email|phone|category)\s*(?:=|LIKE)\s*"([^"]+)"/gi,
+    /(?:name|contact_name|sku|barcode_id|inventory_code|email|phone|category|supplier_name|status)\s*(?:=|LIKE)\s*'([^']+)'/gi,
+    /(?:name|contact_name|sku|barcode_id|inventory_code|email|phone|category|supplier_name|status)\s*(?:=|LIKE)\s*"([^"]+)"/gi,
     /\bIN\s*\(\s*'([^']+)'/gi,
   ];
 
@@ -187,7 +200,7 @@ export function looksLikeSearchQuery(query) {
   if (!/\bwhere\b/.test(normalized)) return false;
 
   return (
-    /\b(name|sku|barcode_id|inventory_code|email|phone|category)\s*(=|like|in)\s/.test(normalized) ||
+    /\b(name|contact_name|sku|barcode_id|inventory_code|email|phone|category|supplier_name|status)\s*(=|like|in)\s/.test(normalized) ||
     /\blike\b/.test(normalized)
   );
 }

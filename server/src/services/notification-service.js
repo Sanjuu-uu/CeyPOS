@@ -69,7 +69,10 @@ export function notifyLowStock({ shopId, rows }) {
   const created = [];
   for (const row of rows || []) {
     const stock = Number(row.stock || 0);
-    const threshold = Math.max(0, Number(row.restock_suggestion || 0));
+    const threshold = Math.max(
+      0,
+      Number(row.reorder_threshold ?? row.reorderThreshold ?? row.restock_suggestion ?? 0),
+    );
     if (stock > threshold) continue;
     created.push(...createNotifications({
       shopId,

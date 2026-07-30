@@ -113,10 +113,10 @@ export const RegisterTerminalWizard: React.FC<RegisterTerminalWizardProps> = ({
   return (
     <div className="fixed inset-0 z-40">
       <div
-        className={`absolute right-0 bottom-0 top-[40px] ${sidebarCollapsed ? "md:left-16" : "md:left-60"} bg-black/10 backdrop-blur-sm`}
+        className={`absolute right-0 bottom-0 top-[60px] left-0 ${sidebarCollapsed ? "md:left-16" : "md:left-60"} bg-black/10 backdrop-blur-sm`}
       />
       <div
-        className={`absolute right-0 bottom-0 top-[65px] ${sidebarCollapsed ? "md:left-16" : "md:left-60"} flex items-center justify-center px-3 py-2 md:px-5 md:py-3`}
+        className={`absolute right-0 bottom-0 top-[60px] left-0 ${sidebarCollapsed ? "md:left-16" : "md:left-60"} flex items-center justify-center p-4 md:p-6`}
       >
         <motion.div
           className="relative z-10 w-full max-w-2xl flex flex-col bg-white shadow-2xl overflow-hidden"

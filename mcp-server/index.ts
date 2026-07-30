@@ -23,51 +23,52 @@ const toErrorContent = (error: unknown) => {
   };
 };
 
-const inventoryQuerySchema = z
-  .object({
-    shopId: z.string().describe('The shop ID'),
-    query: z.string().describe('SQL query to execute on inventory table'),
-  })
-  .strict();
+const inventoryQuerySchema = {
+  shopId: z.string().describe('The shop ID'),
+  query: z.string().describe('SQL query to execute on inventory product tables'),
+};
 
-const salesQuerySchema = z
-  .object({
-    shopId: z.string().describe('The shop ID'),
-    query: z.string().describe('SQL query to execute on sales tables'),
-  })
-  .strict();
+const inventoryOperationsQuerySchema = {
+  shopId: z.string().describe('The shop ID'),
+  query: z
+    .string()
+    .describe(
+      'SQL query to execute on inventory lifecycle tables such as suppliers, purchase orders, goods received, returns, stock counts, movements, adjustment reasons, and variants',
+    ),
+};
 
-const customersQuerySchema = z
-  .object({
-    shopId: z.string().describe('The shop ID'),
-    query: z.string().describe('SQL query to execute on customers table'),
-  })
-  .strict();
+const salesQuerySchema = {
+  shopId: z.string().describe('The shop ID'),
+  query: z.string().describe('SQL query to execute on sales tables'),
+};
 
-const schemaRequestSchema = z
-  .object({
-    shopId: z.string().describe('The shop ID'),
-  })
-  .strict();
+const customersQuerySchema = {
+  shopId: z.string().describe('The shop ID'),
+  query: z.string().describe('SQL query to execute on customers table'),
+};
 
-const sampleDataSchema = z
-  .object({
-    shopId: z.string().describe('The shop ID'),
-    table: z.string().describe('Table name'),
-    limit: z.number().optional().describe('Number of rows to return'),
-  })
-  .strict();
+const schemaRequestSchema = {
+  shopId: z.string().describe('The shop ID'),
+};
+
+const sampleDataSchema = {
+  shopId: z.string().describe('The shop ID'),
+  table: z.string().describe('Table name'),
+  limit: z.number().optional().describe('Number of rows to return'),
+};
 
 const server = new McpServer({
   name: 'ceypos-mcp-server',
   version: '1.0.0',
 });
+const registerTool = server.registerTool.bind(server) as any;
 
 // Tool to query inventory
-server.registerTool(
+registerTool(
   'query_inventory',
   {
-    description: 'Query the inventory table for product information',
+    description:
+      'Query inventory products, including cost price, stock, reorder thresholds, units, pack sizes, barcode and supplier preference fields',
     inputSchema: inventoryQuerySchema,
   },
   async ({ shopId, query }) => {
@@ -80,8 +81,25 @@ server.registerTool(
   }
 );
 
+registerTool(
+  'query_inventory_operations',
+  {
+    description:
+      'Query inventory lifecycle records: suppliers, purchase orders, goods received, purchase returns, stock-count sessions, adjustment reasons, damaged/expired/missing/promotional movements, movement ledger, and variants',
+    inputSchema: inventoryOperationsQuerySchema,
+  },
+  async ({ shopId, query }) => {
+    try {
+      const result = await queryShopDatabaseWithSearch(shopId, query, 'query_inventory_operations');
+      return toSuccessContent(compactSearchQueryResult(result));
+    } catch (error) {
+      return toErrorContent(error);
+    }
+  }
+);
+
 // Tool to query sales
-server.registerTool(
+registerTool(
   'query_sales',
   {
     description: 'Query sales-related tables (transactions, transaction_items, daily_sales)',
@@ -98,7 +116,7 @@ server.registerTool(
 );
 
 // Tool to query customers
-server.registerTool(
+registerTool(
   'query_customers',
   {
     description: 'Query the customers table',
@@ -115,7 +133,7 @@ server.registerTool(
 );
 
 // Tool to get schema
-server.registerTool(
+registerTool(
   'get_schema',
   {
     description: 'Get the database schema for a shop',
@@ -132,7 +150,7 @@ server.registerTool(
 );
 
 // Tool to get sample data
-server.registerTool(
+registerTool(
   'get_sample_data',
   {
     description: 'Get sample data from a table',

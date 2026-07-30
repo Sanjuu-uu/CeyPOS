@@ -8,19 +8,19 @@ interface WizardStepIndicatorProps {
 
 export const WizardStepIndicator: React.FC<WizardStepIndicatorProps> = ({ steps, currentStep }) => {
   return (
-    <div className="w-full">
-      <div className="flex items-center justify-between mb-4">
+    <div className="w-full px-1">
+      <div className="mb-4 flex items-center justify-between">
         {steps.map((step, index) => {
           const stepNumber = index + 1;
           const isCompleted = stepNumber < currentStep;
           const isActive = stepNumber === currentStep;
           
           return (
-            <div key={index} className="flex items-center flex-1">
+            <div key={index} className="flex min-w-0 flex-1 items-center">
               {/* Step Circle */}
               <div className="flex items-center">
                 <div                  className={`
-                    w-10 h-10 rounded-full flex items-center justify-center text-sm font-medium transition-all duration-200
+                    flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-sm font-medium transition-all duration-200
                     ${isCompleted 
                       ? 'text-black' 
                       : isActive 
@@ -47,7 +47,7 @@ export const WizardStepIndicator: React.FC<WizardStepIndicatorProps> = ({ steps,
               {/* Connector Line */}
               {index < steps.length - 1 && (
                 <div 
-                  className="flex-1 h-0.5 mx-4 transition-all duration-200"                  style={{
+                  className="mx-4 h-0.5 flex-1 transition-all duration-200"                  style={{
                     backgroundColor: stepNumber < currentStep 
                       ? '#c5f542' 
                       : 'var(--gray--200)',
@@ -60,7 +60,7 @@ export const WizardStepIndicator: React.FC<WizardStepIndicatorProps> = ({ steps,
       </div>
       
       {/* Step Labels */}
-      <div className="flex justify-between">
+      <div className="grid" style={{ gridTemplateColumns: `repeat(${steps.length}, minmax(0, 1fr))` }}>
         {steps.map((step, index) => {
           const stepNumber = index + 1;
           const isActive = stepNumber === currentStep;
@@ -68,7 +68,7 @@ export const WizardStepIndicator: React.FC<WizardStepIndicatorProps> = ({ steps,
           return (
             <div 
               key={index} 
-              className="text-sm font-medium text-center flex-1"
+              className="truncate px-2 text-center text-sm font-medium"
               style={{
                 color: isActive ? 'var(--gray--900)' : 'var(--gray--500)',
               }}
