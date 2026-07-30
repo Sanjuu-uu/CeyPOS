@@ -12,6 +12,42 @@ import { RegisterTerminalWizard } from "./RegisterTerminalWizard";
 type MobileSessionType = "barcode" | "checkout";
 type SessionType = MobileSessionType | "register";
 
+type RegisterShift = {
+  shiftId: string;
+  terminalId: string;
+  memberName?: string | null;
+  status: "open" | "closed";
+  startedAt: string;
+  endedAt?: string | null;
+  openingFloat: number;
+  cashPaidIn: number;
+  cashPaidOut: number;
+  expectedCash: number;
+  actualClosingCash?: number | null;
+  variance?: number | null;
+  closingNotes?: string;
+  managerApprovalStatus?: string;
+  report?: {
+    cashSales?: number;
+    cashTransactions?: number;
+    expectedCash?: number;
+    actualClosingCash?: number;
+    variance?: number;
+  } | null;
+  movements?: Array<{
+    movementId: string;
+    type: "paid_in" | "paid_out";
+    amount: number;
+    reason?: string;
+    notes?: string;
+    memberName?: string | null;
+    createdAt: string;
+  }>;
+};
+
+const money = (value: number | null | undefined) =>
+  `$${Number(value || 0).toFixed(2)}`;
+
 // ─── Mobile Session Wizard (QR flow) ─────────────────────────────────────────
 
 interface SessionWizardProps {
@@ -400,6 +436,17 @@ export const Sessions: React.FC = () => {
   const [sessionScanUrls, setSessionScanUrls] = useState<
     Record<string, { scanUrl: string; expiresAt: string }>
   >({});
+  const terminalId = currentUser?.terminalId || "primary";
+  const [openShift, setOpenShift] = useState<RegisterShift | null>(null);
+  const [shiftHistory, setShiftHistory] = useState<RegisterShift[]>([]);
+  const [shiftLoading, setShiftLoading] = useState(false);
+  const [shiftError, setShiftError] = useState<string | null>(null);
+  const [openingFloat, setOpeningFloat] = useState("");
+  const [movementType, setMovementType] = useState<"paid_in" | "paid_out">("paid_in");
+  const [movementAmount, setMovementAmount] = useState("");
+  const [movementReason, setMovementReason] = useState("");
+  const [actualClosingCash, setActualClosingCash] = useState("");
+  const [closingNotes, setClosingNotes] = useState("");
 
   const registerTerminalLimit = memberScope?.plan.maxRegisterTerminals ?? 0;
   const registerTerminalCount = registerTerminals.length;
@@ -469,9 +516,106 @@ export const Sessions: React.FC = () => {
     }
   }, [shopId, userEmail]);
 
+  const refreshRegisterShifts = useCallback(async () => {
+    if (!shopId || !userEmail) return;
+    setShiftLoading(true);
+    setShiftError(null);
+    try {
+      const data = await getJSON<{
+        ok: boolean;
+        openShift: RegisterShift | null;
+        history: RegisterShift[];
+      }>(
+        `/api/terminals/shifts?shopId=${encodeURIComponent(shopId)}&userEmail=${encodeURIComponent(userEmail)}&terminalId=${encodeURIComponent(terminalId)}`,
+      );
+      setOpenShift(data.openShift || null);
+      setShiftHistory(data.history || []);
+    } catch (err) {
+      setShiftError(err instanceof Error ? err.message : "Failed to load register shifts");
+    } finally {
+      setShiftLoading(false);
+    }
+  }, [shopId, terminalId, userEmail]);
+
   useEffect(() => {
     void refreshActiveSessions();
   }, [refreshActiveSessions]);
+
+  useEffect(() => {
+    void refreshRegisterShifts();
+  }, [refreshRegisterShifts]);
+
+  const openRegisterShift = async () => {
+    if (!shopId || !userEmail) return;
+    setShiftLoading(true);
+    setShiftError(null);
+    try {
+      const data = await postJSON<{ openShift: RegisterShift | null; history: RegisterShift[] }>(
+        "/api/terminals/shifts/open",
+        { shopId, userEmail, terminalId, openingFloat: Number(openingFloat || 0) },
+      );
+      setOpenShift(data.openShift || null);
+      setShiftHistory(data.history || []);
+      setOpeningFloat("");
+    } catch (err) {
+      setShiftError(err instanceof Error ? err.message : "Failed to open register");
+    } finally {
+      setShiftLoading(false);
+    }
+  };
+
+  const addCashMovement = async () => {
+    if (!shopId || !userEmail || !openShift) return;
+    setShiftLoading(true);
+    setShiftError(null);
+    try {
+      const data = await postJSON<{ openShift: RegisterShift | null; history: RegisterShift[] }>(
+        "/api/terminals/shifts/movement",
+        {
+          shopId,
+          userEmail,
+          terminalId,
+          type: movementType,
+          amount: Number(movementAmount || 0),
+          reason: movementReason,
+        },
+      );
+      setOpenShift(data.openShift || null);
+      setShiftHistory(data.history || []);
+      setMovementAmount("");
+      setMovementReason("");
+    } catch (err) {
+      setShiftError(err instanceof Error ? err.message : "Failed to add cash movement");
+    } finally {
+      setShiftLoading(false);
+    }
+  };
+
+  const closeRegisterShift = async () => {
+    if (!shopId || !userEmail || !openShift) return;
+    setShiftLoading(true);
+    setShiftError(null);
+    try {
+      const data = await postJSON<{ openShift: RegisterShift | null; history: RegisterShift[] }>(
+        "/api/terminals/shifts/close",
+        {
+          shopId,
+          userEmail,
+          terminalId,
+          actualClosingCash: Number(actualClosingCash || 0),
+          closingNotes,
+        },
+      );
+      setOpenShift(data.openShift || null);
+      setShiftHistory(data.history || []);
+      setActualClosingCash("");
+      setClosingNotes("");
+    } catch (err) {
+      setShiftError(err instanceof Error ? err.message : "Failed to close register");
+    } finally {
+      setShiftLoading(false);
+    }
+  };
 
   useEffect(() => {
     if (!shopId) return;
@@ -720,6 +864,263 @@ export const Sessions: React.FC = () => {
           </motion.div>
         ))}
       </div>
+
+      <Card
+        title="Cash register shift"
+        subtitle="Open, reconcile and close this terminal cash drawer"
+        actions={
+          <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-600">
+            {terminalId}
+          </span>
+        }
+      >
+        <div className="space-y-5">
+          {shiftError && (
+            <div className="rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700">
+              {shiftError}
+            </div>
+          )}
+
+          {!openShift ? (
+            <div className="grid gap-4 lg:grid-cols-[1fr,320px]">
+              <div className="rounded-2xl border border-[#eeeeeb] bg-[#fafafa] p-5">
+                <p className="text-sm font-semibold text-gray-900">
+                  Register closed
+                </p>
+                <p className="mt-1 text-sm text-gray-500">
+                  Start a register shift before taking cash payments so opening
+                  float, expected cash and end-of-day variance can be reconciled.
+                </p>
+              </div>
+              <div className="rounded-2xl border border-[#eeeeeb] bg-white p-4">
+                <label className="text-xs font-medium uppercase tracking-wide text-gray-500">
+                  Opening float
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={openingFloat}
+                  onChange={(event) => setOpeningFloat(event.target.value)}
+                  placeholder="0.00"
+                  className="mt-2 w-full rounded-xl border border-gray-200 px-4 py-3 text-sm outline-none focus:border-[#c5f542]"
+                />
+                <Button
+                  className="mt-3 w-full"
+                  disabled={shiftLoading}
+                  onClick={() => void openRegisterShift()}
+                >
+                  Open Register
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <>
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+                {[
+                  ["Opening float", openShift.openingFloat],
+                  ["Cash paid in", openShift.cashPaidIn],
+                  ["Cash paid out", openShift.cashPaidOut],
+                  ["Expected cash", openShift.expectedCash],
+                  ["Variance", openShift.variance ?? 0],
+                ].map(([label, value]) => (
+                  <div
+                    key={String(label)}
+                    className="rounded-2xl border border-[#eeeeeb] bg-[#fafafa] p-4"
+                  >
+                    <p className="text-xs text-gray-500">{label}</p>
+                    <p className="mt-2 text-xl font-semibold text-gray-900">
+                      {money(Number(value))}
+                    </p>
+                  </div>
+                ))}
+              </div>
+
+              <div className="grid gap-4 lg:grid-cols-2">
+                <div className="rounded-2xl border border-[#eeeeeb] bg-white p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-semibold text-gray-900">
+                        Cash paid in/out
+                      </p>
+                      <p className="text-xs text-gray-500">
+                        Record petty cash, bank drops, drawer top-ups and removals.
+                      </p>
+                    </div>
+                    <select
+                      value={movementType}
+                      onChange={(event) =>
+                        setMovementType(event.target.value as "paid_in" | "paid_out")
+                      }
+                      className="rounded-full border border-gray-200 px-3 py-2 text-xs outline-none focus:border-[#c5f542]"
+                    >
+                      <option value="paid_in">Paid in</option>
+                      <option value="paid_out">Paid out</option>
+                    </select>
+                  </div>
+                  <div className="mt-4 grid gap-3 md:grid-cols-[150px,1fr]">
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={movementAmount}
+                      onChange={(event) => setMovementAmount(event.target.value)}
+                      placeholder="Amount"
+                      className="rounded-xl border border-gray-200 px-4 py-3 text-sm outline-none focus:border-[#c5f542]"
+                    />
+                    <input
+                      value={movementReason}
+                      onChange={(event) => setMovementReason(event.target.value)}
+                      placeholder="Reason or note"
+                      className="rounded-xl border border-gray-200 px-4 py-3 text-sm outline-none focus:border-[#c5f542]"
+                    />
+                  </div>
+                  <Button
+                    className="mt-3"
+                    disabled={shiftLoading || !movementAmount}
+                    onClick={() => void addCashMovement()}
+                  >
+                    Add Movement
+                  </Button>
+                </div>
+
+                <div className="rounded-2xl border border-[#eeeeeb] bg-white p-4">
+                  <p className="text-sm font-semibold text-gray-900">
+                    Close register
+                  </p>
+                  <p className="text-xs text-gray-500">
+                    Count the drawer, enter actual cash and add closing notes.
+                    Any variance requires manager approval.
+                  </p>
+                  <div className="mt-4 grid gap-3 md:grid-cols-[170px,1fr]">
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={actualClosingCash}
+                      onChange={(event) => setActualClosingCash(event.target.value)}
+                      placeholder="Actual cash"
+                      className="rounded-xl border border-gray-200 px-4 py-3 text-sm outline-none focus:border-[#c5f542]"
+                    />
+                    <input
+                      value={closingNotes}
+                      onChange={(event) => setClosingNotes(event.target.value)}
+                      placeholder="Closing notes"
+                      className="rounded-xl border border-gray-200 px-4 py-3 text-sm outline-none focus:border-[#c5f542]"
+                    />
+                  </div>
+                  <Button
+                    variant="dark"
+                    className="mt-3"
+                    disabled={shiftLoading || !actualClosingCash}
+                    onClick={() => void closeRegisterShift()}
+                  >
+                    Close Shift
+                  </Button>
+                  {memberScope?.role === "cashier" && (
+                    <p className="mt-2 text-xs text-gray-500">
+                      Cashiers can close only balanced shifts. A manager must
+                      approve any over/short variance.
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              {openShift.movements && openShift.movements.length > 0 && (
+                <div className="rounded-2xl border border-[#eeeeeb] bg-white">
+                  <div className="border-b border-[#eeeeeb] px-4 py-3">
+                    <p className="text-sm font-semibold text-gray-900">
+                      Current shift movements
+                    </p>
+                  </div>
+                  <div className="divide-y divide-[#eeeeeb]">
+                    {openShift.movements.slice(0, 5).map((movement) => (
+                      <div
+                        key={movement.movementId}
+                        className="flex items-center justify-between gap-3 px-4 py-3 text-sm"
+                      >
+                        <div>
+                          <p className="font-medium text-gray-900">
+                            {movement.type === "paid_in" ? "Cash paid in" : "Cash paid out"}
+                          </p>
+                          <p className="text-xs text-gray-500">
+                            {movement.reason || "No reason"} ·{" "}
+                            {new Date(movement.createdAt).toLocaleString()}
+                          </p>
+                        </div>
+                        <p className="font-semibold text-gray-900">
+                          {movement.type === "paid_out" ? "-" : "+"}
+                          {money(movement.amount)}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+
+          <div className="rounded-2xl border border-[#eeeeeb] bg-white">
+            <div className="flex items-center justify-between border-b border-[#eeeeeb] px-4 py-3">
+              <p className="text-sm font-semibold text-gray-900">
+                Per-terminal shift history
+              </p>
+              <button
+                onClick={() => void refreshRegisterShifts()}
+                className="rounded-full border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-700 hover:border-gray-900"
+              >
+                Refresh
+              </button>
+            </div>
+            <div className="divide-y divide-[#eeeeeb]">
+              {shiftHistory.length === 0 ? (
+                <div className="px-4 py-6 text-center text-sm text-gray-500">
+                  No shift history yet.
+                </div>
+              ) : (
+                shiftHistory.slice(0, 8).map((shift) => (
+                  <div
+                    key={shift.shiftId}
+                    className="grid gap-3 px-4 py-3 text-sm md:grid-cols-[1.3fr,repeat(4,minmax(0,1fr))]"
+                  >
+                    <div>
+                      <p className="font-medium text-gray-900">
+                        {shift.status === "open" ? "Open shift" : "Closed shift"}
+                      </p>
+                      <p className="text-xs text-gray-500">
+                        {new Date(shift.startedAt).toLocaleString()}
+                        {shift.endedAt ? ` — ${new Date(shift.endedAt).toLocaleString()}` : ""}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500">Expected</p>
+                      <p className="font-medium">{money(shift.expectedCash)}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500">Actual</p>
+                      <p className="font-medium">
+                        {shift.actualClosingCash === null || shift.actualClosingCash === undefined
+                          ? "—"
+                          : money(shift.actualClosingCash)}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500">Variance</p>
+                      <p className="font-medium">{money(shift.variance ?? 0)}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500">End-of-day</p>
+                      <p className="font-medium">
+                        {shift.report?.cashTransactions ?? 0} cash sales
+                      </p>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      </Card>
 
       {/* Active Sessions */}
       <Card title="Active sessions" subtitle="Connected devices and pending mobile links">

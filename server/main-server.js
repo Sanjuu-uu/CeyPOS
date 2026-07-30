@@ -74,11 +74,13 @@ import smsReceiptRoutes from "./src/routes/sms-receipts.js";
 import receiptRoutes from "./src/routes/receipts.js";
 import subscriptionRoutes from "./src/routes/subscription.js";
 import notificationRoutes from "./src/routes/notifications.js";
+import adminOpsRoutes from "./src/routes/admin-ops.js";
 import { ensureAllShopDatabasesSchema } from "./src/utils/shop-database.js";
 import { SHOP_DATABASE_DIRECTORY } from "./src/utils/shop-database.js";
 import { migrateLegacyReceiptTokensDb } from "./src/services/receipt-tokens.js";
 import { openGlobalVerificationDatabase } from "./src/utils/global-verification-database.js";
 import { openGlobalBarcodeDatabase } from "./src/utils/global-barcode-database.js";
+import { startBackupScheduler } from "./src/services/admin-ops-service.js";
 
 try {
   const initialized = ensureAllShopDatabasesSchema();
@@ -254,6 +256,7 @@ app.use("/api/sms-receipts", smsReceiptRoutes);
 app.use("/api/receipts", receiptRoutes);
 app.use("/api/subscription", subscriptionRoutes);
 app.use("/api/notifications", notificationRoutes);
+app.use("/api/admin", adminOpsRoutes);
 
 // Serve static files from the dist directory (built frontend)
 const distPath = path.join(process.cwd(), "../dist");
@@ -302,6 +305,7 @@ init(server, {
 
 server.listen(PORT, HOST, () => {
   console.log(`CeyPos Main server running on ${HOST}:${PORT}`);
+  startBackupScheduler();
 });
 
 process.on("uncaughtException", (err) => {

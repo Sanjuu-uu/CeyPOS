@@ -26,6 +26,20 @@ export const SEARCH_ENTITIES = {
     select: 'customer_id, name, email, phone, total_spent, visit_count, last_visit, points_balance',
     primaryColumn: 'name',
   },
+  query_sales: {
+    table: 'transactions',
+    columns: ['receipt_id', 'transaction_code', 'invoice_number', 'idempotency_key', 'payment_method', 'served_by_display_name', 'terminal_id'],
+    select:
+      'transaction_id, receipt_id, transaction_code, invoice_number, idempotency_key, customer_id, subtotal, discount, tax, surcharge, total, total_cents, payment_method, created_at, terminal_id, served_by_member_id, served_by_display_name',
+    primaryColumn: 'invoice_number',
+  },
+  query_register_shifts: {
+    table: 'member_shifts',
+    columns: ['shift_id', 'terminal_id', 'member_id', 'status', 'closing_notes', 'manager_approval_status'],
+    select:
+      'shift_id, shop_id, terminal_id, member_id, started_at, ended_at, status, opening_float_cents, cash_paid_in_cents, cash_paid_out_cents, expected_cash_cents, actual_closing_cash_cents, variance_cents, closing_notes, manager_approval_status, manager_approved_by_member_id, manager_approved_at',
+    primaryColumn: 'shift_id',
+  },
 };
 
 export function escapeSqlLiteral(value) {
@@ -149,6 +163,18 @@ export function detectSearchableEntityFromSql(query) {
     return 'query_customers';
   }
   if (
+    /\bfrom\s+(member_shifts|register_cash_movements|shop_terminals)\b/.test(normalized) ||
+    /\bjoin\s+(member_shifts|register_cash_movements|shop_terminals)\b/.test(normalized)
+  ) {
+    return 'query_register_shifts';
+  }
+  if (
+    /\bfrom\s+(transactions|transaction_items|daily_sales|checkout_audit_records|checkout_invoice_sequences)\b/.test(normalized) ||
+    /\bjoin\s+(transactions|transaction_items|daily_sales|checkout_audit_records|checkout_invoice_sequences)\b/.test(normalized)
+  ) {
+    return 'query_sales';
+  }
+  if (
     /\bfrom\s+inventory_(suppliers|purchase_orders|purchase_order_items|goods_received|goods_received_items|purchase_returns|purchase_return_items|stock_counts|stock_count_items|adjustment_reasons|movements|product_variants)\b/.test(normalized) ||
     /\bjoin\s+inventory_(suppliers|purchase_orders|purchase_order_items|goods_received|goods_received_items|purchase_returns|purchase_return_items|stock_counts|stock_count_items|adjustment_reasons|movements|product_variants)\b/.test(normalized)
   ) {
@@ -171,8 +197,8 @@ export function extractSearchTermsFromSql(query) {
   const terms = new Set();
   const sqlNoise = new Set(['select', 'from', 'where', 'and', 'or', 'in', 'null', 'like', 'not', 'is']);
   const patterns = [
-    /(?:name|contact_name|sku|barcode_id|inventory_code|email|phone|category|supplier_name|status)\s*(?:=|LIKE)\s*'([^']+)'/gi,
-    /(?:name|contact_name|sku|barcode_id|inventory_code|email|phone|category|supplier_name|status)\s*(?:=|LIKE)\s*"([^"]+)"/gi,
+    /(?:name|contact_name|sku|barcode_id|inventory_code|email|phone|category|supplier_name|status|receipt_id|transaction_code|invoice_number|idempotency_key|terminal_id|shift_id|member_id|served_by_display_name|closing_notes|manager_approval_status)\s*(?:=|LIKE)\s*'([^']+)'/gi,
+    /(?:name|contact_name|sku|barcode_id|inventory_code|email|phone|category|supplier_name|status|receipt_id|transaction_code|invoice_number|idempotency_key|terminal_id|shift_id|member_id|served_by_display_name|closing_notes|manager_approval_status)\s*(?:=|LIKE)\s*"([^"]+)"/gi,
     /\bIN\s*\(\s*'([^']+)'/gi,
   ];
 
@@ -200,7 +226,7 @@ export function looksLikeSearchQuery(query) {
   if (!/\bwhere\b/.test(normalized)) return false;
 
   return (
-    /\b(name|contact_name|sku|barcode_id|inventory_code|email|phone|category|supplier_name|status)\s*(=|like|in)\s/.test(normalized) ||
+    /\b(name|contact_name|sku|barcode_id|inventory_code|email|phone|category|supplier_name|status|receipt_id|transaction_code|invoice_number|idempotency_key|terminal_id|shift_id|member_id|served_by_display_name|closing_notes|manager_approval_status)\s*(=|like|in)\s/.test(normalized) ||
     /\blike\b/.test(normalized)
   );
 }

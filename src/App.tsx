@@ -29,6 +29,7 @@ import {
 import { authFetch, setAuthTokenGetter } from "./lib/api";
 import OAuthCallback from "./pages/auth/OAuthCallback";
 import PostOAuthRedirect from "./pages/auth/PostOAuthRedirect";
+import AdminPage from "./pages/admin/AdminPage";
 import {
   RegisterPageGate,
   PreAuthWizardRedirect,
@@ -582,6 +583,7 @@ function PostAuthContent({
   return (
     <Routes>
       <Route path="/auth/sso-callback" element={<OAuthCallback />} />
+      <Route path="/admin" element={<AdminPage />} />
       <Route path="/mobilesessions" element={<Navigate to="/mobilesessions/scan" replace />} />
       <Route path="/mobilesessions/scan" element={<MobileScan />} />
       <Route path="/team-onboard" element={<TeamOnboard />} />
@@ -783,6 +785,7 @@ function AppRouter() {
     <Routes>
       <Route path="/r/:token" element={<PublicReceiptView />} />
       <Route path="/auth/sso-callback" element={<OAuthCallback />} />
+      <Route path="/admin" element={isSignedIn ? <AdminPage /> : <Navigate to="/login" replace />} />
       <Route path="/auth/post-oauth" element={<PostOAuthRedirect />} />
       <Route path="/register" element={<RegisterPageGate />} />
       <Route

@@ -24,9 +24,6 @@ import {
   Gift,
   Coins,
   Save,
-  Wifi,
-  WifiOff,
-  RefreshCw,
   Printer,
   MessageSquare,
   Mail,
@@ -226,6 +223,7 @@ export const ShoppingCart: React.FC = () => {
   const viewStateRef = useRef(viewState);
   const cartRef = useRef(cart);
   const showRegisterModalRef = useRef(showRegisterModal);
+  const checkoutIdempotencyKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
     viewStateRef.current = viewState;
@@ -568,6 +566,13 @@ export const ShoppingCart: React.FC = () => {
       return;
     setSaving(true);
     try {
+      if (!checkoutIdempotencyKeyRef.current) {
+        const randomPart =
+          typeof crypto !== "undefined" && "randomUUID" in crypto
+            ? crypto.randomUUID()
+            : `${Date.now()}_${Math.random().toString(36).slice(2)}`;
+        checkoutIdempotencyKeyRef.current = `checkout_${currentShop.id}_${randomPart}`;
+      }
       // Capture the created sale so we can reuse its server-issued id as
       // the canonical receipt number across the receipts list, the email,
       // the SMS, and the public /r/<token> page. Previously we generated a
@@ -575,6 +580,7 @@ export const ShoppingCart: React.FC = () => {
       // INV-XXXXXXXX disagree with the #N shown on the Receipts page.
       const createdSale = await db.sales.create({
         shopId: currentShop.id,
+        idempotencyKey: checkoutIdempotencyKeyRef.current,
         customerInfo: customer
           ? {
               name: customer.name || "",
@@ -586,6 +592,9 @@ export const ShoppingCart: React.FC = () => {
         subtotal: cartTotal,
         tax: taxAmount,
         discount: discountAmount,
+        surcharge: surchargeAmount,
+        selectedDiscountId,
+        activeTaxIds,
         total: finalTotal,
         pointsEarned: totalPointsAwarded,
         pointsRedeemed: actualPointsRedeemed,
@@ -598,6 +607,8 @@ export const ShoppingCart: React.FC = () => {
 
       const canonicalSaleId =
         createdSale?.id || `sale_${Date.now()}`;
+      const canonicalReceiptNumber =
+        createdSale?.invoiceNumber || canonicalSaleId;
       const canonicalTimestamp =
         createdSale?.timestamp || new Date().toISOString();
 
@@ -634,7 +645,7 @@ export const ShoppingCart: React.FC = () => {
             // Use the canonical sale id directly — the server's invoice
             // formatter will turn "8" into "INV-00000008", matching what
             // the Receipts page derives from sale.id.
-            receiptNumber: canonicalSaleId,
+            receiptNumber: canonicalReceiptNumber,
             pointsEarned: totalPointsAwarded,
             pointsRedeemed: actualPointsRedeemed,
           }
@@ -771,6 +782,7 @@ export const ShoppingCart: React.FC = () => {
         setEmailReceiptError(null);
         setSmsReceiptStatus("idle");
         setSmsReceiptError(null);
+        checkoutIdempotencyKeyRef.current = null;
         setSaving(false);
       }, 2000);
     } catch (error) {
@@ -947,36 +959,6 @@ export const ShoppingCart: React.FC = () => {
           <span className="bg-[#ecff76] text-gray-900 text-xs px-2 py-0.5 rounded-full font-bold">
             {cart.length}
           </span>
-
-          {!isOnline && (
-            <span className="ml-2 flex items-center text-[10px] text-gray-500 bg-gray-100 px-2 py-0.5 rounded border border-gray-200">
-              <WifiOff size={10} className="mr-1" /> Offline (Saved Locally)
-            </span>
-          )}
-          {isOnline && syncingOffline && (
-            <span className="ml-2 flex items-center text-[10px] text-blue-500 bg-blue-50 px-2 py-0.5 rounded border border-blue-100 animate-pulse">
-              <RefreshCw size={10} className="mr-1 animate-spin" /> Syncing...
-            </span>
-          )}
-          {isOnline && syncSuccessMsg && (
-            <span className="ml-2 flex items-center text-[10px] font-bold text-green-700 bg-green-50 px-2 py-0.5 rounded border border-green-200 animate-in fade-in zoom-in duration-300">
-              <CheckCircle2 size={10} className="mr-1" /> {syncSuccessMsg}
-            </span>
-          )}
-          {isOnline && syncErrorMsg && !syncingOffline && !syncSuccessMsg && (
-            <button
-              onClick={() => syncOfflineSales()}
-              className="ml-2 flex items-center text-[10px] text-red-500 bg-red-50 px-2 py-0.5 rounded border border-red-100 hover:bg-red-100 transition-colors"
-            >
-              <AlertCircle size={10} className="mr-1" /> {syncErrorMsg} (Click
-              to Retry)
-            </button>
-          )}
-          {isOnline && !syncingOffline && !syncErrorMsg && !syncSuccessMsg && (
-            <span className="ml-2 flex items-center text-[10px] text-green-600 bg-green-50 px-2 py-0.5 rounded border border-green-100">
-              <Wifi size={10} className="mr-1" /> Online
-            </span>
-          )}
         </div>
         {cart.length > 0 && (
           <button

@@ -3,6 +3,8 @@ import { Card } from '../../ui/Card';
 import { Button } from '../../ui/Button';
 import { Input } from '../../ui/Input';
 import { getSearchHash } from '../../../lib/navigationSearch';
+import { useApp } from '../../../context/AppContext';
+import { API_BASE, authFetch } from '../../../lib/api';
 
 interface FAQ {
   id: string;
@@ -21,10 +23,25 @@ interface Ticket {
 }
 
 export const Support: React.FC = () => {
-  type SupportTab = 'help' | 'contact' | 'tickets' | 'resources';
+  type SupportTab = 'help' | 'contact' | 'tickets' | 'chat' | 'resources';
   const [activeTab, setActiveTab] = useState<SupportTab>('help');
+  const { activeShopId, currentShop, currentUser } = useApp();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedFAQ, setSelectedFAQ] = useState<string | null>(null);
+  const [chatConversationId, setChatConversationId] = useState<string>(() => (
+    typeof window === 'undefined' ? '' : localStorage.getItem('ceypos-support-conversation') || ''
+  ));
+  const [chatMessages, setChatMessages] = useState<Array<{
+    id: string;
+    sender_type: 'merchant' | 'admin' | 'system';
+    sender_name?: string;
+    sender_email?: string;
+    message: string;
+    created_at: string;
+  }>>([]);
+  const [chatSubject, setChatSubject] = useState('Support request');
+  const [chatMessage, setChatMessage] = useState('');
+  const [chatStatus, setChatStatus] = useState('');
   const [newTicket, setNewTicket] = useState({
     subject: '',
     category: '',
@@ -37,6 +54,7 @@ export const Support: React.FC = () => {
       faq: 'help',
       contact: 'contact',
       tickets: 'tickets',
+      chat: 'chat',
       resources: 'resources',
     };
     const applySearchHash = () => {
@@ -49,6 +67,27 @@ export const Support: React.FC = () => {
     window.addEventListener('hashchange', applySearchHash);
     return () => window.removeEventListener('hashchange', applySearchHash);
   }, []);
+
+  const loadChat = async (conversationId = chatConversationId) => {
+    if (!conversationId) return;
+    try {
+      const response = await authFetch(`${API_BASE}/api/admin/support/conversations/${encodeURIComponent(conversationId)}/merchant`);
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || payload?.ok === false) throw new Error(payload?.error || `Chat unavailable (${response.status})`);
+      setChatMessages(payload.messages || []);
+      if (payload.conversation?.subject) setChatSubject(payload.conversation.subject);
+      setChatStatus('');
+    } catch (error) {
+      setChatStatus(error instanceof Error ? error.message : 'Unable to load support chat');
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab !== 'chat' || !chatConversationId) return;
+    loadChat(chatConversationId);
+    const timer = window.setInterval(() => loadChat(chatConversationId), 15000);
+    return () => window.clearInterval(timer);
+  }, [activeTab, chatConversationId]);
 
   // Sample FAQ data
   const faqs: FAQ[] = [
@@ -131,6 +170,37 @@ export const Support: React.FC = () => {
     });
   };
 
+  const sendChatMessage = async () => {
+    const message = chatMessage.trim();
+    if (!message) return;
+    setChatStatus('Sending...');
+    try {
+      const response = await authFetch(`${API_BASE}/api/admin/support/conversations`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          conversationId: chatConversationId || null,
+          shopId: activeShopId || currentShop?.id || currentUser?.shopId || null,
+          userName: currentUser?.name || currentShop?.name || 'Merchant',
+          subject: chatSubject || 'Support request',
+          priority: 'medium',
+          message,
+        }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || payload?.ok === false) throw new Error(payload?.error || `Message failed (${response.status})`);
+      if (payload.conversation?.id) {
+        setChatConversationId(payload.conversation.id);
+        localStorage.setItem('ceypos-support-conversation', payload.conversation.id);
+      }
+      setChatMessages(payload.messages || []);
+      setChatMessage('');
+      setChatStatus('Sent to CeyPOS support');
+    } catch (error) {
+      setChatStatus(error instanceof Error ? error.message : 'Unable to send message');
+    }
+  };
+
   const formatDate = (dateString: string) => {
     return new Intl.DateTimeFormat('en-US', {
       month: 'short',
@@ -166,7 +236,7 @@ export const Support: React.FC = () => {
           <Button variant="outline">
             Call Support
           </Button>
-          <Button variant="primary">
+          <Button variant="primary" onClick={() => setActiveTab('chat')}>
             Live Chat
           </Button>
         </div>
@@ -179,6 +249,7 @@ export const Support: React.FC = () => {
             { id: 'help', label: 'Help Center' },
             { id: 'contact', label: 'Contact Us' },
             { id: 'tickets', label: 'My Tickets' },
+            { id: 'chat', label: 'Live Chat' },
             { id: 'resources', label: 'Resources' }
           ].map(tab => (
             <button
@@ -295,7 +366,7 @@ export const Support: React.FC = () => {
                 <div>
                   <p className="font-medium text-gray-900">Live Chat</p>
                   <p className="text-sm text-gray-500">Available 24/7</p>
-                  <Button size="sm" variant="outline" className="mt-2">
+                  <Button size="sm" variant="outline" className="mt-2" onClick={() => setActiveTab('chat')}>
                     Start Chat
                   </Button>
                 </div>
@@ -369,6 +440,72 @@ export const Support: React.FC = () => {
                 Send Message
               </Button>
             </form>
+          </Card>
+        </div>
+      )}
+
+      {activeTab === 'chat' && (
+        <div className="grid grid-cols-1 xl:grid-cols-[360px_1fr] gap-6">
+          <Card title="CeyPOS live support" subtitle="Connected to the admin service desk">
+            <div className="space-y-4 text-sm text-gray-600">
+              <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4">
+                <p className="text-xs uppercase tracking-[0.2em] text-gray-500">Shop</p>
+                <p className="mt-1 font-semibold text-gray-900">{currentShop?.name || activeShopId || 'Current shop'}</p>
+                <p className="mt-1 text-xs text-gray-500">{currentUser?.email || 'Signed-in merchant'}</p>
+              </div>
+              <Input
+                label="Subject"
+                value={chatSubject}
+                onChange={(event) => setChatSubject(event.target.value)}
+                placeholder="What do you need help with?"
+              />
+              <div className="rounded-2xl border border-gray-200 p-4">
+                <p className="font-medium text-gray-900">What admins can see</p>
+                <p className="mt-2">Your shop, account email, conversation history and service status. Payment secrets and customer card data are never sent through chat.</p>
+              </div>
+              {chatStatus && <p className="text-xs text-gray-500">{chatStatus}</p>}
+            </div>
+          </Card>
+
+          <Card title="Conversation" subtitle="Messages refresh automatically while this tab is open">
+            <div className="flex min-h-[460px] flex-col">
+              <div className="flex-1 space-y-3 overflow-y-auto rounded-2xl border border-gray-200 bg-gray-50 p-4">
+                {chatMessages.length === 0 ? (
+                  <div className="flex h-full min-h-[260px] items-center justify-center text-center text-sm text-gray-500">
+                    Send your first message and a CeyPOS admin will see it in the /admin service desk.
+                  </div>
+                ) : (
+                  chatMessages.map((message) => (
+                    <div
+                      key={message.id}
+                      className={`max-w-[82%] rounded-2xl px-4 py-3 ${
+                        message.sender_type === 'merchant'
+                          ? 'ml-auto bg-black text-white'
+                          : 'mr-auto border border-gray-200 bg-white text-gray-900'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-3 text-[11px] opacity-70">
+                        <span>{message.sender_type === 'merchant' ? 'You' : 'CeyPOS Admin'}</span>
+                        <span>{formatDate(message.created_at)}</span>
+                      </div>
+                      <p className="mt-1 whitespace-pre-wrap text-sm">{message.message}</p>
+                    </div>
+                  ))
+                )}
+              </div>
+              <div className="mt-4 flex flex-col gap-3 sm:flex-row">
+                <textarea
+                  value={chatMessage}
+                  onChange={(event) => setChatMessage(event.target.value)}
+                  rows={3}
+                  className="min-h-[76px] flex-1 rounded-2xl border border-gray-300 px-4 py-3 text-sm focus:border-verde-primary focus:outline-none focus:ring-2 focus:ring-verde-primary"
+                  placeholder="Type a message for CeyPOS support..."
+                />
+                <Button variant="primary" className="sm:self-end" onClick={sendChatMessage}>
+                  Send
+                </Button>
+              </div>
+            </div>
           </Card>
         </div>
       )}

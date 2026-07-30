@@ -62,6 +62,8 @@ export interface Customer {
 export interface Sale {
   id: string;
   shopId: string;
+  idempotencyKey?: string;
+  invoiceNumber?: string;
   customerInfo?: {
     name: string;
     email: string;
@@ -72,6 +74,14 @@ export interface Sale {
   subtotal?: number;
   tax?: number;
   discount?: number;
+  surcharge?: number;
+  selectedDiscountId?: number | string | null;
+  activeTaxIds?: number[];
+  managerApproval?: {
+    approvedByRole?: string;
+    approvedByMemberId?: string;
+    approvedAt?: string;
+  } | null;
   pointsEarned?: number;
   pointsRedeemed?: number;
   paymentMethod: "cash" | "card" | "mobile";

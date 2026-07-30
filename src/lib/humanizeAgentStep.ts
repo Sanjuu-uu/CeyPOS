@@ -17,6 +17,7 @@ const TOOL_DOMAIN: Record<string, string> = {
   query_inventory: 'Inventory',
   query_inventory_operations: 'Inventory operations',
   query_sales: 'Sales',
+  query_register_shifts: 'Register shifts',
   query_customers: 'Customers',
   query_general: 'Shop data',
   get_schema: 'Shop records',
@@ -39,6 +40,11 @@ const IDENTIFIER_PHRASES: Record<string, string> = {
   inventory_stock_counts: 'stock counts',
   inventory_movements: 'inventory movement ledger',
   inventory_product_variants: 'product variants',
+  checkout_invoice_sequences: 'checkout invoice sequence',
+  checkout_audit_records: 'checkout audit records',
+  shop_terminals: 'register terminals',
+  member_shifts: 'register shifts',
+  register_cash_movements: 'cash movements',
   shop_meta: 'shop profile',
   item_id: 'product ID',
   inventory_code: 'product code',
@@ -52,6 +58,27 @@ const IDENTIFIER_PHRASES: Record<string, string> = {
   quantity_after: 'stock after change',
   customer_id: 'customer ID',
   payment_method: 'payment method',
+  idempotency_key: 'checkout retry key',
+  invoice_number: 'invoice number',
+  invoice_sequence: 'invoice sequence',
+  subtotal_cents: 'subtotal',
+  discount_cents: 'discount',
+  tax_cents: 'tax',
+  surcharge_cents: 'surcharge',
+  redemption_cents: 'points redemption',
+  total_cents: 'total',
+  terminal_id: 'terminal ID',
+  served_by_member_id: 'cashier ID',
+  served_by_display_name: 'cashier',
+  opening_float_cents: 'opening float',
+  cash_paid_in_cents: 'cash paid in',
+  cash_paid_out_cents: 'cash paid out',
+  expected_cash_cents: 'expected cash',
+  actual_closing_cash_cents: 'actual closing cash',
+  variance_cents: 'variance',
+  closing_notes: 'closing notes',
+  manager_approval_status: 'manager approval',
+  movement_type: 'cash movement type',
   total_sales: 'total sales',
   transactions_count: 'order count',
   created_at: 'date',
@@ -59,6 +86,7 @@ const IDENTIFIER_PHRASES: Record<string, string> = {
   query_inventory: 'inventory lookup',
   query_inventory_operations: 'inventory operations lookup',
   query_sales: 'sales lookup',
+  query_register_shifts: 'register shift lookup',
   query_customers: 'customer lookup',
   query_general: 'data lookup',
   get_schema: 'record structure',
@@ -134,6 +162,22 @@ const inferSqlIntent = (sql: string, domain: string, question?: string | null) =
     };
   }
 
+  if (/\b(member_shifts|register_cash_movements|opening_float|expected_cash|actual_closing_cash|variance|cash_paid_in|cash_paid_out)\b/.test(lower)) {
+    return {
+      domain: 'Register shifts',
+      running: 'Reviewing register reconciliation',
+      doneBase: 'Reviewed register reconciliation',
+    };
+  }
+
+  if (/\b(checkout_audit_records|idempotency_key|invoice_number|invoice_sequence)\b/.test(lower)) {
+    return {
+      domain: 'Sales',
+      running: 'Reviewing checkout audit records',
+      doneBase: 'Reviewed checkout audit records',
+    };
+  }
+
   if (/\brestock|stock\b/.test(lower) && domain === 'Inventory') {
     return {
       domain: 'Inventory',
@@ -163,6 +207,13 @@ const inferSqlIntent = (sql: string, domain: string, question?: string | null) =
         domain: 'Customers',
         running: 'Calculating customer metrics',
         doneBase: 'Calculated customer metrics',
+      };
+    }
+    if (domain === 'Register shifts') {
+      return {
+        domain: 'Register shifts',
+        running: 'Calculating register reconciliation',
+        doneBase: 'Calculated register reconciliation',
       };
     }
     return {
@@ -402,6 +453,11 @@ export const sanitizeUserFacingText = (text: string) => {
     [/inventory_stock_counts/gi, 'stock counts'],
     [/inventory_movements/gi, 'inventory movement ledger'],
     [/inventory_product_variants/gi, 'product variants'],
+    [/checkout_invoice_sequences/gi, 'checkout invoice sequence'],
+    [/checkout_audit_records/gi, 'checkout audit records'],
+    [/shop_terminals/gi, 'register terminals'],
+    [/member_shifts/gi, 'register shifts'],
+    [/register_cash_movements/gi, 'cash movements'],
     [/shop_meta/gi, 'shop profile'],
     [/restock_suggestion/gi, 'restock recommendation'],
     [/reorder_threshold/gi, 'reorder threshold'],
@@ -410,6 +466,27 @@ export const sanitizeUserFacingText = (text: string) => {
     [/quantity_after/gi, 'stock after change'],
     [/inventory_code/gi, 'product code'],
     [/payment_method/gi, 'payment method'],
+    [/idempotency_key/gi, 'checkout retry key'],
+    [/invoice_number/gi, 'invoice number'],
+    [/invoice_sequence/gi, 'invoice sequence'],
+    [/subtotal_cents/gi, 'subtotal'],
+    [/discount_cents/gi, 'discount'],
+    [/tax_cents/gi, 'tax'],
+    [/surcharge_cents/gi, 'surcharge'],
+    [/redemption_cents/gi, 'points redemption'],
+    [/total_cents/gi, 'total'],
+    [/terminal_id/gi, 'terminal ID'],
+    [/served_by_member_id/gi, 'cashier ID'],
+    [/served_by_display_name/gi, 'cashier'],
+    [/opening_float_cents/gi, 'opening float'],
+    [/cash_paid_in_cents/gi, 'cash paid in'],
+    [/cash_paid_out_cents/gi, 'cash paid out'],
+    [/expected_cash_cents/gi, 'expected cash'],
+    [/actual_closing_cash_cents/gi, 'actual closing cash'],
+    [/variance_cents/gi, 'variance'],
+    [/closing_notes/gi, 'closing notes'],
+    [/manager_approval_status/gi, 'manager approval'],
+    [/movement_type/gi, 'cash movement type'],
     [/customer_id/gi, 'customer ID'],
     [/item_id/gi, 'product ID'],
     [/transactions_count/gi, 'order count'],
@@ -426,6 +503,7 @@ export const sanitizeUserFacingText = (text: string) => {
     [/query_inventory_operations/gi, 'inventory operations lookup'],
     [/query_inventory/gi, 'inventory lookup'],
     [/query_sales/gi, 'sales lookup'],
+    [/query_register_shifts/gi, 'register shift lookup'],
     [/query_customers/gi, 'customer lookup'],
     [/query_general/gi, 'data lookup'],
     [/get_schema/gi, 'record structure'],

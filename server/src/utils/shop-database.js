@@ -11,6 +11,7 @@ function resolveShopDatabaseDirectory() {
   const cwd = process.cwd();
   const appDatabaseDir = "/app/database";
   const repoDatabaseDir = path.resolve(cwd, "database");
+  const nestedServerDatabaseDir = path.resolve(cwd, "server/database");
   const serverParentDatabaseDir = path.resolve(cwd, "../database");
 
   if (process.env.NODE_ENV === "production" && (fs.existsSync(appDatabaseDir) || cwd.startsWith("/app"))) {
@@ -23,6 +24,10 @@ function resolveShopDatabaseDirectory() {
 
   if (cwd.endsWith("/server") || cwd.endsWith("/mcp-server")) {
     return serverParentDatabaseDir;
+  }
+
+  if (fs.existsSync(nestedServerDatabaseDir)) {
+    return nestedServerDatabaseDir;
   }
 
   return repoDatabaseDir;
@@ -370,14 +375,50 @@ function initializeShopDatabaseSchema(db) {
     transaction_id INTEGER PRIMARY KEY AUTOINCREMENT,
     receipt_id TEXT UNIQUE,
     transaction_code TEXT UNIQUE,
+    idempotency_key TEXT UNIQUE,
+    invoice_number TEXT UNIQUE,
+    invoice_sequence INTEGER,
     customer_id INTEGER,
     subtotal DECIMAL(10,2),
     discount DECIMAL(10,2),
     tax DECIMAL(10,2),
+    surcharge DECIMAL(10,2) DEFAULT 0,
     total DECIMAL(10,2),
+    subtotal_cents INTEGER DEFAULT 0,
+    discount_cents INTEGER DEFAULT 0,
+    tax_cents INTEGER DEFAULT 0,
+    surcharge_cents INTEGER DEFAULT 0,
+    redemption_cents INTEGER DEFAULT 0,
+    total_cents INTEGER DEFAULT 0,
     payment_method TEXT,
     created_at DATETIME,
     FOREIGN KEY(customer_id) REFERENCES customers(customer_id)
+  );
+
+  CREATE TABLE IF NOT EXISTS checkout_invoice_sequences (
+    shop_id TEXT PRIMARY KEY,
+    next_sequence INTEGER NOT NULL DEFAULT 1,
+    updated_at DATETIME NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS checkout_audit_records (
+    audit_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    shop_id TEXT NOT NULL,
+    idempotency_key TEXT,
+    transaction_id INTEGER,
+    invoice_number TEXT,
+    action TEXT NOT NULL,
+    status TEXT NOT NULL,
+    actor_member_id TEXT,
+    actor_role TEXT,
+    terminal_id TEXT,
+    request_json TEXT,
+    result_json TEXT,
+    message TEXT,
+    ip_address TEXT,
+    user_agent TEXT,
+    created_at DATETIME NOT NULL,
+    FOREIGN KEY(transaction_id) REFERENCES transactions(transaction_id)
   );
   
   CREATE TABLE IF NOT EXISTS transaction_items (
@@ -602,7 +643,38 @@ function initializeShopDatabaseSchema(db) {
     terminal_id TEXT NOT NULL,
     member_id TEXT NOT NULL,
     started_at DATETIME NOT NULL,
-    ended_at DATETIME
+    ended_at DATETIME,
+    status TEXT NOT NULL DEFAULT 'open',
+    opening_float_cents INTEGER NOT NULL DEFAULT 0,
+    cash_paid_in_cents INTEGER NOT NULL DEFAULT 0,
+    cash_paid_out_cents INTEGER NOT NULL DEFAULT 0,
+    expected_cash_cents INTEGER NOT NULL DEFAULT 0,
+    actual_closing_cash_cents INTEGER,
+    variance_cents INTEGER,
+    closing_notes TEXT,
+    manager_approval_status TEXT NOT NULL DEFAULT 'not_required',
+    manager_approved_by_member_id TEXT,
+    manager_approved_at DATETIME,
+    opened_by_member_id TEXT,
+    closed_by_member_id TEXT,
+    end_of_day_report_json TEXT
+  );
+
+  CREATE TABLE IF NOT EXISTS register_cash_movements (
+    movement_id TEXT PRIMARY KEY,
+    shift_id TEXT NOT NULL,
+    shop_id TEXT NOT NULL,
+    terminal_id TEXT NOT NULL,
+    member_id TEXT NOT NULL,
+    movement_type TEXT NOT NULL,
+    amount_cents INTEGER NOT NULL,
+    reason TEXT,
+    notes TEXT,
+    manager_approval_status TEXT NOT NULL DEFAULT 'not_required',
+    manager_approved_by_member_id TEXT,
+    manager_approved_at DATETIME,
+    created_at DATETIME NOT NULL,
+    FOREIGN KEY(shift_id) REFERENCES member_shifts(shift_id)
   );
 
   CREATE TABLE IF NOT EXISTS phone_verification_otps (
@@ -834,14 +906,104 @@ function runTeamWorkflowColumnMigrations(db) {
   addColumnIfMissing("shop_meta", "ai_enabled", "INTEGER DEFAULT 0");
   addColumnIfMissing("shop_meta", "ai_mode", "TEXT");
 
+  addColumnIfMissing("shop_members", "clerk_user_id", "TEXT");
+  addColumnIfMissing("shop_members", "display_name", "TEXT");
+  addColumnIfMissing("shop_members", "role", "TEXT NOT NULL DEFAULT 'cashier'");
+  addColumnIfMissing("shop_members", "status", "TEXT NOT NULL DEFAULT 'active'");
+  addColumnIfMissing("shop_members", "pro_team_seat", "INTEGER DEFAULT 0");
+  addColumnIfMissing("shop_members", "pin_hash", "TEXT");
+  addColumnIfMissing("shop_members", "invited_by_email", "TEXT");
+  addColumnIfMissing("shop_members", "created_at", "DATETIME");
+  addColumnIfMissing("shop_members", "updated_at", "DATETIME");
+  addColumnIfMissing("shop_members", "last_login_at", "DATETIME");
+
+  addColumnIfMissing("shop_terminals", "terminal_type", "TEXT NOT NULL DEFAULT 'primary'");
+  addColumnIfMissing("shop_terminals", "label", "TEXT");
+  addColumnIfMissing("shop_terminals", "status", "TEXT NOT NULL DEFAULT 'active'");
+  addColumnIfMissing("shop_terminals", "device_fingerprint", "TEXT");
+  addColumnIfMissing("shop_terminals", "device_meta", "TEXT");
+  addColumnIfMissing("shop_terminals", "paired_by_member_id", "TEXT");
+  addColumnIfMissing("shop_terminals", "approved_by_member_id", "TEXT");
+  addColumnIfMissing("shop_terminals", "terminal_token_hash", "TEXT");
+  addColumnIfMissing("shop_terminals", "created_at", "DATETIME");
+  addColumnIfMissing("shop_terminals", "last_seen_at", "DATETIME");
+  addColumnIfMissing("shop_terminals", "revoked_at", "DATETIME");
+
+  addColumnIfMissing("terminal_pairing_codes", "status", "TEXT NOT NULL DEFAULT 'active'");
+  addColumnIfMissing("terminal_pairing_codes", "created_by_member_id", "TEXT");
+  addColumnIfMissing("terminal_pairing_codes", "target_terminal_id", "TEXT");
+  addColumnIfMissing("terminal_pairing_codes", "expires_at", "DATETIME");
+  addColumnIfMissing("terminal_pairing_codes", "created_at", "DATETIME");
+
+  addColumnIfMissing("terminal_pairing_requests", "device_meta", "TEXT");
+  addColumnIfMissing("terminal_pairing_requests", "status", "TEXT NOT NULL DEFAULT 'pending'");
+  addColumnIfMissing("terminal_pairing_requests", "requested_at", "DATETIME");
+  addColumnIfMissing("terminal_pairing_requests", "resolved_at", "DATETIME");
+  addColumnIfMissing("terminal_pairing_requests", "resolved_by_member_id", "TEXT");
+
   addColumnIfMissing("transactions", "terminal_id", "TEXT");
   addColumnIfMissing("transactions", "served_by_member_id", "TEXT");
   addColumnIfMissing("transactions", "served_by_display_name", "TEXT");
   addColumnIfMissing("transactions", "served_by_role", "TEXT");
+  addColumnIfMissing("transactions", "idempotency_key", "TEXT");
+  addColumnIfMissing("transactions", "invoice_number", "TEXT");
+  addColumnIfMissing("transactions", "invoice_sequence", "INTEGER");
+  addColumnIfMissing("transactions", "surcharge", "DECIMAL(10,2) DEFAULT 0");
+  addColumnIfMissing("transactions", "subtotal_cents", "INTEGER DEFAULT 0");
+  addColumnIfMissing("transactions", "discount_cents", "INTEGER DEFAULT 0");
+  addColumnIfMissing("transactions", "tax_cents", "INTEGER DEFAULT 0");
+  addColumnIfMissing("transactions", "surcharge_cents", "INTEGER DEFAULT 0");
+  addColumnIfMissing("transactions", "redemption_cents", "INTEGER DEFAULT 0");
+  addColumnIfMissing("transactions", "total_cents", "INTEGER DEFAULT 0");
+
+  try {
+    db.exec(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_transactions_idempotency_key
+        ON transactions(idempotency_key)
+        WHERE idempotency_key IS NOT NULL;
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_transactions_invoice_number
+        ON transactions(invoice_number)
+        WHERE invoice_number IS NOT NULL;
+      CREATE INDEX IF NOT EXISTS idx_checkout_audit_shop_created
+        ON checkout_audit_records(shop_id, created_at);
+      CREATE INDEX IF NOT EXISTS idx_checkout_audit_idempotency
+        ON checkout_audit_records(idempotency_key);
+    `);
+  } catch {
+    // ignore
+  }
 
   addColumnIfMissing("mobile_sessions", "created_by_member_id", "TEXT");
   addColumnIfMissing("mobile_sessions", "terminal_id", "TEXT");
   addColumnIfMissing("mobile_sessions", "scan_url", "TEXT");
+
+  addColumnIfMissing("member_shifts", "status", "TEXT NOT NULL DEFAULT 'open'");
+  addColumnIfMissing("member_shifts", "opening_float_cents", "INTEGER NOT NULL DEFAULT 0");
+  addColumnIfMissing("member_shifts", "cash_paid_in_cents", "INTEGER NOT NULL DEFAULT 0");
+  addColumnIfMissing("member_shifts", "cash_paid_out_cents", "INTEGER NOT NULL DEFAULT 0");
+  addColumnIfMissing("member_shifts", "expected_cash_cents", "INTEGER NOT NULL DEFAULT 0");
+  addColumnIfMissing("member_shifts", "actual_closing_cash_cents", "INTEGER");
+  addColumnIfMissing("member_shifts", "variance_cents", "INTEGER");
+  addColumnIfMissing("member_shifts", "closing_notes", "TEXT");
+  addColumnIfMissing("member_shifts", "manager_approval_status", "TEXT NOT NULL DEFAULT 'not_required'");
+  addColumnIfMissing("member_shifts", "manager_approved_by_member_id", "TEXT");
+  addColumnIfMissing("member_shifts", "manager_approved_at", "DATETIME");
+  addColumnIfMissing("member_shifts", "opened_by_member_id", "TEXT");
+  addColumnIfMissing("member_shifts", "closed_by_member_id", "TEXT");
+  addColumnIfMissing("member_shifts", "end_of_day_report_json", "TEXT");
+
+  try {
+    db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_member_shifts_terminal_status
+        ON member_shifts (shop_id, terminal_id, status);
+      CREATE INDEX IF NOT EXISTS idx_member_shifts_terminal_started
+        ON member_shifts (shop_id, terminal_id, started_at);
+      CREATE INDEX IF NOT EXISTS idx_cash_movements_shift_created
+        ON register_cash_movements (shift_id, created_at);
+    `);
+  } catch {
+    // ignore
+  }
 
   addColumnIfMissing("analytics_conversations", "member_id", "TEXT");
   addColumnIfMissing("analytics_conversations", "scope", "TEXT DEFAULT 'shop'");

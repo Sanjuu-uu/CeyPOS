@@ -170,15 +170,21 @@ Schema summary:
 - inventory_stock_counts(count_id, count_number, status, started_at, completed_at, notes) and inventory_stock_count_items(count_item_id, count_id, inventory_code, expected_quantity, counted_quantity, variance, reason)
 - inventory_adjustment_reasons(reason_id, name, stock_type, direction, is_active), inventory_movements(movement_id, inventory_code, movement_type, stock_type, quantity_delta, quantity_after, unit_cost, source_type, source_id, reason, notes, created_at), inventory_product_variants(...)
 - customers(customer_id, name, email, phone, total_spent, visit_count, last_visit, points_balance, created_at)
-- transactions(transaction_id, receipt_id, transaction_code, customer_id, subtotal, discount, tax, total, payment_method, created_at)
+- transactions(transaction_id, receipt_id, transaction_code, idempotency_key, invoice_number, invoice_sequence, customer_id, subtotal, discount, tax, surcharge, total, subtotal_cents, discount_cents, tax_cents, surcharge_cents, redemption_cents, total_cents, payment_method, created_at, terminal_id, served_by_member_id, served_by_display_name, served_by_role)
 - transaction_items(id, transaction_id, item_id, inventory_code, quantity, unit_price, subtotal)
 - daily_sales(id, shop_id, date, total_sales, transactions_count, top_item)
+- checkout_invoice_sequences(shop_id, next_sequence, updated_at), checkout_audit_records(audit_id, shop_id, idempotency_key, transaction_id, invoice_number, action, status, actor_member_id, actor_role, terminal_id, request_json, result_json, message, ip_address, user_agent, created_at)
+- shop_terminals(terminal_id, shop_id, terminal_type, label, status, paired_by_member_id, approved_by_member_id, created_at, last_seen_at, revoked_at)
+- member_shifts(shift_id, shop_id, terminal_id, member_id, started_at, ended_at, status, opening_float_cents, cash_paid_in_cents, cash_paid_out_cents, expected_cash_cents, actual_closing_cash_cents, variance_cents, closing_notes, manager_approval_status, manager_approved_by_member_id, manager_approved_at, opened_by_member_id, closed_by_member_id, end_of_day_report_json)
+- register_cash_movements(movement_id, shift_id, shop_id, terminal_id, member_id, movement_type, amount_cents, reason, notes, manager_approval_status, manager_approved_by_member_id, manager_approved_at, created_at)
 - inventory_forecast(item_id, item_name, avg_daily_sales, recommended_stock, suggested_restock_date)
 - shop_operating_hours(shop_id, day, open, close, closed), shop_payment_methods(shop_id, method), business_rules_* tables, and analytics chat tables.
 For shop-specific facts, use focused read-only SQL tools unless compact context already provides the exact answer.
 Use the exact column names above. Do not invent columns such as product_name, sale_date, total_revenue, total_orders, or total_transactions.
 For restocking, prefer inventory.reorder_threshold for low-stock thresholds; inventory.restock_suggestion is a suggested reorder quantity, not a boolean flag.
 For stock valuation, use SUM(cost_price * stock). For retail stock value, use SUM(price * stock). For potential gross profit, use SUM((price - cost_price) * stock).
+For checkout money accuracy, prefer *_cents columns when present and divide by 100. Use invoice_number for merchant invoices and idempotency_key/checkout_audit_records for duplicate/retry/audit questions.
+For cash register reconciliation, use member_shifts and register_cash_movements. Expected cash = opening float + cash sales + paid in - paid out; variance = actual closing cash - expected cash. Prefer *_cents columns and divide by 100.
 For product/customer lookup, prefer flexible LIKE '%term%' across name, category, sku, barcode_id, inventory_code (inventory) or name, email, phone (customers). Avoid exact = unless the value is copied verbatim.
 If a lookup returns zero rows, closest-match search runs automatically — still start with flexible LIKE patterns.
 Prefer aggregate SQL and narrow columns. Never request broad SELECT * unless the user asks for raw rows.
@@ -267,13 +273,30 @@ const TOOLS = [
     type: 'function',
     function: {
       name: 'query_sales',
-      description: 'Query sales-related tables (transactions, transaction_items, daily_sales)',
+      description: 'Query sales and checkout tables (transactions, transaction_items, daily_sales, invoice sequence and checkout audit records), including invoice numbers, idempotency keys, cents-based totals, terminal/cashier attribution, discounts, taxes and surcharges',
       parameters: {
         type: 'object',
         properties: {
           query: {
             type: 'string',
             description: 'SQL query to execute on sales tables',
+          },
+        },
+        required: ['query'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'query_register_shifts',
+      description: 'Query cash-register reconciliation tables such as member_shifts, register_cash_movements, shop_terminals and cash transactions for opening float, paid in/out, expected cash, actual closing cash, variance, manager approval, per-terminal shift history and end-of-day reports',
+      parameters: {
+        type: 'object',
+        properties: {
+          query: {
+            type: 'string',
+            description: 'SQL query to execute on register shift, cash movement, terminal and related cash transaction tables',
           },
         },
         required: ['query'],
@@ -593,6 +616,7 @@ const SQL_TOOL_NAMES = new Set([
   'query_inventory',
   'query_inventory_operations',
   'query_sales',
+  'query_register_shifts',
   'query_customers',
   'query_general',
 ]);

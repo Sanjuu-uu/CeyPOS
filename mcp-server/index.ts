@@ -39,7 +39,16 @@ const inventoryOperationsQuerySchema = {
 
 const salesQuerySchema = {
   shopId: z.string().describe('The shop ID'),
-  query: z.string().describe('SQL query to execute on sales tables'),
+  query: z.string().describe('SQL query to execute on sales, checkout, invoice and audit tables'),
+};
+
+const registerShiftsQuerySchema = {
+  shopId: z.string().describe('The shop ID'),
+  query: z
+    .string()
+    .describe(
+      'SQL query to execute on cash-register shift, cash movement, terminal and related cash transaction tables',
+    ),
 };
 
 const customersQuerySchema = {
@@ -102,8 +111,26 @@ registerTool(
 registerTool(
   'query_sales',
   {
-    description: 'Query sales-related tables (transactions, transaction_items, daily_sales)',
+    description:
+      'Query sales and checkout tables: transactions, transaction_items, daily_sales, checkout invoice sequence and checkout audit records, including invoice numbers, idempotency keys, cents totals, discounts, taxes, surcharges and terminal/cashier attribution',
     inputSchema: salesQuerySchema,
+  },
+  async ({ shopId, query }) => {
+    try {
+      const result = await queryShopDatabase(shopId, query);
+      return toSuccessContent(compactSearchQueryResult(result));
+    } catch (error) {
+      return toErrorContent(error);
+    }
+  }
+);
+
+registerTool(
+  'query_register_shifts',
+  {
+    description:
+      'Query cash-register reconciliation records: register opening, opening float, cash paid in/out, expected cash, actual closing cash, variance, closing notes, manager approval, per-terminal shift history and end-of-day reports',
+    inputSchema: registerShiftsQuerySchema,
   },
   async ({ shopId, query }) => {
     try {

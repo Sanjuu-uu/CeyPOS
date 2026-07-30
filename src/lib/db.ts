@@ -1312,6 +1312,9 @@ async function createSaleRecord(sale: Omit<Sale, "id">): Promise<Sale> {
 
   const payload = {
     shopId: cleanShopId,
+    idempotencyKey:
+      sale.idempotencyKey ||
+      `checkout_${cleanShopId}_${Date.now()}_${Math.random().toString(36).slice(2)}`,
     customer: sale.customerInfo || {},
     items: sale.items.map((item) => ({
       item_id: null,
@@ -1325,7 +1328,11 @@ async function createSaleRecord(sale: Omit<Sale, "id">): Promise<Sale> {
       sale.items.reduce((sum, item) => sum + item.price * item.quantity, 0),
     discount: sale.discount || 0,
     tax: sale.tax || 0,
+    surcharge: sale.surcharge || 0,
     total: sale.total,
+    selectedDiscountId: sale.selectedDiscountId ?? null,
+    activeTaxIds: sale.activeTaxIds || [],
+    managerApproval: sale.managerApproval || null,
     pointsEarned: sale.pointsEarned || 0, // SEND POINTS
     pointsRedeemed: sale.pointsRedeemed || 0,
     paymentMethod: sale.paymentMethod,
@@ -1346,7 +1353,19 @@ async function createSaleRecord(sale: Omit<Sale, "id">): Promise<Sale> {
     body: JSON.stringify(payload),
   });
 
-  const body = await res.json();
+  let body: any = null;
+  const responseText = await res.text();
+  try {
+    body = responseText ? JSON.parse(responseText) : null;
+  } catch {
+    body = {
+      ok: false,
+      error: "invalid_server_response",
+      message: responseText?.startsWith("<")
+        ? "Server returned an HTML error page. Check the API route or server logs."
+        : responseText || "Invalid server response",
+    };
+  }
   if (!res.ok || !body?.ok) {
     throw new Error(body?.message || body?.error || "Failed to complete sale");
   }
@@ -1354,6 +1373,8 @@ async function createSaleRecord(sale: Omit<Sale, "id">): Promise<Sale> {
   const saleRecord: Sale = {
     ...sale,
     id: String(body.transactionId ?? Date.now()),
+    invoiceNumber: body.invoiceNumber ? String(body.invoiceNumber) : sale.invoiceNumber,
+    idempotencyKey: payload.idempotencyKey,
     shopId: shopKey,
     timestamp: payload.createdAt,
   };
