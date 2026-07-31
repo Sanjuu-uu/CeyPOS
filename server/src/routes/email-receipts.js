@@ -14,6 +14,13 @@ import {
   buildReceiptSnapshot,
   resolvePublicBaseUrl,
 } from "../services/receipt-snapshot.js";
+import { requireClerkSession } from "../middleware/clerk-auth.js";
+import {
+  requireShopBody,
+  loadShopAuth,
+  requireScope,
+} from "../middleware/shop-auth.js";
+import { WEB_ROUTES } from "./paths.js";
 
 const router = Router();
 
@@ -50,7 +57,13 @@ function isValidEmail(value) {
   );
 }
 
-router.post("/send", async (req, res) => {
+router.post(
+  "/send",
+  requireClerkSession,
+  requireShopBody,
+  loadShopAuth,
+  requireScope("receipts"),
+  async (req, res) => {
   try {
     const { shopId, sale, recipientEmail } = req.body || {};
 
@@ -90,7 +103,7 @@ router.post("/send", async (req, res) => {
       snapshot,
     });
 
-    const publicUrl = `${resolvePublicBaseUrl(req)}/r/${token}`;
+    const publicUrl = `${resolvePublicBaseUrl(req)}${WEB_ROUTES.publicReceipt(token)}`;
 
     const { subject, html, text } = buildReceiptEmail({
       shopName: snapshot.shop?.name,

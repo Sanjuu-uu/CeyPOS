@@ -1,8 +1,7 @@
 import { useEffect, useMemo } from "react";
-import { AuthenticateWithRedirectCallback } from "@clerk/clerk-react";
+import { AuthenticateWithRedirectCallback, useAuth } from "@clerk/clerk-react";
 import { useSearchParams } from "react-router-dom";
 import {
-  parseAccountParam,
   persistAccountIntent,
   readAccountIntent,
   getPostRegisterPath,
@@ -10,6 +9,7 @@ import {
   buildOAuthCallbackUrl,
   buildOAuthRedirectCompleteUrl,
   sanitizeRedirectTarget,
+  type AccountIntent,
 } from "../../lib/authFlow";
 
 /**
@@ -18,10 +18,13 @@ import {
  */
 export default function OAuthCallback() {
   const [params] = useSearchParams();
+  const { isLoaded, isSignedIn } = useAuth();
 
   const intent = useMemo(() => {
-    const fromUrl = parseAccountParam(`?${params.toString()}`);
-    return fromUrl || readAccountIntent() || ("owner" as const);
+    const account = params.get("account");
+    if (account === "employee" || account === "team") return "employee";
+    if (account === "owner") return "owner";
+    return readAccountIntent() || ("owner" as AccountIntent);
   }, [params]);
 
   const flow = params.get("flow") === "login" ? "login" : "register";
@@ -40,6 +43,12 @@ export default function OAuthCallback() {
     buildPostOAuthUrl(intent, destination),
   );
 
+  useEffect(() => {
+    if (isLoaded && isSignedIn) {
+      window.location.replace(postOAuthUrl);
+    }
+  }, [isLoaded, isSignedIn, postOAuthUrl]);
+
   // Diagnostic logging for OAuth callback flow
   try {
     // eslint-disable-next-line no-console
@@ -51,15 +60,17 @@ export default function OAuthCallback() {
       <div className="text-center max-w-sm px-6">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gray-900 mx-auto" />
         <p className="mt-4 text-gray-600">Completing sign in…</p>
-        <AuthenticateWithRedirectCallback
-          signInUrl={callbackUrl}
-          signUpUrl={callbackUrl}
-          signInForceRedirectUrl={postOAuthUrl}
-          signUpForceRedirectUrl={postOAuthUrl}
-          signInFallbackRedirectUrl={postOAuthUrl}
-          signUpFallbackRedirectUrl={postOAuthUrl}
-          continueSignUpUrl={postOAuthUrl}
-        />
+        {!isSignedIn && (
+          <AuthenticateWithRedirectCallback
+            signInUrl={callbackUrl}
+            signUpUrl={callbackUrl}
+            signInForceRedirectUrl={postOAuthUrl}
+            signUpForceRedirectUrl={postOAuthUrl}
+            signInFallbackRedirectUrl={postOAuthUrl}
+            signUpFallbackRedirectUrl={postOAuthUrl}
+            continueSignUpUrl={postOAuthUrl}
+          />
+        )}
       </div>
     </div>
   );

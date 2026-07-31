@@ -7,12 +7,14 @@ import { useApp } from "../../../context/AppContext";
 import { getSearchHash } from "../../../lib/navigationSearch";
 import {
   fetchSubscription,
+  fetchSubscriptionPlans,
   startSubscriptionCheckout,
   cancelSubscription,
   retrySubscription,
   formatCurrency,
   type BillingPeriod,
   type PlanId,
+  type SubscriptionPlanCatalog,
   type SubscriptionSnapshot,
 } from "../../../lib/subscription";
 
@@ -51,6 +53,7 @@ export const Subscription: React.FC = () => {
   }, []);
 
   const [snapshot, setSnapshot] = useState<SubscriptionSnapshot | null>(null);
+  const [planCatalog, setPlanCatalog] = useState<SubscriptionPlanCatalog | null>(null);
   const [loading, setLoading] = useState(true);
   const [busyPlan, setBusyPlan] = useState<PlanId | null>(null);
   const [actionBusy, setActionBusy] = useState(false);
@@ -59,6 +62,22 @@ export const Subscription: React.FC = () => {
 
   const subscription = snapshot?.subscription ?? null;
   const canManage = snapshot?.canManage ?? false;
+  const checkoutConfigured = planCatalog?.configured ?? true;
+
+  useEffect(() => {
+    let mounted = true;
+    fetchSubscriptionPlans()
+      .then((catalog) => {
+        if (mounted) setPlanCatalog(catalog);
+      })
+      .catch(() => {
+        // If the public plan catalog can't be reached, the checkout endpoint
+        // still returns a clear message. Don't block the rest of billing.
+      });
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   const load = useCallback(async () => {
     if (!activeShopId || !userEmail) return;
@@ -107,6 +126,12 @@ export const Subscription: React.FC = () => {
 
   const handleSelectPlan = async (planId: PlanId) => {
     if (!activeShopId || !userEmail) return;
+    if (!checkoutConfigured) {
+      setError(
+        "Online subscription checkout is not configured on this server. Add PayHere merchant credentials before starting paid-plan checkout.",
+      );
+      return;
+    }
     setBusyPlan(planId);
     setError(null);
     try {
@@ -266,6 +291,12 @@ export const Subscription: React.FC = () => {
         <div className="flex items-center gap-2 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
           <AlertCircle size={16} />
           {error}
+        </div>
+      )}
+      {!checkoutConfigured && (
+        <div className="flex items-center gap-2 rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          <AlertCircle size={16} />
+          Online checkout is not configured yet. Add PayHere merchant credentials on the server to enable paid-plan subscriptions.
         </div>
       )}
 
@@ -507,7 +538,8 @@ export const Subscription: React.FC = () => {
                             currentPlan === plan.id &&
                             (!subscription || subscription.billingPeriod === billingPeriod);
                           const isBusy = busyPlan === plan.id;
-                          const disabled = isCurrent || isBusy || loading || !canManage;
+                          const disabled =
+                            isCurrent || isBusy || loading || !canManage || !checkoutConfigured;
 
                           return (
                             <Button
@@ -529,6 +561,8 @@ export const Subscription: React.FC = () => {
                                 ? "Current Plan"
                                 : isBusy
                                   ? "Redirecting…"
+                                  : !checkoutConfigured
+                                    ? "Checkout unavailable"
                                   : !canManage
                                     ? "Owner only"
                                     : subscription?.status === "active"

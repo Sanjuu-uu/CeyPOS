@@ -1,10 +1,12 @@
+import { API_BASE, authFetch } from "./api";
+import { API_ROUTES } from "./apiRoutes";
+import {
+  getTerminalAuthPayload,
+  normalizeTerminalShopId,
+} from "./terminalAuthPayload";
+
 // Client helper for the ZeptoMail-backed email receipt endpoint.
 // All credentials live on the server — this file only forwards sale snapshots.
-
-const apiBase = (): string =>
-  (import.meta.env.VITE_API_URL as string | undefined) ||
-  (import.meta.env.VITE_API_BASE as string | undefined) ||
-  "http://localhost:8080";
 
 export interface EmailReceiptSaleItem {
   name?: string;
@@ -48,14 +50,14 @@ export async function sendEmailReceipt(
   if (!recipientEmail) return { ok: false, error: "invalid_email" };
 
   try {
-    const authToken = localStorage.getItem("pos_auth_token") || "";
-    const response = await fetch(`${apiBase()}/api/email-receipts/send`, {
+    const rawShopId = normalizeTerminalShopId(shopId);
+    const terminalAuth = getTerminalAuthPayload(shopId);
+    const response = await authFetch(`${API_BASE}${API_ROUTES.emailReceipts.send}`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
       },
-      body: JSON.stringify({ shopId, sale, recipientEmail }),
+      body: JSON.stringify({ shopId: rawShopId, sale, recipientEmail, ...terminalAuth }),
     });
 
     let data: EmailReceiptResult = { ok: false };
@@ -84,7 +86,7 @@ export async function sendEmailReceipt(
 
 export async function getEmailReceiptStatus(): Promise<{ configured: boolean }> {
   try {
-    const response = await fetch(`${apiBase()}/api/email-receipts/status`);
+    const response = await fetch(`${API_BASE}${API_ROUTES.emailReceipts.status}`);
     if (!response.ok) return { configured: false };
     const data = (await response.json()) as { configured?: boolean };
     return { configured: Boolean(data.configured) };

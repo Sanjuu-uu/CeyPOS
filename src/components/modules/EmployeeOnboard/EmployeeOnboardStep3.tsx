@@ -4,6 +4,8 @@ import { Loader2, MonitorSpeaker, ShieldCheck } from "lucide-react";
 import { useUser } from "@clerk/clerk-react";
 import { useEmployeeOnboard } from "../../../context/EmployeeOnboardContext";
 import { postJSON, authFetch, waitForApiReady } from "../../../lib/api";
+import { API_ROUTES } from "../../../lib/apiRoutes";
+import { APP_ROUTES } from "../../../lib/routes";
 import {
   saveTerminalSession,
 } from "../../../lib/shopContext";
@@ -67,7 +69,10 @@ export const EmployeeOnboardStep3: React.FC = () => {
     const interval = window.setInterval(async () => {
       try {
         const res = await authFetch(
-          `/api/terminals/pairing/status/${encodeURIComponent(requestId)}?shopId=${encodeURIComponent(shopId)}`,
+          API_ROUTES.terminals.pairingStatus(
+            requestId,
+            new URLSearchParams({ shopId }),
+          ),
         );
         const body = await res.json();
         console.debug("[ceypos:pairing] status poll", { requestId, shopId, body });
@@ -78,7 +83,7 @@ export const EmployeeOnboardStep3: React.FC = () => {
             terminalToken: string;
             label?: string;
             error?: string;
-          }>("/api/terminals/pairing/claim", {
+          }>(API_ROUTES.terminals.pairingClaim, {
             shopId,
             userEmail,
             requestId,
@@ -99,7 +104,7 @@ export const EmployeeOnboardStep3: React.FC = () => {
           await db.connectWebSocket(shopId, {
             terminalId: claim.terminalId,
             terminalToken: claim.terminalToken,
-          });
+          }, { userEmail });
 
           const dbFileName =
             formData.dbFileName ||
@@ -143,7 +148,7 @@ export const EmployeeOnboardStep3: React.FC = () => {
           ok: boolean;
           shopId: string;
           dbFileName: string;
-        }>("/api/team/register", {
+        }>(API_ROUTES.team.register, {
           ownerEmail: formData.mainTerminalEmail.trim(),
           userEmail,
           displayName: formData.displayName.trim(),
@@ -222,7 +227,7 @@ export const EmployeeOnboardStep3: React.FC = () => {
       console.log("[ceypos:pairing] submit", payload);
       await waitForApiReady();
       const pairing = await postJSON<{ ok: boolean; requestId: string; error?: string }>(
-        "/api/terminals/pairing/request",
+        API_ROUTES.terminals.pairingRequest,
         payload,
       );
       console.log("[ceypos:pairing] request success", pairing);
@@ -239,12 +244,12 @@ export const EmployeeOnboardStep3: React.FC = () => {
   };
 
   const goToAnalytics = () => {
-    window.location.replace("/analytics");
+    window.location.replace(APP_ROUTES.analytics);
   };
 
   React.useEffect(() => {
     if (pairStatus === "approved") {
-      window.location.replace("/analytics");
+      window.location.replace(APP_ROUTES.analytics);
     }
   }, [pairStatus]);
 

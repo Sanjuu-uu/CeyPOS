@@ -17,6 +17,7 @@ import {
   intentToMetadataAccountType,
   clearAccountIntent,
 } from "../../lib/authFlow";
+import { APP_ROUTES } from "../../lib/routes";
 
 type RegisterAction = "register" | "verify" | "resend" | null;
 
@@ -409,13 +410,13 @@ const Register = () => {
         setError(
           "Email verified successfully! Your account has been created. Please sign in with your credentials.",
         );
-        setTimeout(() => navigate("/login"), 2000);
+        setTimeout(() => navigate(APP_ROUTES.login), 2000);
       } else {
         console.log("Unexpected verification status:", result.status);
         setError(
           "Email verification completed. Please sign in with your email and password.",
         );
-        setTimeout(() => navigate("/login"), 2000);
+        setTimeout(() => navigate(APP_ROUTES.login), 2000);
       }
     } catch (err: any) {
       console.error("Verification error:", err);
@@ -438,7 +439,7 @@ const Register = () => {
         ) {
           errorMessage =
             "Account already exists. Please sign in with your credentials.";
-          setTimeout(() => navigate("/login"), 2000);
+          setTimeout(() => navigate(APP_ROUTES.login), 2000);
         } else if (
           message.toLowerCase().includes("captcha") ||
           message.toLowerCase().includes("bot")
@@ -950,7 +951,7 @@ const Register = () => {
               <p className="text-center text-sm text-gray-600">
                 Already have an account?{" "}
                 <a
-                  href="/login"
+                  href={APP_ROUTES.login}
                   className="text-gray-900 hover:text-gray-700 font-medium"
                 >
                   Sign In

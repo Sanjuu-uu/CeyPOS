@@ -17,11 +17,32 @@ import { getShopSnapshot } from "../services/shop-snapshot.js";
 import { ensureOwnerMember, normalizeEmail } from "../services/team-service.js";
 import { ensurePrimaryTerminal } from "../services/terminal-service.js";
 import { requireClerkSession } from "../middleware/clerk-auth.js";
+import { memberCanAccessShop } from "../middleware/shop-auth.js";
 
 const router = express.Router();
 
+function requireShopReadAccess(req, res, next) {
+  const { shopId } = req.params;
+  if (!shopId) {
+    return res.status(400).json({ error: "shopId is required" });
+  }
+  if (!shopDatabaseExists(shopId)) {
+    return res.status(404).json({ error: "Shop database not found" });
+  }
+
+  const db = openShopDatabase(shopId);
+  try {
+    if (!memberCanAccessShop(db, shopId, req.userEmail)) {
+      return res.status(403).json({ error: "Shop access denied" });
+    }
+    next();
+  } finally {
+    db.close();
+  }
+}
+
 // Backward-compatible lightweight registration (deprecated but kept for integrations)
-router.post("/register", (req, res) => {
+router.post("/register", requireClerkSession, (req, res) => {
   try {
     const { shopId, shop_name, owner_email, location } = req.body || {};
     if (!shopId) {
@@ -181,7 +202,7 @@ router.post("/setup", requireClerkSession, (req, res) => {
 });
 
 // Retrieve stored shop data for verification
-router.get("/:shopId/meta", (req, res) => {
+router.get("/:shopId/meta", requireClerkSession, requireShopReadAccess, (req, res) => {
   try {
     const { shopId } = req.params;
     if (!shopId) {
@@ -226,7 +247,7 @@ router.get("/:shopId/meta", (req, res) => {
 });
 
 // Return consolidated snapshot for realtime clients
-router.get("/:shopId/snapshot", (req, res) => {
+router.get("/:shopId/snapshot", requireClerkSession, requireShopReadAccess, (req, res) => {
   try {
     const { shopId } = req.params;
     if (!shopId) {
@@ -246,7 +267,7 @@ router.get("/:shopId/snapshot", (req, res) => {
 });
 
 // Check if shop database exists without creating it
-router.get("/:shopId/exists", (req, res) => {
+router.get("/:shopId/exists", requireClerkSession, requireShopReadAccess, (req, res) => {
   try {
     const { shopId } = req.params;
     const expectedOwnerEmail = normalizeEmail(req.query.ownerEmail || "");

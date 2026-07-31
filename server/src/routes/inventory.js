@@ -14,6 +14,12 @@ import {
   createStockCount,
   upsertVariant,
 } from "../services/inventory-service.js";
+import { requireClerkSession } from "../middleware/clerk-auth.js";
+import {
+  requireShopBody,
+  loadShopAuth,
+  requireScope,
+} from "../middleware/shop-auth.js";
 
 const router = express.Router();
 const upload = multer({
@@ -44,7 +50,7 @@ const REQUIRED_COLUMNS = [
   "stock",
 ];
 
-router.post("/upload", (req, res, next) => {
+router.post("/upload", requireClerkSession, (req, res, next) => {
   upload.single("file")(req, res, function (err) {
     if (err) {
       let msg = "File upload error";
@@ -61,7 +67,7 @@ router.post("/upload", (req, res, next) => {
     }
     next();
   });
-}, async (req, res) => {
+}, requireShopBody, loadShopAuth, requireScope("inventory"), async (req, res) => {
   let db = null;
   const releaseDb = () => {
     if (db) {
@@ -338,6 +344,8 @@ router.get("/template", async (req, res) => {
     res.status(500).json({ error: 'Failed to generate Excel template' });
   }
 });
+
+router.use("/:shopId", requireClerkSession, requireShopBody, loadShopAuth, requireScope("inventory"));
 
 function requireShop(req, res) {
   const shopId = req.params.shopId || req.query.shopId || req.body?.shopId;

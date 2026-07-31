@@ -1,12 +1,14 @@
+import { API_BASE, authFetch } from "./api";
+import { API_ROUTES } from "./apiRoutes";
+import {
+  getTerminalAuthPayload,
+  normalizeTerminalShopId,
+} from "./terminalAuthPayload";
+
 // Client helper for the token-mint endpoint. Used by the print flow to
 // get a stable public /r/<token> URL that can be encoded into a QR
 // code on the printed receipt. Idempotent on (shopId, transactionCode)
 // so calling this after email/SMS has already sent reuses the same URL.
-
-const apiBase = (): string =>
-  (import.meta.env.VITE_API_URL as string | undefined) ||
-  (import.meta.env.VITE_API_BASE as string | undefined) ||
-  "http://localhost:8080";
 
 export interface MintTokenSale {
   id?: string;
@@ -41,14 +43,14 @@ export async function mintReceiptToken(
 ): Promise<MintTokenResult> {
   if (!shopId) return { ok: false, error: "missing_shop_id" };
   try {
-    const authToken = localStorage.getItem("pos_auth_token") || "";
-    const response = await fetch(`${apiBase()}/api/receipts/mint-token`, {
+    const rawShopId = normalizeTerminalShopId(shopId);
+    const terminalAuth = getTerminalAuthPayload(shopId);
+    const response = await authFetch(`${API_BASE}${API_ROUTES.receipts.mintToken}`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
       },
-      body: JSON.stringify({ shopId, sale }),
+      body: JSON.stringify({ shopId: rawShopId, sale, ...terminalAuth }),
     });
     let data: MintTokenResult = { ok: false };
     try {

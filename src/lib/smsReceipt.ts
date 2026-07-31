@@ -1,11 +1,13 @@
+import { API_BASE, authFetch } from "./api";
+import { API_ROUTES } from "./apiRoutes";
+import {
+  getTerminalAuthPayload,
+  normalizeTerminalShopId,
+} from "./terminalAuthPayload";
+
 // Client helper for the FitSMS-backed SMS receipt endpoint.
 // Credentials live exclusively on the server. This file only forwards the
 // sale snapshot and the recipient phone (which is normalized server-side).
-
-const apiBase = (): string =>
-  (import.meta.env.VITE_API_URL as string | undefined) ||
-  (import.meta.env.VITE_API_BASE as string | undefined) ||
-  "http://localhost:8080";
 
 export interface SmsReceiptSaleItem {
   name?: string;
@@ -52,14 +54,14 @@ export async function sendSmsReceipt(
   if (!recipientPhone) return { ok: false, error: "invalid_phone" };
 
   try {
-    const authToken = localStorage.getItem("pos_auth_token") || "";
-    const response = await fetch(`${apiBase()}/api/sms-receipts/send`, {
+    const rawShopId = normalizeTerminalShopId(shopId);
+    const terminalAuth = getTerminalAuthPayload(shopId);
+    const response = await authFetch(`${API_BASE}${API_ROUTES.smsReceipts.send}`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
       },
-      body: JSON.stringify({ shopId, sale, recipientPhone }),
+      body: JSON.stringify({ shopId: rawShopId, sale, recipientPhone, ...terminalAuth }),
     });
 
     let data: SmsReceiptResult = { ok: false };
@@ -91,7 +93,7 @@ export async function getSmsReceiptStatus(): Promise<{
   balance?: unknown;
 }> {
   try {
-    const response = await fetch(`${apiBase()}/api/sms-receipts/status`);
+    const response = await fetch(`${API_BASE}${API_ROUTES.smsReceipts.status}`);
     if (!response.ok) return { configured: false };
     const data = (await response.json()) as {
       configured?: boolean;

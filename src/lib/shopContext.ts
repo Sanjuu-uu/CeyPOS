@@ -1,5 +1,6 @@
 import type { ShopContextResponse } from "../types/team";
 import { authFetch } from "./api";
+import { API_ROUTES } from "./apiRoutes";
 import {
   loadTerminalSession,
   saveTerminalSession,
@@ -21,7 +22,7 @@ export async function fetchShopContext(
   if (terminalId) params.set("terminalId", terminalId);
   if (terminalToken) params.set("terminalToken", terminalToken);
 
-  const res = await authFetch(`/api/team/context?${params.toString()}`);
+  const res = await authFetch(API_ROUTES.team.context(params));
   const body = await res.json();
   if (!res.ok) {
     throw new Error(body?.error || "Failed to load shop context");

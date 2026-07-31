@@ -8,6 +8,7 @@ import { EmployeeOnboardStep3 } from "./EmployeeOnboardStep3";
 import { EmployeeOnboardProgressBar } from "./EmployeeOnboardProgressBar";
 import { cancelClerkUserAndSignOut } from "../../../lib/authFlow";
 import { postJSON } from "../../../lib/api";
+import { API_ROUTES } from "../../../lib/apiRoutes";
 import backgroundImage from "../../../assets/images.jpg";
 import "../ShopWizard/styles/ShopWizard.css";
 
@@ -87,7 +88,7 @@ export const EmployeeOnboardWizard: React.FC = () => {
 
     if (formData.shopId) {
       try {
-        await postJSON("/api/team/cancel-onboard", {
+        await postJSON(API_ROUTES.team.cancelOnboard, {
           shopId: formData.shopId,
           ownerEmail: formData.mainTerminalEmail.trim(),
         });

@@ -3,6 +3,7 @@ import React, { useRef } from "react";
 import bgVideo from "./bg.mp4";
 import Navigation from "../../pages/components/Navigation";
 import Footer from "../../pages/components/Footer";
+import { APP_ROUTES } from "../../lib/routes";
 
 // Define the feature data (remains the same)
 const features = [
@@ -69,7 +70,7 @@ const Home: React.FC = () => {
   };
 
   const handleStartClick = () => {
-    window.location.href = '/register';
+    window.location.href = APP_ROUTES.register;
   };
 
   return (

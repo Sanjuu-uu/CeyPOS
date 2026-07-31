@@ -15,8 +15,8 @@ import {
   readAccountIntent,
   buildOAuthRedirectCompleteUrl,
   buildOAuthCallbackUrl,
-  buildPostOAuthUrl,
 } from "../../lib/authFlow";
+import { APP_ROUTES } from "../../lib/routes";
 
 type ClerkErrorEntry = {
   code?: string;
@@ -500,14 +500,13 @@ const Login = () => {
     persistAccountIntent(accountIntent);
 
     try {
+      const callbackUrl = buildOAuthRedirectCompleteUrl(
+        buildOAuthCallbackUrl("login", accountIntent, redirectTo),
+      );
       await signIn.authenticateWithRedirect({
         strategy: "oauth_google",
-        redirectUrl: buildOAuthRedirectCompleteUrl(
-          buildOAuthCallbackUrl("login", accountIntent, redirectTo),
-        ),
-        redirectUrlComplete: buildOAuthRedirectCompleteUrl(
-          buildPostOAuthUrl(accountIntent, redirectTo),
-        ),
+        redirectUrl: callbackUrl,
+        redirectUrlComplete: callbackUrl,
       });
     } catch (err: any) {
       console.error("Google login error:", err);
@@ -529,14 +528,13 @@ const Login = () => {
     persistAccountIntent(accountIntent);
 
     try {
+      const callbackUrl = buildOAuthRedirectCompleteUrl(
+        buildOAuthCallbackUrl("login", accountIntent, redirectTo),
+      );
       await signIn.authenticateWithRedirect({
         strategy: "oauth_apple",
-        redirectUrl: buildOAuthRedirectCompleteUrl(
-          buildOAuthCallbackUrl("login", accountIntent, redirectTo),
-        ),
-        redirectUrlComplete: buildOAuthRedirectCompleteUrl(
-          buildPostOAuthUrl(accountIntent, redirectTo),
-        ),
+        redirectUrl: callbackUrl,
+        redirectUrlComplete: callbackUrl,
       });
     } catch (err: any) {
       console.error("Apple login error:", err);
@@ -1332,7 +1330,7 @@ const Login = () => {
                 <p className="mt-6 text-center text-sm text-gray-600">
                   Don't have an account?{" "}
                   <a
-                    href="/register"
+                    href={APP_ROUTES.register}
                     className="text-gray-900 hover:text-gray-700 font-medium"
                   >
                     Register

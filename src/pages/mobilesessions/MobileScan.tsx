@@ -4,6 +4,8 @@ import { useAuth, useUser } from "@clerk/clerk-react";
 import clientIo from "socket.io-client";
 import { BrowserMultiFormatReader } from "@zxing/browser";
 import { API_BASE, postJSON } from "../../lib/api";
+import { API_ROUTES } from "../../lib/apiRoutes";
+import { APP_ROUTES } from "../../lib/routes";
 
 const SCAN_COOLDOWN_MS = 900;
 const MIN_BARCODE_LENGTH = 6;
@@ -135,7 +137,7 @@ export default function MobileScan() {
 
   const canScan = Boolean(sessionId && shopId);
   const isCheckoutSession = sessionType === "checkout";
-  const signInRedirect = `/login?redirect=${encodeURIComponent(
+  const signInRedirect = `${APP_ROUTES.login}?redirect=${encodeURIComponent(
     `${window.location.pathname}${window.location.search}`
   )}`;
 
@@ -177,7 +179,7 @@ export default function MobileScan() {
     const validateSession = async () => {
       try {
         setSessionValidated(false);
-        await postJSON("/api/mobile/sessions/validate", {
+        await postJSON(API_ROUTES.mobile.sessionsValidate, {
           sessionId,
           token: authToken,
           shopId,
@@ -379,7 +381,7 @@ export default function MobileScan() {
     setStatusMessage("Saving product...");
     try {
       const result = await postJSON<{ row?: Record<string, unknown> }>(
-        "/api/mobile/import-product",
+        API_ROUTES.mobile.importProduct,
         {
           sessionId,
           token: authToken,

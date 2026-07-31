@@ -26,7 +26,13 @@ import {
   intentToMetadataAccountType,
   resolvePostAuthDestination,
 } from "./lib/authFlow";
-import { authFetch, setAuthTokenGetter } from "./lib/api";
+import { authFetch, setAuthTokenGetter, setAuthUserEmail } from "./lib/api";
+import { API_ROUTES } from "./lib/apiRoutes";
+import {
+  APP_ROUTES,
+  MARKETING_ROUTE_PATHS,
+  getWorkspaceRoute,
+} from "./lib/routes";
 import OAuthCallback from "./pages/auth/OAuthCallback";
 import PostOAuthRedirect from "./pages/auth/PostOAuthRedirect";
 import AdminPage from "./pages/admin/AdminPage";
@@ -50,26 +56,26 @@ if (!clerkPubKey) {
 function PreAuthApp() {
   return (
     <Routes>
-      <Route path="/mobilesessions" element={<Navigate to="/mobilesessions/scan" replace />} />
-      <Route path="/mobilesessions/scan" element={<MobileScan />} />
-      <Route path="/" element={<Home />} />
-      <Route path="/home" element={<Home />} />
-      <Route path="/login" element={<Login />} />
-      <Route path="/register" element={<RegisterPageGate />} />
-      <Route path="/auth/sso-callback" element={<OAuthCallback />} />
-      <Route path="/auth/post-oauth" element={<PostOAuthRedirect />} />
-      <Route path="/about" element={<AboutUs />} />
+      <Route path={APP_ROUTES.mobileSessions} element={<Navigate to={APP_ROUTES.mobileScan} replace />} />
+      <Route path={APP_ROUTES.mobileScan} element={<MobileScan />} />
+      <Route path={APP_ROUTES.home} element={<Home />} />
+      <Route path={APP_ROUTES.marketingHome} element={<Home />} />
+      <Route path={APP_ROUTES.login} element={<Login />} />
+      <Route path={APP_ROUTES.register} element={<RegisterPageGate />} />
+      <Route path={APP_ROUTES.oauthCallback} element={<OAuthCallback />} />
+      <Route path={APP_ROUTES.postOAuth} element={<PostOAuthRedirect />} />
+      <Route path={APP_ROUTES.about} element={<AboutUs />} />
       <Route
-        path="/features"
+        path={APP_ROUTES.features}
         element={<div>Features Page - Coming Soon</div>}
       />
-      <Route path="/pricing" element={<div>Pricing Page - Coming Soon</div>} />
-      <Route path="/support" element={<div>Support Page - Coming Soon</div>} />
-      <Route path="/contact" element={<div>Contact Page - Coming Soon</div>} />
+      <Route path={APP_ROUTES.pricing} element={<div>Pricing Page - Coming Soon</div>} />
+      <Route path={APP_ROUTES.support} element={<div>Support Page - Coming Soon</div>} />
+      <Route path={APP_ROUTES.contact} element={<div>Contact Page - Coming Soon</div>} />
       {/* Redirect any authenticated routes back to home */}
-      <Route path="/analytics/*" element={<Navigate to="/" replace />} />
-      <Route path="/shop-wizard" element={<PreAuthWizardRedirect intent="owner" />} />
-      <Route path="/team-onboard" element={<PreAuthWizardRedirect intent="employee" />} />
+      <Route path={`${APP_ROUTES.analytics}/*`} element={<Navigate to={APP_ROUTES.home} replace />} />
+      <Route path={APP_ROUTES.shopWizard} element={<PreAuthWizardRedirect intent="owner" />} />
+      <Route path={APP_ROUTES.teamOnboard} element={<PreAuthWizardRedirect intent="employee" />} />
       {/* Catch-all route for 404 */}
       <Route path="*" element={<div>Page Not Found - 404</div>} />
     </Routes>
@@ -446,15 +452,9 @@ function PostAuthContent({
 
     (async () => {
       try {
-        const validationUrl = validationOwnerEmail
-          ? `/api/shop/${encodeURIComponent(shopId)}/exists?ownerEmail=${encodeURIComponent(validationOwnerEmail)}`
-          : `/api/shop/${encodeURIComponent(shopId)}/exists`;
-        const response = await authFetch(
-          validationUrl,
-          {
-            signal: controller.signal,
-          },
-        );
+        const response = await authFetch(API_ROUTES.shop.exists(shopId, validationOwnerEmail, userEmail), {
+          signal: controller.signal,
+        });
         const payload = await response.json().catch(() => ({}));
 
         if (!response.ok) {
@@ -513,6 +513,8 @@ function PostAuthContent({
     onShopStatusChange,
     retryToken,
     user,
+    userEmail,
+    validationOwnerEmail,
   ]);
 
   if (!isLoaded || !user) {
@@ -579,140 +581,65 @@ function PostAuthContent({
     teamOnboarded,
     shopReady: validationState === "ready",
   });
+  const workspaceDestination = getWorkspaceRoute({
+    accountType,
+    forceWizard,
+  });
 
   return (
     <Routes>
-      <Route path="/auth/sso-callback" element={<OAuthCallback />} />
-      <Route path="/admin" element={<AdminPage />} />
-      <Route path="/mobilesessions" element={<Navigate to="/mobilesessions/scan" replace />} />
-      <Route path="/mobilesessions/scan" element={<MobileScan />} />
-      <Route path="/team-onboard" element={<TeamOnboard />} />
+      <Route path={APP_ROUTES.oauthCallback} element={<OAuthCallback />} />
+      <Route path={APP_ROUTES.admin} element={<AdminPage />} />
+      <Route path={APP_ROUTES.mobileSessions} element={<Navigate to={APP_ROUTES.mobileScan} replace />} />
+      <Route path={APP_ROUTES.mobileScan} element={<MobileScan />} />
+      <Route path={APP_ROUTES.teamOnboard} element={<TeamOnboard />} />
       <Route
-        path="/register"
+        path={APP_ROUTES.register}
         element={<Navigate to={postAuthHome} replace />}
       />
-      <Route path="/login" element={<Navigate to={postAuthHome} replace />} />
+      <Route path={APP_ROUTES.login} element={<Navigate to={postAuthHome} replace />} />
       <Route
-        path="/"
+        path={APP_ROUTES.home}
         element={<Navigate to={postAuthHome} replace />}
       />
       <Route
-        path="/home"
-        element={
-          <Navigate
-            to={
-              forceWizard
-                ? accountType === "team"
-                  ? "/team-onboard"
-                  : "/shop-wizard"
-                : "/analytics"
-            }
-            replace
-          />
-        }
+        path={APP_ROUTES.marketingHome}
+        element={<Navigate to={workspaceDestination} replace />}
       />
 
       <Route
-        path="/shop-wizard"
+        path={APP_ROUTES.shopWizard}
         element={
           accountType === "team" ? (
-            <Navigate to="/team-onboard" replace />
+            <Navigate to={APP_ROUTES.teamOnboard} replace />
           ) : forceWizard ? (
             <ShopWizard />
           ) : (
-            <Navigate to="/analytics" replace />
+            <Navigate to={APP_ROUTES.analytics} replace />
           )
         }
       />
 
       <Route
-        path="/analytics/*"
+        path={`${APP_ROUTES.analytics}/*`}
         element={
           accountType === "team" && forceWizard ? (
-            <Navigate to="/team-onboard" replace />
+            <Navigate to={APP_ROUTES.teamOnboard} replace />
           ) : forceWizard && accountType === "owner" ? (
-            <Navigate to="/shop-wizard" replace />
+            <Navigate to={APP_ROUTES.shopWizard} replace />
           ) : (
             <MainLayout />
           )
         }
       />
 
-      <Route
-        path="/about"
-        element={
-          <Navigate
-            to={
-              forceWizard
-                ? accountType === "team"
-                  ? "/team-onboard"
-                  : "/shop-wizard"
-                : "/analytics"
-            }
-            replace
-          />
-        }
-      />
-      <Route
-        path="/features"
-        element={
-          <Navigate
-            to={
-              forceWizard
-                ? accountType === "team"
-                  ? "/team-onboard"
-                  : "/shop-wizard"
-                : "/analytics"
-            }
-            replace
-          />
-        }
-      />
-      <Route
-        path="/pricing"
-        element={
-          <Navigate
-            to={
-              forceWizard
-                ? accountType === "team"
-                  ? "/team-onboard"
-                  : "/shop-wizard"
-                : "/analytics"
-            }
-            replace
-          />
-        }
-      />
-      <Route
-        path="/support"
-        element={
-          <Navigate
-            to={
-              forceWizard
-                ? accountType === "team"
-                  ? "/team-onboard"
-                  : "/shop-wizard"
-                : "/analytics"
-            }
-            replace
-          />
-        }
-      />
-      <Route
-        path="/contact"
-        element={
-          <Navigate
-            to={
-              forceWizard
-                ? accountType === "team"
-                  ? "/team-onboard"
-                  : "/shop-wizard"
-                : "/analytics"
-            }
-            replace
-          />
-        }
-      />
+      {MARKETING_ROUTE_PATHS.map((path) => (
+        <Route
+          key={path}
+          path={path}
+          element={<Navigate to={workspaceDestination} replace />}
+        />
+      ))}
 
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
@@ -721,15 +648,22 @@ function PostAuthContent({
 
 function AuthApiBridge() {
   const { getToken, isLoaded } = useAuth();
+  const { user } = useUser();
+  const userEmail = user?.primaryEmailAddress?.emailAddress || "";
 
   useEffect(() => {
     if (!isLoaded) {
       setAuthTokenGetter(null);
+      setAuthUserEmail(null);
       return;
     }
     setAuthTokenGetter(() => getToken());
-    return () => setAuthTokenGetter(null);
-  }, [getToken, isLoaded]);
+    setAuthUserEmail(userEmail);
+    return () => {
+      setAuthTokenGetter(null);
+      setAuthUserEmail(null);
+    };
+  }, [getToken, isLoaded, userEmail]);
 
   return null;
 }
@@ -751,11 +685,11 @@ function App() {
   return (
     <ClerkProvider
       publishableKey={clerkPubKey}
-      signInUrl="/login"
-      signUpUrl="/register"
-      signInFallbackRedirectUrl="/auth/post-oauth"
-      signUpFallbackRedirectUrl="/auth/post-oauth"
-      afterSignOutUrl="/"
+      signInUrl={APP_ROUTES.login}
+      signUpUrl={APP_ROUTES.register}
+      signInFallbackRedirectUrl={APP_ROUTES.oauthCallback}
+      signUpFallbackRedirectUrl={APP_ROUTES.oauthCallback}
+      afterSignOutUrl={APP_ROUTES.home}
     >
       <AuthApiBridge />
       <Router>
@@ -783,11 +717,11 @@ function AppRouter() {
   // Public routes available regardless of auth state (e.g. e-receipt links).
   return (
     <Routes>
-      <Route path="/r/:token" element={<PublicReceiptView />} />
-      <Route path="/auth/sso-callback" element={<OAuthCallback />} />
-      <Route path="/admin" element={isSignedIn ? <AdminPage /> : <Navigate to="/login" replace />} />
-      <Route path="/auth/post-oauth" element={<PostOAuthRedirect />} />
-      <Route path="/register" element={<RegisterPageGate />} />
+      <Route path={APP_ROUTES.publicReceipt} element={<PublicReceiptView />} />
+      <Route path={APP_ROUTES.oauthCallback} element={<OAuthCallback />} />
+      <Route path={APP_ROUTES.admin} element={isSignedIn ? <AdminPage /> : <Navigate to={APP_ROUTES.login} replace />} />
+      <Route path={APP_ROUTES.postOAuth} element={<PostOAuthRedirect />} />
+      <Route path={APP_ROUTES.register} element={<RegisterPageGate />} />
       <Route
         path="*"
         element={isSignedIn ? <PostAuthApp /> : <PreAuthApp />}

@@ -5,6 +5,7 @@ import { useUser } from "@clerk/clerk-react";
 import { Card } from "../../ui/Card";
 import { Button } from "../../ui/Button";
 import { postJSON, getJSON } from "../../../lib/api";
+import { API_ROUTES } from "../../../lib/apiRoutes";
 import { db } from "../../../lib/db";
 import { useApp } from "../../../context/AppContext";
 import { RegisterTerminalWizard } from "./RegisterTerminalWizard";
@@ -167,7 +168,7 @@ const SessionWizard: React.FC<SessionWizardProps> = ({
         sessionId: string;
         scanUrl: string | null;
         expiresAt: string;
-      }>("/api/mobile/sessions/create", {
+      }>(API_ROUTES.mobile.sessionsCreate, {
         shopId,
         sessionType,
         userEmail,
@@ -476,7 +477,7 @@ export const Sessions: React.FC = () => {
           scan_url?: string | null;
         }>;
       }>(
-        `/api/terminals/active?shopId=${encodeURIComponent(shopId)}&userEmail=${encodeURIComponent(userEmail)}`,
+        API_ROUTES.terminals.active(new URLSearchParams({ shopId, userEmail })),
       );
 
       setRegisterTerminals(
@@ -526,7 +527,9 @@ export const Sessions: React.FC = () => {
         openShift: RegisterShift | null;
         history: RegisterShift[];
       }>(
-        `/api/terminals/shifts?shopId=${encodeURIComponent(shopId)}&userEmail=${encodeURIComponent(userEmail)}&terminalId=${encodeURIComponent(terminalId)}`,
+        API_ROUTES.terminals.shifts(
+          new URLSearchParams({ shopId, userEmail, terminalId }),
+        ),
       );
       setOpenShift(data.openShift || null);
       setShiftHistory(data.history || []);
@@ -551,7 +554,7 @@ export const Sessions: React.FC = () => {
     setShiftError(null);
     try {
       const data = await postJSON<{ openShift: RegisterShift | null; history: RegisterShift[] }>(
-        "/api/terminals/shifts/open",
+        API_ROUTES.terminals.shiftsOpen,
         { shopId, userEmail, terminalId, openingFloat: Number(openingFloat || 0) },
       );
       setOpenShift(data.openShift || null);
@@ -570,7 +573,7 @@ export const Sessions: React.FC = () => {
     setShiftError(null);
     try {
       const data = await postJSON<{ openShift: RegisterShift | null; history: RegisterShift[] }>(
-        "/api/terminals/shifts/movement",
+        API_ROUTES.terminals.shiftsMovement,
         {
           shopId,
           userEmail,
@@ -597,7 +600,7 @@ export const Sessions: React.FC = () => {
     setShiftError(null);
     try {
       const data = await postJSON<{ openShift: RegisterShift | null; history: RegisterShift[] }>(
-        "/api/terminals/shifts/close",
+        API_ROUTES.terminals.shiftsClose,
         {
           shopId,
           userEmail,
@@ -649,7 +652,7 @@ export const Sessions: React.FC = () => {
           setExpandedSession((prev) => (prev === item.sessionId ? null : prev));
           setConfirmingRevoke((prev) => (prev === item.sessionId ? null : prev));
           // Fire-and-forget revoke so the server record is also cleaned up
-          void postJSON("/api/mobile/sessions/revoke", {
+          void postJSON(API_ROUTES.mobile.sessionsRevoke, {
             sessionId: item.sessionId,
             shopId,
             userEmail,
@@ -666,7 +669,7 @@ export const Sessions: React.FC = () => {
           });
           setExpandedSession((prev) => (prev === item.sessionId ? null : prev));
           setConfirmingRevoke((prev) => (prev === item.sessionId ? null : prev));
-          void postJSON("/api/mobile/sessions/revoke", {
+          void postJSON(API_ROUTES.mobile.sessionsRevoke, {
             sessionId: item.sessionId,
             shopId,
             userEmail,
@@ -696,7 +699,7 @@ export const Sessions: React.FC = () => {
   const handleRevoke = async (sessionId: string) => {
     setRevokingSession(sessionId);
     try {
-      await postJSON("/api/mobile/sessions/revoke", { sessionId, shopId, userEmail });
+      await postJSON(API_ROUTES.mobile.sessionsRevoke, { sessionId, shopId, userEmail });
       await refreshActiveSessions();
       setExpandedSession((prev) => (prev === sessionId ? null : prev));
     } catch {
@@ -710,7 +713,7 @@ export const Sessions: React.FC = () => {
   const handleRevokeTerminal = async (terminalId: string) => {
     setRevokingSession(terminalId);
     try {
-      await postJSON("/api/terminals/revoke", { terminalId, shopId, userEmail });
+      await postJSON(API_ROUTES.terminals.revoke, { terminalId, shopId, userEmail });
       await refreshActiveSessions();
     } finally {
       setRevokingSession(null);

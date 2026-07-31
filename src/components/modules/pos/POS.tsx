@@ -374,18 +374,31 @@ export const POS: React.FC = () => {
   }, [userId]);
 
   const categories = useMemo(
-    () => [...new Set(products.map((p) => p.category))].sort(),
+    () =>
+      [
+        ...new Set(
+          products
+            .map((p) => (typeof p.category === "string" ? p.category.trim() : ""))
+            .filter(Boolean),
+        ),
+      ].sort(),
     [products],
   );
 
   const filteredProducts: Product[] = useMemo(() => {
+    const needle = debouncedSearchTerm.trim().toLowerCase();
     return products.filter((product) => {
+      const name =
+        typeof product.name === "string"
+          ? product.name
+          : typeof (product as { item_name?: unknown }).item_name === "string"
+            ? String((product as { item_name?: unknown }).item_name)
+            : "";
+      const barcode = String(product.barcode || "");
       const matchesSearch =
-        debouncedSearchTerm === "" ||
-        product.name
-          .toLowerCase()
-          .includes(debouncedSearchTerm.toLowerCase()) ||
-        (product.barcode || "").includes(debouncedSearchTerm);
+        needle === "" ||
+        name.toLowerCase().includes(needle) ||
+        barcode.toLowerCase().includes(needle);
       const matchesCategory =
         selectedCategory === null || product.category === selectedCategory;
       return matchesSearch && matchesCategory;

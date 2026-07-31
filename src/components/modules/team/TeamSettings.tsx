@@ -5,6 +5,7 @@ import { Card } from "../../ui/Card";
 import { Button } from "../../ui/Button";
 import { useApp } from "../../../context/AppContext";
 import { getJSON, patchJSON } from "../../../lib/api";
+import { API_ROUTES } from "../../../lib/apiRoutes";
 
 type TeamMemberRow = {
   member_id: string;
@@ -37,7 +38,9 @@ export const TeamSettings: React.FC = () => {
     setError(null);
     try {
       const data = await getJSON<{ ok: boolean; members: TeamMemberRow[] }>(
-        `/api/team/members?shopId=${encodeURIComponent(activeShopId)}&userEmail=${encodeURIComponent(userEmail)}`,
+        API_ROUTES.team.members(
+          new URLSearchParams({ shopId: activeShopId, userEmail }),
+        ),
       );
       setMembers(data.members || []);
     } catch (err) {
@@ -59,7 +62,7 @@ export const TeamSettings: React.FC = () => {
     setSavingId(memberId);
     setError(null);
     try {
-      await patchJSON(`/api/team/members/${memberId}`, {
+      await patchJSON(API_ROUTES.team.member(memberId), {
         shopId: activeShopId,
         userEmail,
         ...patch,

@@ -35,6 +35,8 @@ import { sendEmailReceipt } from "../../../lib/emailReceipt";
 import { sendSmsReceipt } from "../../../lib/smsReceipt";
 import { printReceipt } from "../../../lib/receiptPrinter";
 import { getPrinterSettings } from "../../../lib/printerSettings";
+import { API_BASE, authFetch } from "../../../lib/api";
+import { API_ROUTES } from "../../../lib/apiRoutes";
 
 type PaymentMethod = "card" | "cash" | "mobile";
 type ReceiptMethod = "print" | "sms" | "email";
@@ -417,9 +419,9 @@ export const ShoppingCart: React.FC = () => {
 
       if (typeof salesDb.where === "function")
         unsyncedSales = await salesDb.where("isSynced").equals(false).toArray();
-      else if (typeof salesDb.getAll === "function") {
-        const all = await salesDb.getAll();
-        unsyncedSales = all.filter((s: any) => s.isSynced === false);
+      else {
+        clearTimeout(timeoutId);
+        return;
       }
 
       if (unsyncedSales.length === 0) {
@@ -437,24 +439,47 @@ export const ShoppingCart: React.FC = () => {
         })),
       }));
 
-      const token = localStorage.getItem("pos_auth_token") || "";
-      const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:3000";
+      const successfullySyncedIds: string[] = [];
+      for (const sale of payload) {
+        const response = await authFetch(`${API_BASE}${API_ROUTES.sales.complete}`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            shopId: currentShop.id.replace(/^shop_/, ""),
+            idempotencyKey:
+              sale.idempotencyKey ||
+              `offline_${currentShop.id}_${sale.id || sale.timestamp || Date.now()}`,
+            customer: sale.customerInfo || {},
+            items: (sale.items || []).map((item: any) => ({
+              item_id: null,
+              inventory_code: item.id,
+              name: item.name || item.id,
+              unit_price: item.price,
+              quantity: item.quantity,
+            })),
+            subtotal: sale.subtotal,
+            discount: sale.discount || 0,
+            tax: sale.tax || 0,
+            surcharge: sale.surcharge || 0,
+            total: sale.total,
+            selectedDiscountId: sale.selectedDiscountId ?? null,
+            activeTaxIds: sale.activeTaxIds || [],
+            managerApproval: sale.managerApproval || null,
+            pointsEarned: sale.pointsEarned || 0,
+            pointsRedeemed: sale.pointsRedeemed || 0,
+            paymentMethod: sale.paymentMethod,
+            createdAt: sale.timestamp || new Date().toISOString(),
+          }),
+          signal: controller.signal,
+        });
 
-      const response = await fetch(`${apiUrl}/api/sales/bulk-sync`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ sales: payload, shopId: currentShop.id }),
-        signal: controller.signal,
-      });
+        if (!response.ok) throw new Error(`Server returned ${response.status}`);
+        successfullySyncedIds.push(sale.id);
+      }
 
       clearTimeout(timeoutId);
-      if (!response.ok) throw new Error(`Server returned ${response.status}`);
-
-      const result = await response.json();
-      const successfullySyncedIds = result.syncedIds || [];
       for (const id of successfullySyncedIds) {
         if (typeof salesDb.update === "function")
           await salesDb.update(id, { isSynced: true });
@@ -602,6 +627,11 @@ export const ShoppingCart: React.FC = () => {
         timestamp: new Date().toISOString(),
         isSynced: isOnline,
       } as any);
+
+      // The stock has now been permanently deducted by the sale. Release this
+      // terminal's temporary cart reservation immediately so availability is
+      // shown as "remaining stock", not "remaining stock minus old cart".
+      db.reserveCart([]);
 
       // FIX 5: Real-time sync is now managed entirely by `db.ts` internally, eliminating duplicate WebSockets.
 

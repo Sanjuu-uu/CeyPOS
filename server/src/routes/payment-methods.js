@@ -5,10 +5,18 @@ import {
   replaceShopPaymentMethods,
 } from "../utils/shop-database.js";
 import { publishChange } from "../realtime/change-bus.js";
+import { requireClerkSession } from "../middleware/clerk-auth.js";
+import {
+  requireShopBody,
+  loadShopAuth,
+  requireScope,
+} from "../middleware/shop-auth.js";
 
 const router = Router();
 
-router.get("/:shopId", (req, res) => {
+router.use("/:shopId", requireClerkSession, requireShopBody, loadShopAuth);
+
+router.get("/:shopId", requireScope("pos"), (req, res) => {
   const { shopId } = req.params;
   if (!shopId) {
     return res.status(400).json({ ok: false, error: "shop_id_required" });
@@ -32,7 +40,7 @@ router.get("/:shopId", (req, res) => {
   }
 });
 
-router.put("/:shopId", (req, res) => {
+router.put("/:shopId", requireScope("payments"), (req, res) => {
   const { shopId } = req.params;
   const { methods = [], actor = null } = req.body || {};
 

@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { useEmployeeOnboard } from "../../../context/EmployeeOnboardContext";
 import { postJSON, waitForApiReady } from "../../../lib/api";
+import { API_ROUTES } from "../../../lib/apiRoutes";
 import "../ShopWizard/styles/ShopWizard.css";
 
 const cardVariants = {
@@ -93,7 +94,7 @@ export const EmployeeOnboardStep1: React.FC = () => {
       setError(null);
       try {
         await waitForApiReady();
-        await postJSON("/api/team/lookup-owner", { ownerEmail: value.trim() });
+        await postJSON(API_ROUTES.team.lookupOwner, { ownerEmail: value.trim() });
         updateFormData({ ownerVerified: true });
       } catch {
         updateFormData({ ownerVerified: false });

@@ -6,6 +6,8 @@ import {
   Receipt as ReceiptIcon,
   Loader2,
 } from "lucide-react";
+import { API_BASE } from "../../../lib/api";
+import { API_ROUTES } from "../../../lib/apiRoutes";
 
 interface PublicReceiptItem {
   name?: string;
@@ -26,11 +28,6 @@ interface PublicReceipt {
   timestamp?: string;
   receiptNumber?: string;
 }
-
-const apiBase = (): string =>
-  (import.meta.env.VITE_API_URL as string | undefined) ||
-  (import.meta.env.VITE_API_BASE as string | undefined) ||
-  "http://localhost:8080";
 
 const formatDateTime = (iso?: string): string => {
   if (!iso) return "";
@@ -107,9 +104,7 @@ export const PublicReceiptView: React.FC = () => {
         return;
       }
       try {
-        const res = await fetch(
-          `${apiBase()}/api/email-receipts/public/${encodeURIComponent(token)}`,
-        );
+        const res = await fetch(`${API_BASE}${API_ROUTES.receipts.publicByToken(token)}`);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = (await res.json()) as {
           ok?: boolean;

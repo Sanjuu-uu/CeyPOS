@@ -120,7 +120,11 @@ router.get("/status", requireShopBody, loadShopAuth, (req, res) => {
 router.post("/checkout", requireShopBody, loadShopAuth, requireOwner, (req, res) => {
   try {
     if (!isPayHereConfigured()) {
-      return res.status(503).json({ error: "Payments are not configured on this server" });
+      return res.status(503).json({
+        error: "PAYMENTS_NOT_CONFIGURED",
+        message:
+          "Online subscription checkout is not configured on this server. Add PayHere merchant credentials before starting paid-plan checkout.",
+      });
     }
 
     const { planId, billingPeriod } = req.body || {};

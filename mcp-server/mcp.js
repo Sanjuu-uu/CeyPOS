@@ -162,29 +162,16 @@ const BASE_SYSTEM_PROMPT = `You are CeyPoS Analytics, a fast read-only shop assi
 
 Schema summary:
 - shop_meta(shop_id, shop_name, owner_name, owner_email, currency, timezone, ...)
-- inventory(item_id, inventory_code, barcode_id, name, category, sku, price, cost_price, stock, stock_last_month, restock_suggestion, reorder_threshold, unit_name, pack_size, preferred_supplier_id, image_url, created_at, updated_at)
-- inventory_suppliers(supplier_id, name, contact_name, phone, email, address, notes, status, created_at, updated_at)
-- inventory_purchase_orders(po_id, po_number, supplier_id, status, expected_at, notes, subtotal, created_at, updated_at) and inventory_purchase_order_items(po_item_id, po_id, inventory_code, quantity_ordered, quantity_received, unit_cost)
-- inventory_goods_received(receipt_id, receipt_number, po_id, supplier_id, received_at, notes, created_at) and inventory_goods_received_items(receipt_item_id, receipt_id, inventory_code, quantity, unit_cost)
-- inventory_purchase_returns(return_id, return_number, supplier_id, po_id, returned_at, reason, notes, created_at) and inventory_purchase_return_items(return_item_id, return_id, inventory_code, quantity, unit_cost)
-- inventory_stock_counts(count_id, count_number, status, started_at, completed_at, notes) and inventory_stock_count_items(count_item_id, count_id, inventory_code, expected_quantity, counted_quantity, variance, reason)
-- inventory_adjustment_reasons(reason_id, name, stock_type, direction, is_active), inventory_movements(movement_id, inventory_code, movement_type, stock_type, quantity_delta, quantity_after, unit_cost, source_type, source_id, reason, notes, created_at), inventory_product_variants(...)
+- inventory(item_id, inventory_code, barcode_id, name, category, sku, price, stock, stock_last_month, restock_suggestion, image_url, created_at, updated_at)
 - customers(customer_id, name, email, phone, total_spent, visit_count, last_visit, points_balance, created_at)
-- transactions(transaction_id, receipt_id, transaction_code, idempotency_key, invoice_number, invoice_sequence, customer_id, subtotal, discount, tax, surcharge, total, subtotal_cents, discount_cents, tax_cents, surcharge_cents, redemption_cents, total_cents, payment_method, created_at, terminal_id, served_by_member_id, served_by_display_name, served_by_role)
+- transactions(transaction_id, receipt_id, transaction_code, customer_id, subtotal, discount, tax, total, payment_method, created_at)
 - transaction_items(id, transaction_id, item_id, inventory_code, quantity, unit_price, subtotal)
 - daily_sales(id, shop_id, date, total_sales, transactions_count, top_item)
-- checkout_invoice_sequences(shop_id, next_sequence, updated_at), checkout_audit_records(audit_id, shop_id, idempotency_key, transaction_id, invoice_number, action, status, actor_member_id, actor_role, terminal_id, request_json, result_json, message, ip_address, user_agent, created_at)
-- shop_terminals(terminal_id, shop_id, terminal_type, label, status, paired_by_member_id, approved_by_member_id, created_at, last_seen_at, revoked_at)
-- member_shifts(shift_id, shop_id, terminal_id, member_id, started_at, ended_at, status, opening_float_cents, cash_paid_in_cents, cash_paid_out_cents, expected_cash_cents, actual_closing_cash_cents, variance_cents, closing_notes, manager_approval_status, manager_approved_by_member_id, manager_approved_at, opened_by_member_id, closed_by_member_id, end_of_day_report_json)
-- register_cash_movements(movement_id, shift_id, shop_id, terminal_id, member_id, movement_type, amount_cents, reason, notes, manager_approval_status, manager_approved_by_member_id, manager_approved_at, created_at)
 - inventory_forecast(item_id, item_name, avg_daily_sales, recommended_stock, suggested_restock_date)
 - shop_operating_hours(shop_id, day, open, close, closed), shop_payment_methods(shop_id, method), business_rules_* tables, and analytics chat tables.
 For shop-specific facts, use focused read-only SQL tools unless compact context already provides the exact answer.
 Use the exact column names above. Do not invent columns such as product_name, sale_date, total_revenue, total_orders, or total_transactions.
-For restocking, prefer inventory.reorder_threshold for low-stock thresholds; inventory.restock_suggestion is a suggested reorder quantity, not a boolean flag.
-For stock valuation, use SUM(cost_price * stock). For retail stock value, use SUM(price * stock). For potential gross profit, use SUM((price - cost_price) * stock).
-For checkout money accuracy, prefer *_cents columns when present and divide by 100. Use invoice_number for merchant invoices and idempotency_key/checkout_audit_records for duplicate/retry/audit questions.
-For cash register reconciliation, use member_shifts and register_cash_movements. Expected cash = opening float + cash sales + paid in - paid out; variance = actual closing cash - expected cash. Prefer *_cents columns and divide by 100.
+For restocking, inventory.restock_suggestion is a suggested quantity, not a boolean flag; use restock_suggestion > 0.
 For product/customer lookup, prefer flexible LIKE '%term%' across name, category, sku, barcode_id, inventory_code (inventory) or name, email, phone (customers). Avoid exact = unless the value is copied verbatim.
 If a lookup returns zero rows, closest-match search runs automatically — still start with flexible LIKE patterns.
 Prefer aggregate SQL and narrow columns. Never request broad SELECT * unless the user asks for raw rows.
@@ -239,30 +226,13 @@ const TOOLS = [
     type: 'function',
     function: {
       name: 'query_inventory',
-      description: 'Query inventory products, including cost, price, stock, reorder thresholds, units, pack sizes, barcode and supplier preference fields',
+      description: 'Query the inventory table for product information',
       parameters: {
         type: 'object',
         properties: {
           query: {
             type: 'string',
-            description: 'SQL query to execute on inventory product tables',
-          },
-        },
-        required: ['query'],
-      },
-    },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'query_inventory_operations',
-      description: 'Query inventory lifecycle records such as suppliers, purchase orders, goods received, returns, stock counts, adjustment reasons, movement ledger, damaged/expired/missing/promotional stock, and variants',
-      parameters: {
-        type: 'object',
-        properties: {
-          query: {
-            type: 'string',
-            description: 'SQL query to execute on inventory lifecycle tables',
+            description: 'SQL query to execute on inventory table',
           },
         },
         required: ['query'],
@@ -273,30 +243,13 @@ const TOOLS = [
     type: 'function',
     function: {
       name: 'query_sales',
-      description: 'Query sales and checkout tables (transactions, transaction_items, daily_sales, invoice sequence and checkout audit records), including invoice numbers, idempotency keys, cents-based totals, terminal/cashier attribution, discounts, taxes and surcharges',
+      description: 'Query sales-related tables (transactions, transaction_items, daily_sales)',
       parameters: {
         type: 'object',
         properties: {
           query: {
             type: 'string',
             description: 'SQL query to execute on sales tables',
-          },
-        },
-        required: ['query'],
-      },
-    },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'query_register_shifts',
-      description: 'Query cash-register reconciliation tables such as member_shifts, register_cash_movements, shop_terminals and cash transactions for opening float, paid in/out, expected cash, actual closing cash, variance, manager approval, per-terminal shift history and end-of-day reports',
-      parameters: {
-        type: 'object',
-        properties: {
-          query: {
-            type: 'string',
-            description: 'SQL query to execute on register shift, cash movement, terminal and related cash transaction tables',
           },
         },
         required: ['query'],
@@ -614,9 +567,7 @@ function addExplicitChartInstruction(question) {
 
 const SQL_TOOL_NAMES = new Set([
   'query_inventory',
-  'query_inventory_operations',
   'query_sales',
-  'query_register_shifts',
   'query_customers',
   'query_general',
 ]);
@@ -991,7 +942,7 @@ async function findInventoryMatches(shopId, question) {
   if (!tokens.length) return [];
 
   const inventorySelect =
-    'item_id, name, category, sku, inventory_code, barcode_id, price, cost_price, stock, restock_suggestion, reorder_threshold, unit_name, pack_size, preferred_supplier_id, (SELECT currency FROM shop_meta LIMIT 1) AS currency';
+    'item_id, name, category, sku, inventory_code, barcode_id, price, stock, (SELECT currency FROM shop_meta LIMIT 1) AS currency';
   const modes = tokens.length >= 2 ? ['and', 'or'] : ['or'];
   let rows = [];
 
@@ -1076,13 +1027,11 @@ async function tryBuildLocalAnswer(question, shopId, mode, session) {
       `SELECT name,
               stock,
               restock_suggestion,
-              reorder_threshold,
               category,
               COUNT(*) OVER () AS restock_count
        FROM inventory
-       WHERE COALESCE(stock, 0) <= COALESCE(NULLIF(reorder_threshold, 0), restock_suggestion, 0)
-          OR COALESCE(restock_suggestion, 0) > 0
-       ORDER BY stock ASC, reorder_threshold DESC, restock_suggestion DESC, name ASC
+       WHERE COALESCE(restock_suggestion, 0) > 0
+       ORDER BY stock ASC, restock_suggestion DESC, name ASC
        LIMIT ${limit}`,
     );
     const count = Number(rows?.[0]?.restock_count || 0);
@@ -1090,7 +1039,7 @@ async function tryBuildLocalAnswer(question, shopId, mode, session) {
 
     if (!rows.length) {
       return localResponse(
-        'No products are currently below reorder threshold or marked with a restock suggestion.',
+        'No products are currently marked with a restock suggestion.',
         { kind: 'restock_suggestions', count, rows },
         { askToContinue: true },
       );
@@ -1098,11 +1047,11 @@ async function tryBuildLocalAnswer(question, shopId, mode, session) {
 
     const summary = rows
       .map((row, index) =>
-        `${index + 1}. ${row.name}: stock ${Number(row.stock || 0).toLocaleString()}, reorder at ${Number(row.reorder_threshold || 0).toLocaleString()}, suggested restock ${Number(row.restock_suggestion || 0).toLocaleString()}`,
+        `${index + 1}. ${row.name}: stock ${Number(row.stock || 0).toLocaleString()}, suggested restock ${Number(row.restock_suggestion || 0).toLocaleString()}`,
       )
       .join('; ');
     return localResponse(
-      `${count.toLocaleString()} products need reorder attention. Start with: ${summary}.`,
+      `${count.toLocaleString()} products have restock suggestions. Start with: ${summary}.`,
       { kind: 'restock_suggestions', count, rows },
       { askToContinue: true },
     );
@@ -1115,9 +1064,7 @@ async function tryBuildLocalAnswer(question, shopId, mode, session) {
       `SELECT COALESCE(NULLIF(category, ''), 'Uncategorized') AS category,
               COUNT(*) AS product_count,
               COALESCE(SUM(stock), 0) AS units,
-              COALESCE(SUM(cost_price * stock), 0) AS stock_value,
-              COALESCE(SUM(price * stock), 0) AS retail_value,
-              COALESCE(SUM((price - cost_price) * stock), 0) AS gross_profit,
+              COALESCE(SUM(price * stock), 0) AS stock_value,
               (SELECT currency FROM shop_meta LIMIT 1) AS currency
        FROM inventory
        GROUP BY COALESCE(NULLIF(category, ''), 'Uncategorized')
@@ -1157,44 +1104,16 @@ async function tryBuildLocalAnswer(question, shopId, mode, session) {
     return localResponse('No products have lower current stock than stock_last_month.', { kind: 'stock_drop', rows });
   }
 
-  if (/\b(gross profit|profit potential|potential profit|inventory profit|stock profit)\b/i.test(trimmed)) {
+  if (/\b(inventory|stock)\b.*\b(value|worth)\b|\bvalue\b.*\b(inventory|stock)\b/i.test(trimmed)) {
     const rows = await runSqlQuery(
       shopId,
-      'SELECT COUNT(*) AS product_count, COALESCE(SUM((price - cost_price) * stock), 0) AS gross_profit, COALESCE(SUM(cost_price * stock), 0) AS stock_value, COALESCE(SUM(price * stock), 0) AS retail_value, (SELECT currency FROM shop_meta LIMIT 1) AS currency FROM inventory',
-    );
-    const row = rows[0] || {};
-    recordLocalAction(session, 'inventory_gross_profit', row);
-    const currency = row.currency || 'LKR';
-    return localResponse(
-      `Potential gross profit in current stock is ${formatMoney(row.gross_profit, currency)}. Cost valuation is ${formatMoney(row.stock_value, currency)} and retail value is ${formatMoney(row.retail_value, currency)} across ${Number(row.product_count || 0).toLocaleString()} products.`,
-      { kind: 'inventory_gross_profit', row, currency },
-    );
-  }
-
-  if (/\b(retail value|selling value|sales value)\b/i.test(trimmed)) {
-    const rows = await runSqlQuery(
-      shopId,
-      'SELECT COUNT(*) AS product_count, COALESCE(SUM(price * stock), 0) AS retail_value, (SELECT currency FROM shop_meta LIMIT 1) AS currency FROM inventory',
-    );
-    const row = rows[0] || {};
-    recordLocalAction(session, 'inventory_retail_value', row);
-    const currency = row.currency || 'LKR';
-    return localResponse(
-      `Retail value of current stock is ${formatMoney(row.retail_value, currency)} across ${Number(row.product_count || 0).toLocaleString()} products.`,
-      { kind: 'inventory_retail_value', row, currency },
-    );
-  }
-
-  if (/\b(inventory|stock)\b.*\b(value|worth|valuation)\b|\b(value|valuation)\b.*\b(inventory|stock)\b/i.test(trimmed)) {
-    const rows = await runSqlQuery(
-      shopId,
-      'SELECT COUNT(*) AS product_count, COALESCE(SUM(cost_price * stock), 0) AS stock_value, COALESCE(SUM(price * stock), 0) AS retail_value, COALESCE(SUM((price - cost_price) * stock), 0) AS gross_profit, (SELECT currency FROM shop_meta LIMIT 1) AS currency FROM inventory',
+      'SELECT COUNT(*) AS product_count, COALESCE(SUM(price * stock), 0) AS inventory_value, (SELECT currency FROM shop_meta LIMIT 1) AS currency FROM inventory',
     );
     const row = rows[0] || {};
     recordLocalAction(session, 'inventory_value', row);
     const currency = row.currency || 'LKR';
     return localResponse(
-      `Stock valuation at cost is ${formatMoney(row.stock_value, currency)}. Retail value is ${formatMoney(row.retail_value, currency)} and potential gross profit is ${formatMoney(row.gross_profit, currency)} across ${Number(row.product_count || 0).toLocaleString()} products.`,
+      `Estimated inventory value is ${formatMoney(row.inventory_value, currency)} across ${Number(row.product_count || 0).toLocaleString()} products.`,
       { kind: 'inventory_value', row, currency },
     );
   }
@@ -1204,7 +1123,7 @@ async function tryBuildLocalAnswer(question, shopId, mode, session) {
     const threshold = thresholdMatch ? Math.max(0, Number.parseInt(thresholdMatch[1], 10)) : 10;
     const rows = await runSqlQuery(
       shopId,
-      `SELECT name, stock, reorder_threshold, COUNT(*) OVER () AS low_stock_count
+      `SELECT name, stock, COUNT(*) OVER () AS low_stock_count
        FROM inventory
        WHERE stock <= ${threshold}
        ORDER BY stock ASC, name ASC
@@ -1262,7 +1181,7 @@ async function tryBuildLocalAnswer(question, shopId, mode, session) {
         ? ` Other close matches: ${matches.slice(1, 3).map((row) => row.name).join(', ')}.`
         : '';
       return localResponse(
-        `${product.name} is ${formatMoney(product.price, currency)}. Cost: ${formatMoney(product.cost_price || 0, currency)}. Stock: ${Number(product.stock || 0).toLocaleString()} ${product.unit_name || 'units'}.${totalText}${alternatives}`,
+        `${product.name} is ${formatMoney(product.price, currency)}. Stock: ${Number(product.stock || 0).toLocaleString()}.${totalText}${alternatives}`,
         { kind: 'product_lookup', product, matches, requestedQuantity, productQuantity, currency },
       );
     }

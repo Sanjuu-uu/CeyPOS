@@ -36,6 +36,12 @@ pids/
 *.pid
 *.seed
 *.pid.lock
+uploads/
+server/backups/
+server/database/*.db
+server/database/*.db-shm
+server/database/*.db-wal
+*.ceybak
 
 # Coverage directory used by tools like istanbul
 coverage/

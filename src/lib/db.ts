@@ -10,6 +10,7 @@ import {
 } from "../types";
 import clientIo from "socket.io-client";
 import { authFetch } from "./api";
+import { API_ROUTES } from "./apiRoutes";
 
 const API_BASE = (import.meta.env.VITE_API_BASE || "").replace(/\/+$/, "");
 
@@ -32,6 +33,7 @@ let currentServedBy: {
 
 let socket: SocketType | null = null;
 let currentTerminalKey: string | null = null;
+let currentReservationSequence = 0;
 
 function setSaleAttribution(info: typeof currentServedBy) {
   currentServedBy = info;
@@ -616,8 +618,8 @@ function buildSale(
   } as Sale;
 }
 
-async function fetchShopMeta(rawShopId: string) {
-  const res = await authFetch(`${API_BASE}/api/shop/${rawShopId}/meta`);
+async function fetchShopMeta(rawShopId: string, userEmail?: string) {
+  const res = await authFetch(`${API_BASE}${API_ROUTES.shop.meta(rawShopId, userEmail)}`);
   if (res.status === 404) {
     return false;
   }
@@ -871,9 +873,9 @@ function applySnapshot(
   emit("businessRulesUpdated", { shopId: shopKey, rules: cache.businessRules });
 }
 
-async function fetchSnapshot(shopKey: string) {
+async function fetchSnapshot(shopKey: string, userEmail?: string) {
   const rawShopId = normalizeShopId(shopKey);
-  const res = await authFetch(`${API_BASE}/api/shop/${rawShopId}/snapshot`);
+  const res = await authFetch(`${API_BASE}${API_ROUTES.shop.snapshot(rawShopId, userEmail)}`);
   if (res.status === 404) {
     return false;
   }
@@ -1098,7 +1100,9 @@ function ensureSocket(
     // ephemeral reservation store is rebuilt for us.
     const cache = ensureShopCache(shopKey);
     if (cache.myReservations.size > 0 && socket) {
+      currentReservationSequence += 1;
       socket.emit("cart:reserve", {
+        sequence: currentReservationSequence,
         items: Array.from(cache.myReservations.entries()).map(
           ([inventory_code, quantity]) => ({ inventory_code, quantity }),
         ),
@@ -1135,15 +1139,16 @@ function shopsAsArray(): Shop[] {
 async function connectWebSocket(
   shopId: string,
   terminal?: { terminalId: string; terminalToken: string },
+  options: { userEmail?: string } = {},
 ) {
   const rawShopId = normalizeShopId(shopId);
   const shopKey = toShopKey(shopId);
-  const metaLoaded = await fetchShopMeta(rawShopId);
+  const metaLoaded = await fetchShopMeta(rawShopId, options.userEmail);
   if (!metaLoaded) {
     console.warn(`connectWebSocket: shop not found for ${rawShopId}`);
     return false;
   }
-  const snapshotLoaded = await fetchSnapshot(shopKey);
+  const snapshotLoaded = await fetchSnapshot(shopKey, options.userEmail);
   if (!snapshotLoaded) {
     console.warn(`connectWebSocket: snapshot not found for ${rawShopId}`);
     return false;
@@ -1159,7 +1164,9 @@ function reserveCart(
   items: Array<{ inventory_code: string; quantity: number }>,
 ) {
   if (!currentShopKey) return;
+  currentReservationSequence += 1;
   const cache = ensureShopCache(currentShopKey);
+  const previousMine = new Map(cache.myReservations);
   cache.myReservations.clear();
   for (const item of items) {
     const code = String(item.inventory_code);
@@ -1167,11 +1174,33 @@ function reserveCart(
     if (!code || !Number.isFinite(qty) || qty <= 0) continue;
     cache.myReservations.set(code, (cache.myReservations.get(code) || 0) + qty);
   }
+
+  // Optimistically update the shop-wide aggregate by removing this terminal's
+  // previous hold and adding its new hold. The server echo remains
+  // authoritative, but this prevents checkout from briefly showing
+  // "remaining stock minus the old cart" after a sale succeeds.
+  const touchedCodes = new Set([
+    ...previousMine.keys(),
+    ...cache.myReservations.keys(),
+  ]);
+  for (const code of touchedCodes) {
+    const aggregate = cache.reservationsByCode.get(code) || 0;
+    const prev = previousMine.get(code) || 0;
+    const next = cache.myReservations.get(code) || 0;
+    const updated = Math.max(0, aggregate - prev + next);
+    if (updated > 0) {
+      cache.reservationsByCode.set(code, updated);
+    } else {
+      cache.reservationsByCode.delete(code);
+    }
+  }
+
   // Optimistically refresh this terminal's view; the server echo will reconcile.
   rebuildProducts(currentShopKey);
   if (socket) {
     try {
       socket.emit("cart:reserve", {
+        sequence: currentReservationSequence,
         items: Array.from(cache.myReservations.entries()).map(
           ([inventory_code, quantity]) => ({ inventory_code, quantity }),
         ),
@@ -1287,7 +1316,7 @@ async function saveBusinessRules(rules: BusinessRules): Promise<void> {
   if (!currentShopKey) throw new Error("No active shop");
   const cleanShopId = normalizeShopId(currentShopKey);
 
-  const res = await authFetch(`${API_BASE}/api/business-rules/${cleanShopId}`, {
+  const res = await authFetch(`${API_BASE}${API_ROUTES.businessRules.byShop(cleanShopId)}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(rules),
@@ -1337,6 +1366,7 @@ async function createSaleRecord(sale: Omit<Sale, "id">): Promise<Sale> {
     pointsRedeemed: sale.pointsRedeemed || 0,
     paymentMethod: sale.paymentMethod,
     createdAt: sale.timestamp || new Date().toISOString(),
+    reservationSequence: currentReservationSequence,
     servedBy: currentServedBy
       ? {
           memberId: currentServedBy.memberId,
@@ -1347,7 +1377,7 @@ async function createSaleRecord(sale: Omit<Sale, "id">): Promise<Sale> {
       : undefined,
   };
 
-  const res = await authFetch(`${API_BASE}/api/sales/complete`, {
+  const res = await authFetch(`${API_BASE}${API_ROUTES.sales.complete}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
@@ -1427,7 +1457,7 @@ export const db = {
     async create(shop: Omit<Shop, "id"> & { id?: string }) {
       const shopId =
         shop.id?.replace(/^shop_/, "") || String(Math.floor(Date.now() / 1000));
-      await authFetch(`${API_BASE}/api/shop/setup`, {
+      await authFetch(`${API_BASE}${API_ROUTES.shop.setup}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ shopId, formData: shop }),
@@ -1469,7 +1499,7 @@ export const db = {
       const shopKey = toShopKey(targetShop);
       const cleanShopId = normalizeShopId(targetShop);
       const response = await authFetch(
-        `${API_BASE}/api/inventory/${encodeURIComponent(cleanShopId)}/${encodeURIComponent(id)}`,
+        `${API_BASE}${API_ROUTES.inventory.delete(cleanShopId, id)}`,
         {
           method: "DELETE",
         },
@@ -1504,7 +1534,7 @@ export const db = {
       const shopKey = toShopKey(targetShop);
       const cleanShopId = normalizeShopId(targetShop);
       const response = await authFetch(
-        `${API_BASE}/api/inventory/${encodeURIComponent(cleanShopId)}/bulk-delete`,
+        `${API_BASE}${API_ROUTES.inventory.bulkDelete(cleanShopId)}`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -1532,7 +1562,7 @@ export const db = {
     async load(shopId: string): Promise<InventoryOperationsSnapshot> {
       const cleanShopId = normalizeShopId(shopId);
       const response = await authFetch(
-        `${API_BASE}/api/inventory/${encodeURIComponent(cleanShopId)}/operations`,
+        `${API_BASE}${API_ROUTES.inventory.operations(cleanShopId)}`,
       );
       const body = await response.json();
       if (!response.ok || body?.ok === false) {
@@ -1542,7 +1572,7 @@ export const db = {
     },
     async saveSupplier(shopId: string, supplier: Record<string, unknown>): Promise<InventoryOperationsSnapshot> {
       const cleanShopId = normalizeShopId(shopId);
-      const response = await authFetch(`${API_BASE}/api/inventory/${encodeURIComponent(cleanShopId)}/suppliers`, {
+      const response = await authFetch(`${API_BASE}${API_ROUTES.inventory.suppliers(cleanShopId)}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(supplier),
@@ -1553,7 +1583,7 @@ export const db = {
     },
     async createPurchaseOrder(shopId: string, payload: Record<string, unknown>): Promise<InventoryOperationsSnapshot> {
       const cleanShopId = normalizeShopId(shopId);
-      const response = await authFetch(`${API_BASE}/api/inventory/${encodeURIComponent(cleanShopId)}/purchase-orders`, {
+      const response = await authFetch(`${API_BASE}${API_ROUTES.inventory.purchaseOrders(cleanShopId)}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -1564,7 +1594,7 @@ export const db = {
     },
     async receiveGoods(shopId: string, payload: Record<string, unknown>): Promise<{ operations: InventoryOperationsSnapshot; rows?: InventoryRow[] }> {
       const cleanShopId = normalizeShopId(shopId);
-      const response = await authFetch(`${API_BASE}/api/inventory/${encodeURIComponent(cleanShopId)}/goods-received`, {
+      const response = await authFetch(`${API_BASE}${API_ROUTES.inventory.goodsReceived(cleanShopId)}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -1575,7 +1605,7 @@ export const db = {
     },
     async createPurchaseReturn(shopId: string, payload: Record<string, unknown>): Promise<{ operations: InventoryOperationsSnapshot; rows?: InventoryRow[] }> {
       const cleanShopId = normalizeShopId(shopId);
-      const response = await authFetch(`${API_BASE}/api/inventory/${encodeURIComponent(cleanShopId)}/purchase-returns`, {
+      const response = await authFetch(`${API_BASE}${API_ROUTES.inventory.purchaseReturns(cleanShopId)}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -1586,7 +1616,7 @@ export const db = {
     },
     async adjustStock(shopId: string, payload: Record<string, unknown>): Promise<{ operations: InventoryOperationsSnapshot; rows?: InventoryRow[] }> {
       const cleanShopId = normalizeShopId(shopId);
-      const response = await authFetch(`${API_BASE}/api/inventory/${encodeURIComponent(cleanShopId)}/adjustments`, {
+      const response = await authFetch(`${API_BASE}${API_ROUTES.inventory.adjustments(cleanShopId)}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -1597,7 +1627,7 @@ export const db = {
     },
     async createStockCount(shopId: string, payload: Record<string, unknown>): Promise<{ operations: InventoryOperationsSnapshot; rows?: InventoryRow[] }> {
       const cleanShopId = normalizeShopId(shopId);
-      const response = await authFetch(`${API_BASE}/api/inventory/${encodeURIComponent(cleanShopId)}/stock-counts`, {
+      const response = await authFetch(`${API_BASE}${API_ROUTES.inventory.stockCounts(cleanShopId)}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -1608,7 +1638,7 @@ export const db = {
     },
     async saveVariant(shopId: string, payload: Record<string, unknown>): Promise<InventoryOperationsSnapshot> {
       const cleanShopId = normalizeShopId(shopId);
-      const response = await authFetch(`${API_BASE}/api/inventory/${encodeURIComponent(cleanShopId)}/variants`, {
+      const response = await authFetch(`${API_BASE}${API_ROUTES.inventory.variants(cleanShopId)}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -1647,7 +1677,7 @@ export const db = {
       const shopKey = toShopKey(shopId);
       const cleanShopId = normalizeShopId(shopId || shopKey);
       const response = await authFetch(
-        `${API_BASE}/api/payment-methods/${cleanShopId}`,
+        `${API_BASE}${API_ROUTES.paymentMethods.byShop(cleanShopId)}`,
       );
       const rawBody: unknown = await response.json();
       const payload = isObject(rawBody)
@@ -1670,7 +1700,7 @@ export const db = {
       const shopKey = toShopKey(shopId);
       const cleanShopId = normalizeShopId(shopId || shopKey);
       const response = await authFetch(
-        `${API_BASE}/api/payment-methods/${cleanShopId}`,
+        `${API_BASE}${API_ROUTES.paymentMethods.byShop(cleanShopId)}`,
         {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
@@ -1705,30 +1735,30 @@ export const db = {
   notifications: {
     async list(shopId: string, userEmail: string, limit = 30): Promise<{ notifications: AppNotification[]; unreadCount: number }> {
       const params = new URLSearchParams({ shopId: normalizeShopId(shopId), userEmail, limit: String(limit) });
-      const response = await authFetch(`${API_BASE}/api/notifications?${params}`);
+      const response = await authFetch(`${API_BASE}${API_ROUTES.notifications.list(params)}`);
       const body = await response.json();
       if (!response.ok) throw new Error(body?.error || "Failed to load notifications");
       return { notifications: Array.isArray(body.notifications) ? body.notifications : [], unreadCount: Number(body.unreadCount || 0) };
     },
     async markRead(shopId: string, userEmail: string, notificationId: string): Promise<void> {
       const params = new URLSearchParams({ shopId: normalizeShopId(shopId), userEmail });
-      const response = await authFetch(`${API_BASE}/api/notifications/${encodeURIComponent(notificationId)}/read?${params}`, { method: "POST" });
+      const response = await authFetch(`${API_BASE}${API_ROUTES.notifications.read(notificationId, params)}`, { method: "POST" });
       if (!response.ok) throw new Error((await response.json().catch(() => null))?.error || "Failed to mark notification read");
     },
     async markAllRead(shopId: string, userEmail: string): Promise<void> {
       const params = new URLSearchParams({ shopId: normalizeShopId(shopId), userEmail });
-      const response = await authFetch(`${API_BASE}/api/notifications/read-all?${params}`, { method: "POST" });
+      const response = await authFetch(`${API_BASE}${API_ROUTES.notifications.readAll(params)}`, { method: "POST" });
       if (!response.ok) throw new Error((await response.json().catch(() => null))?.error || "Failed to mark notifications read");
     },
     async getPreferences(shopId: string, userEmail: string): Promise<NotificationPreferences> {
       const params = new URLSearchParams({ shopId: normalizeShopId(shopId), userEmail });
-      const response = await authFetch(`${API_BASE}/api/notifications/preferences?${params}`);
+      const response = await authFetch(`${API_BASE}${API_ROUTES.notifications.preferences(params)}`);
       const body = await response.json();
       if (!response.ok) throw new Error(body?.error || "Failed to load notification preferences");
       return body.preferences;
     },
     async savePreferences(shopId: string, userEmail: string, preferences: NotificationPreferences): Promise<NotificationPreferences> {
-      const response = await authFetch(`${API_BASE}/api/notifications/preferences`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ shopId: normalizeShopId(shopId), userEmail, ...preferences }) });
+      const response = await authFetch(`${API_BASE}${API_ROUTES.notifications.preferences()}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ shopId: normalizeShopId(shopId), userEmail, ...preferences }) });
       const body = await response.json();
       if (!response.ok) throw new Error(body?.error || "Failed to save notification preferences");
       return body.preferences;

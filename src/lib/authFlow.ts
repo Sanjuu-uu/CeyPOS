@@ -1,4 +1,5 @@
 /** Shared auth/onboarding helpers for Clerk sign-in, sign-up, and post-auth routing. */
+import { APP_ROUTES } from "./routes";
 
 export const ACCOUNT_INTENT_KEY = "ceypos::accountIntent";
 export const PENDING_OAUTH_KEY = "ceypos::pendingOauth";
@@ -105,16 +106,16 @@ export async function cancelClerkUserAndSignOut(options: {
       console.error("Clerk sign-out failed", error);
     }
     if (typeof window !== "undefined") {
-      window.location.href = options.redirectUrl || "/";
+      window.location.href = options.redirectUrl || APP_ROUTES.home;
     }
   }
 }
 
 /** Employee onboarding wizard — final destination after Google/email sign-up. */
-export const TEAM_ONBOARD_PATH = "/team-onboard";
+export const TEAM_ONBOARD_PATH = APP_ROUTES.teamOnboard;
 
 /** Owner shop setup wizard — final destination after Google/email sign-up. */
-export const SHOP_WIZARD_PATH = "/shop-wizard";
+export const SHOP_WIZARD_PATH = APP_ROUTES.shopWizard;
 
 export function getPostRegisterPath(intent: AccountIntent): string {
   return intent === "employee" ? TEAM_ONBOARD_PATH : SHOP_WIZARD_PATH;
@@ -141,7 +142,7 @@ export function metadataToAccountIntent(
 /** Safe in-app redirect target (blocks open redirects). */
 export function sanitizeRedirectTarget(
   target: string | null | undefined,
-  fallback = "/",
+  fallback = APP_ROUTES.home,
 ): string {
   if (!target || !target.startsWith("/") || target.startsWith("//")) {
     return fallback;
@@ -150,11 +151,13 @@ export function sanitizeRedirectTarget(
 }
 
 export function buildRegisterHref(intent: AccountIntent): string {
-  return intent === "employee" ? "/register?account=employee" : "/register?account=owner";
+  return intent === "employee"
+    ? `${APP_ROUTES.register}?account=employee`
+    : `${APP_ROUTES.register}?account=owner`;
 }
 
 /** Clerk OAuth must return to this route so the session can be activated. */
-export const OAUTH_CALLBACK_PATH = "/auth/sso-callback";
+export const OAUTH_CALLBACK_PATH = APP_ROUTES.oauthCallback;
 
 export function buildOAuthCallbackUrl(
   flow: "login" | "register",
@@ -183,12 +186,14 @@ export function buildRegisterOAuthUrls(
 ): RegisterOAuthUrls {
   const destination = getPostRegisterPath(accountIntent);
   const callbackPath = buildOAuthCallbackUrl("register", accountIntent, destination);
-  const completePath = buildPostOAuthUrl(accountIntent, destination);
   return {
     callbackPath,
     callbackUrl: buildOAuthRedirectCompleteUrl(callbackPath),
-    completePath,
-    completeUrl: buildOAuthRedirectCompleteUrl(completePath),
+    // Clerk must land back on our callback component first so
+    // AuthenticateWithRedirectCallback can activate the session. The callback
+    // component then force-redirects to post-oauth with the destination.
+    completePath: callbackPath,
+    completeUrl: buildOAuthRedirectCompleteUrl(callbackPath),
     destination,
   };
 }
@@ -207,22 +212,22 @@ export function resolvePostAuthDestination(options: {
     (!isTeam && (intent === "owner" || intent === null));
 
   if (isTeam && !options.teamOnboarded) {
-    return "/team-onboard";
+    return APP_ROUTES.teamOnboard;
   }
   if (isOwner && !options.shopReady) {
-    return "/shop-wizard";
+    return APP_ROUTES.shopWizard;
   }
-  return "/analytics";
+  return APP_ROUTES.analytics;
 }
 
 export function buildOAuthRedirectUrl(
-  basePath: "/login" | "/register",
+  basePath: typeof APP_ROUTES.login | typeof APP_ROUTES.register,
   redirectTo: string,
   accountIntent?: AccountIntent,
 ): string {
   const params = new URLSearchParams();
 
-  if (basePath === "/login") {
+  if (basePath === APP_ROUTES.login) {
     params.set("redirect", redirectTo);
     if (accountIntent) {
       params.set("account", accountIntent);
@@ -243,7 +248,7 @@ export function buildPostOAuthUrl(
   params.set("account", accountIntent);
   const destination = redirectTo ?? getPostRegisterPath(accountIntent);
   params.set("redirect", destination);
-  return `/auth/post-oauth?${params.toString()}`;
+  return `${APP_ROUTES.postOAuth}?${params.toString()}`;
 }
 
 export function buildOAuthRedirectCompleteUrl(path: string): string {

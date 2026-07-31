@@ -1,4 +1,5 @@
 import { authFetch } from "./api";
+import { API_ROUTES } from "./apiRoutes";
 
 export type PlanId = "basic" | "pro" | "max";
 export type BillingPeriod = "monthly" | "annual";
@@ -53,18 +54,58 @@ export interface SubscriptionSnapshot {
   canManage: boolean;
 }
 
+export interface SubscriptionPlan {
+  id: PlanId;
+  title: string;
+  price: Record<BillingPeriod, number>;
+  currency: string;
+  limits: Record<string, unknown>;
+}
+
+export interface SubscriptionPlanCatalog {
+  currency: string;
+  sandbox: boolean;
+  configured: boolean;
+  plans: SubscriptionPlan[];
+}
+
 interface CheckoutResponse {
   actionUrl: string;
   sandbox: boolean;
   fields: Record<string, string>;
 }
 
+export class SubscriptionApiError extends Error {
+  status: number;
+  code: string | null;
+
+  constructor(message: string, status: number, code: string | null = null) {
+    super(message);
+    this.name = "SubscriptionApiError";
+    this.status = status;
+    this.code = code;
+  }
+}
+
 async function parse<T>(res: Response): Promise<T> {
   const body = await res.json().catch(() => null);
   if (!res.ok) {
-    throw new Error(body?.error || `Request failed (${res.status})`);
+    const code = typeof body?.error === "string" ? body.error : null;
+    const message =
+      typeof body?.message === "string"
+        ? body.message
+        : typeof body?.error === "string"
+          ? body.error
+          : `Request failed (${res.status})`;
+    throw new SubscriptionApiError(message, res.status, code);
   }
   return body as T;
+}
+
+export async function fetchSubscriptionPlans(): Promise<SubscriptionPlanCatalog> {
+  return parse<SubscriptionPlanCatalog>(
+    await authFetch(API_ROUTES.subscription.plans),
+  );
 }
 
 export async function fetchSubscription(
@@ -73,7 +114,7 @@ export async function fetchSubscription(
 ): Promise<SubscriptionSnapshot> {
   const params = new URLSearchParams({ shopId, userEmail });
   return parse<SubscriptionSnapshot>(
-    await authFetch(`/api/subscription/status?${params.toString()}`),
+    await authFetch(API_ROUTES.subscription.status(params)),
   );
 }
 
@@ -89,7 +130,7 @@ export async function startSubscriptionCheckout(
   billingPeriod: BillingPeriod,
 ): Promise<void> {
   const checkout = await parse<CheckoutResponse>(
-    await authFetch("/api/subscription/checkout", {
+    await authFetch(API_ROUTES.subscription.checkout, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ shopId, userEmail, planId, billingPeriod }),
@@ -118,7 +159,7 @@ export async function cancelSubscription(
   userEmail: string,
 ): Promise<void> {
   await parse(
-    await authFetch("/api/subscription/cancel", {
+    await authFetch(API_ROUTES.subscription.cancel, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ shopId, userEmail }),
@@ -131,7 +172,7 @@ export async function retrySubscription(
   userEmail: string,
 ): Promise<void> {
   await parse(
-    await authFetch("/api/subscription/retry", {
+    await authFetch(API_ROUTES.subscription.retry, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ shopId, userEmail }),

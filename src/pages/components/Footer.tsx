@@ -1,5 +1,6 @@
 import React from 'react';
 import { Link } from 'react-router-dom'; // Assuming you use react-router-dom for navigation
+import { APP_ROUTES } from '../../lib/routes';
 
 const Footer: React.FC = () => {
   return (
@@ -18,7 +19,7 @@ const Footer: React.FC = () => {
           
           {/* Column 1: CeyPOS Branding & CTA */}
           <div className="space-y-6">
-            <Link to="/" className="text-2xl font-bold text-slate-900">
+            <Link to={APP_ROUTES.home} className="text-2xl font-bold text-slate-900">
               CeyPOS
             </Link>
             <h3 className="text-xl font-bold text-slate-900">Ready to Grow with CeyPOS?</h3>
@@ -58,11 +59,11 @@ const Footer: React.FC = () => {
           <div>
             <h4 className="text-lg font-semibold text-slate-900 mb-5">Product</h4>
             <ul className="space-y-3 text-sm">
-              <li><Link to="/features" className="text-slate-600 hover:text-slate-900 transition-colors">Features</Link></li>
+              <li><Link to={APP_ROUTES.features} className="text-slate-600 hover:text-slate-900 transition-colors">Features</Link></li>
               <li><a href="#" className="text-slate-600 hover:text-slate-900 transition-colors">Integrations</a></li> {/* Example link */}
               <li><a href="#" className="text-slate-600 hover:text-slate-900 transition-colors">Updates <span className="text-[#D8FA50] ml-1 font-bold">New</span></a></li>
-              <li><Link to="/pricing" className="text-slate-600 hover:text-slate-900 transition-colors">Pricing</Link></li>
-              <li><Link to="/support" className="text-slate-600 hover:text-slate-900 transition-colors">Support</Link></li>
+              <li><Link to={APP_ROUTES.pricing} className="text-slate-600 hover:text-slate-900 transition-colors">Pricing</Link></li>
+              <li><Link to={APP_ROUTES.support} className="text-slate-600 hover:text-slate-900 transition-colors">Support</Link></li>
             </ul>
           </div>
 
@@ -70,7 +71,7 @@ const Footer: React.FC = () => {
           <div>
             <h4 className="text-lg font-semibold text-slate-900 mb-5">Company</h4>
             <ul className="space-y-3 text-sm">
-              <li><Link to="/about" className="text-slate-600 hover:text-slate-900 transition-colors">About Us</Link></li>
+              <li><Link to={APP_ROUTES.about} className="text-slate-600 hover:text-slate-900 transition-colors">About Us</Link></li>
               <li><a href="#" className="text-slate-600 hover:text-slate-900 transition-colors">Careers</a></li>
               <li><a href="#" className="text-slate-600 hover:text-slate-900 transition-colors">Blog</a></li>
               <li><a href="#" className="text-slate-600 hover:text-slate-900 transition-colors">Contact</a></li>
@@ -81,8 +82,8 @@ const Footer: React.FC = () => {
           <div>
             <h4 className="text-lg font-semibold text-slate-900 mb-5">Resources</h4>
             <ul className="space-y-3 text-sm">
-              <li><Link to="/login" className="text-slate-600 hover:text-slate-900 transition-colors">Login</Link></li>
-              <li><Link to="/register" className="text-slate-600 hover:text-slate-900 transition-colors">Register</Link></li>
+              <li><Link to={APP_ROUTES.login} className="text-slate-600 hover:text-slate-900 transition-colors">Login</Link></li>
+              <li><Link to={APP_ROUTES.register} className="text-slate-600 hover:text-slate-900 transition-colors">Register</Link></li>
               <li><a href="#" className="text-slate-600 hover:text-slate-900 transition-colors">API <span className="text-[#D8FA50] ml-1 font-bold">New</span></a></li>
               <li><a href="#" className="text-slate-600 hover:text-slate-900 transition-colors">Documentation</a></li>
               <li><a href="#" className="text-slate-600 hover:text-slate-900 transition-colors">Status</a></li>

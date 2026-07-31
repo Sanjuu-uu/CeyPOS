@@ -157,6 +157,7 @@ router.post("/complete", (req, res) => {
   } = req.body;
   const servedBy = req.body?.servedBy || {};
   const idempotencyKey = cleanIdempotencyKey(req.body.idempotencyKey);
+  const reservationSequence = safeInteger(req.body?.reservationSequence, 0);
 
   if (!idempotencyKey) {
     return res.status(400).json({ ok: false, error: "invalid_idempotency_key" });
@@ -557,6 +558,7 @@ router.post("/complete", (req, res) => {
         payment_method: paymentMethod,
         created_at: effectiveDate,
         terminal_id: servedBy.terminalId || null,
+        reservation_sequence: reservationSequence,
         served_by_member_id: servedBy.memberId || null,
         served_by_display_name: servedBy.displayName || null,
         served_by_role: servedBy.role || null,

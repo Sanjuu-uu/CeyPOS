@@ -122,6 +122,8 @@ function resolveShopIdByOwnerEmail(ownerEmail) {
 
   ensureShopDatabaseDirectory();
   const entries = fs.readdirSync(SHOP_DATABASE_DIRECTORY, { withFileTypes: true });
+  const matches = [];
+
   for (const entry of entries) {
     if (!entry.isFile() || !entry.name.toLowerCase().endsWith(".db")) continue;
 
@@ -135,11 +137,13 @@ function resolveShopIdByOwnerEmail(ownerEmail) {
         .prepare("SELECT shop_id, owner_email FROM shop_meta WHERE lower(owner_email) = lower(?) LIMIT 1")
         .get(normalizedEmail);
       if (row?.shop_id) {
-        return {
+        const stats = fs.statSync(fullPath);
+        matches.push({
           shopId: row.shop_id,
           ownerEmail: row.owner_email || normalizedEmail,
           dbFileName: entry.name,
-        };
+          updatedAtMs: stats.mtimeMs,
+        });
       }
     } catch {
       // ignore unreadable databases while searching by owner email
@@ -154,7 +158,14 @@ function resolveShopIdByOwnerEmail(ownerEmail) {
     }
   }
 
-  return null;
+  matches.sort((a, b) => b.updatedAtMs - a.updatedAtMs);
+  const latest = matches[0];
+  if (!latest) return null;
+  return {
+    shopId: latest.shopId,
+    ownerEmail: latest.ownerEmail,
+    dbFileName: latest.dbFileName,
+  };
 }
 
 function initializeShopDatabaseSchema(db) {

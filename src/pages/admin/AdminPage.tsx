@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useUser } from "@clerk/clerk-react";
 import { authFetch, API_BASE } from "../../lib/api";
+import { API_ROUTES } from "../../lib/apiRoutes";
 import { Card } from "../../components/ui/Card";
 import { Button } from "../../components/ui/Button";
 
@@ -93,7 +94,7 @@ export const AdminPage: React.FC = () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await authFetch(`${API_BASE}/api/admin/status`);
+      const res = await authFetch(`${API_BASE}${API_ROUTES.admin.status}`);
       const body = await res.json();
       if (!res.ok || body?.ok === false) throw new Error(body?.error || "Failed to load admin status");
       setStatus(body.data);
@@ -106,7 +107,7 @@ export const AdminPage: React.FC = () => {
 
   const loadConversation = useCallback(async (conversationId: string) => {
     setSelectedConversation(conversationId);
-    const res = await authFetch(`${API_BASE}/api/admin/support/conversations/${encodeURIComponent(conversationId)}`);
+    const res = await authFetch(`${API_BASE}${API_ROUTES.admin.supportConversation(conversationId)}`);
     const body = await res.json();
     if (res.ok && body?.messages) setMessages(body.messages);
   }, []);
@@ -130,7 +131,7 @@ export const AdminPage: React.FC = () => {
   const runBackup = async (shopId?: string) => {
     setActionState("Running backup...");
     try {
-      await authFetch(`${API_BASE}/api/admin/backups/run`, {
+      await authFetch(`${API_BASE}${API_ROUTES.admin.backupsRun}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ shopId: shopId || null, backupType: "manual" }),
@@ -145,7 +146,7 @@ export const AdminPage: React.FC = () => {
   const recover = async (runId: string) => {
     if (!window.confirm("Recover this backup into a separate recovered shop database? Existing merchant DBs will not be overwritten.")) return;
     setActionState("Recovering backup...");
-    const res = await authFetch(`${API_BASE}/api/admin/backups/recover`, {
+    const res = await authFetch(`${API_BASE}${API_ROUTES.admin.backupsRecover}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ runId }),
@@ -158,7 +159,7 @@ export const AdminPage: React.FC = () => {
   const exportShop = async (shopId: string) => {
     setActionState("Preparing shop export...");
     try {
-      const res = await authFetch(`${API_BASE}/api/admin/shops/${encodeURIComponent(shopId)}/export`);
+      const res = await authFetch(`${API_BASE}${API_ROUTES.admin.shopExport(shopId)}`);
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         throw new Error(body?.error || "Export failed");
@@ -180,7 +181,7 @@ export const AdminPage: React.FC = () => {
 
   const sendReply = async () => {
     if (!selectedConversation || !reply.trim()) return;
-    const res = await authFetch(`${API_BASE}/api/admin/support/conversations/${encodeURIComponent(selectedConversation)}/messages`, {
+    const res = await authFetch(`${API_BASE}${API_ROUTES.admin.supportConversationMessages(selectedConversation)}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ message: reply }),

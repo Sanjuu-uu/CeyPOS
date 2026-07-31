@@ -10,6 +10,7 @@ import {
 } from '../lib/shopContext';
 import { installGlobalBarcodeRouter } from '../lib/barcodeRouter';
 import { authFetch } from '../lib/api';
+import { API_ROUTES } from '../lib/apiRoutes';
 
 interface AppContextType {
   currentModule: ModuleName;
@@ -177,7 +178,7 @@ export const AppProvider: React.FC<AppProviderProps> = ({
 
     if (context.member.role === 'owner' && !terminal) {
       try {
-        const res = await authFetch('/api/terminals/primary/ensure', {
+        const res = await authFetch(API_ROUTES.terminals.primaryEnsure, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -204,7 +205,7 @@ export const AppProvider: React.FC<AppProviderProps> = ({
           void db.connectWebSocket(externalShopId, {
             terminalId: primaryTerminal.terminalId,
             terminalToken: primaryTerminal.terminalToken,
-          });
+          }, { userEmail });
         }
       } catch {
         // non-fatal
@@ -224,18 +225,22 @@ export const AppProvider: React.FC<AppProviderProps> = ({
         return;
       }
 
-      const terminal = loadTerminalSession(externalShopId);
-
-      try {
-        await db.connectWebSocket(externalShopId, terminal || undefined);
-      } catch (e) {
-        console.warn('Failed to connect WebSocket for shop', externalShopId, e);
-      }
-
       try {
         await refreshShopContext();
       } catch (e) {
         console.warn('Failed to refresh shop context for shop', externalShopId, e);
+      }
+
+      let terminal = loadTerminalSession(externalShopId);
+      if (accountType === 'team' && terminal?.terminalType === 'primary') {
+        clearTerminalSession();
+        terminal = null;
+      }
+
+      try {
+        await db.connectWebSocket(externalShopId, terminal || undefined, { userEmail });
+      } catch (e) {
+        console.warn('Failed to connect WebSocket for shop', externalShopId, e);
       }
 
       const loadedShop = db.shops.getById(`shop_${externalShopId}`);

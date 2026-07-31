@@ -9,6 +9,7 @@ import { ImportConfirmation } from './ImportConfirmation';
 import { useShopWizard } from '../../../../context/ShopWizardContext';
 import { useApp } from '../../../../context/AppContext';
 import { authFetch } from '../../../../lib/api';
+import { API_ROUTES } from '../../../../lib/apiRoutes';
 
 interface ImportWizardProps {
   onClose?: () => void;
@@ -68,7 +69,7 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({ onClose, onImportCom
       formData.append('file', file);
       formData.append('shopId', shopId);
       setUploadProgress(10);
-      const response = await authFetch('/api/inventory/upload', {
+      const response = await authFetch(API_ROUTES.inventory.upload, {
         method: 'POST',
         body: formData,
       });

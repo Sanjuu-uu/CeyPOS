@@ -9,8 +9,29 @@ function getHeaderValue(req, key) {
   return typeof value === "string" ? value : undefined;
 }
 
+function resolveCanonicalShopId(shopId) {
+  let db = null;
+  try {
+    db = openShopDatabase(shopId);
+    const row = db.prepare("SELECT shop_id FROM shop_meta LIMIT 1").get();
+    if (row?.shop_id) return String(row.shop_id);
+  } catch (err) {
+    console.warn("Failed to resolve canonical shop id", err?.message || err);
+  } finally {
+    if (db) {
+      try {
+        db.close();
+      } catch {
+        // ignore
+      }
+    }
+  }
+  return String(shopId || "").replace(/^shop_/, "");
+}
+
 export function requireShopBody(req, res, next) {
   const shopId =
+    req.params?.shopId ||
     req.body?.shopId ||
     req.query?.shopId ||
     getHeaderValue(req, "x-shop-id") ||
@@ -35,7 +56,7 @@ export function requireShopBody(req, res, next) {
   if (!shopDatabaseExists(shopId)) {
     return res.status(404).json({ error: "Shop not found" });
   }
-  req.shopId = shopId;
+  req.shopId = resolveCanonicalShopId(shopId);
   req.userEmail = normalizeEmail(userEmail);
   next();
 }

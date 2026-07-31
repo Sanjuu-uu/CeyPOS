@@ -1,9 +1,21 @@
 import express from "express";
 import { openShopDatabase } from "../utils/shop-database.js";
+import { requireClerkSession } from "../middleware/clerk-auth.js";
+import {
+  requireShopBody,
+  loadShopAuth,
+  requireScope,
+} from "../middleware/shop-auth.js";
 
 const router = express.Router();
 
-router.put("/:shopId", (req, res) => {
+router.put(
+  "/:shopId",
+  requireClerkSession,
+  requireShopBody,
+  loadShopAuth,
+  requireScope("business"),
+  (req, res) => {
   const { shopId } = req.params;
   const { loyalty, discounts, taxes, surcharges } = req.body;
 

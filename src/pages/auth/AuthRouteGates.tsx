@@ -12,9 +12,23 @@ import {
   intentToMetadataAccountType,
   buildRegisterHref,
 } from "../../lib/authFlow";
-import { OAUTH_JUST_COMPLETED_KEY } from "../../lib/authFlow";
 
-// No auto timeout for pending OAuth — wait until Clerk session activates
+const OAUTH_WAIT_TIMEOUT_MS = 10000;
+const METADATA_UPDATE_TIMEOUT_MS = 2500;
+
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timeout = window.setTimeout(
+      () => reject(new Error(`Timed out after ${ms}ms`)),
+      ms,
+    );
+    promise
+      .then(resolve, reject)
+      .finally(() => window.clearTimeout(timeout));
+  });
+}
+
+// Wait briefly for Clerk to activate the OAuth session, then recover to register.
 
 function AuthLoading({ message = "Loading…" }: { message?: string }) {
   return (
@@ -35,7 +49,7 @@ function AuthLoading({ message = "Loading…" }: { message?: string }) {
  */
 export function RegisterPageGate() {
   const { isLoaded, isSignedIn } = useAuth();
-  const { user } = useUser();
+  const { user, isLoaded: isUserLoaded } = useUser();
   const location = useLocation();
   const navigate = useNavigate();
   const finishingRef = useRef(false);
@@ -58,40 +72,50 @@ export function RegisterPageGate() {
       setOauthWaitDone(true);
       return;
     }
-    // Keep waiting until Clerk activates the session; do not auto-clear.
+    const timeout = window.setTimeout(() => {
+      clearOAuthPending();
+      setOauthWaitDone(true);
+    }, OAUTH_WAIT_TIMEOUT_MS);
     setOauthWaitDone(false);
-    return () => {};
+    return () => window.clearTimeout(timeout);
   }, [oauthPending, isSignedIn]);
 
   useEffect(() => {
-    if (!isLoaded || !isSignedIn || !user || finishingRef.current) return;
+    if (!isLoaded || !isUserLoaded || !isSignedIn || !user || finishingRef.current) return;
 
     finishingRef.current = true;
 
     const finish = async () => {
       clearOAuthPending();
+      let metadataApplied = false;
       try {
         const metaType = intentToMetadataAccountType(intent);
         const existingType = user.unsafeMetadata?.accountType;
         if (existingType !== "team" && existingType !== "owner") {
-          await user.update({
-            unsafeMetadata: {
-              ...(user.unsafeMetadata || {}),
-              accountType: metaType,
-            },
-          });
+          await withTimeout(
+            user.update({
+              unsafeMetadata: {
+                ...(user.unsafeMetadata || {}),
+                accountType: metaType,
+              },
+            }),
+            METADATA_UPDATE_TIMEOUT_MS,
+          );
         }
+        metadataApplied = true;
       } catch (err) {
         console.error("RegisterPageGate: metadata update failed", err);
       }
-      clearAccountIntent();
+      if (metadataApplied) {
+        clearAccountIntent();
+      }
       navigate(wizardPath, { replace: true });
     };
 
     void finish();
-  }, [intent, isLoaded, isSignedIn, navigate, user, wizardPath]);
+  }, [intent, isLoaded, isSignedIn, isUserLoaded, navigate, user, wizardPath]);
 
-  if (!isLoaded) {
+  if (!isLoaded || !isUserLoaded) {
     return <AuthLoading message="Loading registration…" />;
   }
 
@@ -108,12 +132,5 @@ export function RegisterPageGate() {
 
 /** Pre-auth redirect when an unsigned user hits a wizard URL directly. */
 export function PreAuthWizardRedirect({ intent }: { intent: "employee" | "owner" }) {
-  try {
-    const justCompleted = typeof window !== "undefined" && Boolean(sessionStorage.getItem(OAUTH_JUST_COMPLETED_KEY));
-    if (justCompleted) {
-      return <Navigate to={getPostRegisterPath(intent === "employee" ? "employee" : "owner")} replace />;
-    }
-  } catch {}
-
   return <Navigate to={buildRegisterHref(intent === "employee" ? "employee" : "owner")} replace />;
 }

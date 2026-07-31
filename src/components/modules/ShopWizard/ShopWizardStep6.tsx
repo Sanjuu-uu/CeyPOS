@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { useShopWizard } from '../../../context/ShopWizardContext';
 import { useNavigate } from 'react-router-dom';
+import { APP_ROUTES } from '../../../lib/routes';
 import './styles/ShopWizard.css';
 
 const cardVariants = {
@@ -98,9 +99,13 @@ export const ShopWizardStep6: React.FC = () => {
     };
   }, [completeWizard, hasTriggeredCompletion]);
 
-  const handleGoToAnalytics = () => {
-    // Navigate to analytics immediately
-    navigate('/analytics');
+  const handleGoToAnalytics = async () => {
+    try {
+      await completeWizard();
+      navigate(APP_ROUTES.analytics, { replace: true });
+    } catch (error) {
+      console.error('Shop completion failed before navigation', error);
+    }
   };
 
   const handleRetry = () => {

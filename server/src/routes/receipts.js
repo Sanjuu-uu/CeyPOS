@@ -12,10 +12,33 @@ import {
   buildReceiptSnapshot,
   resolvePublicBaseUrl,
 } from "../services/receipt-snapshot.js";
+import { requireClerkSession } from "../middleware/clerk-auth.js";
+import {
+  requireShopBody,
+  loadShopAuth,
+} from "../middleware/shop-auth.js";
+import { scopeAllows } from "../services/member-scope.js";
+import { WEB_ROUTES } from "./paths.js";
 
 const router = Router();
 
-router.post("/mint-token", (req, res) => {
+function requirePosOrReceipts(req, res, next) {
+  if (
+    scopeAllows(req.shopAuth?.scope, "pos") ||
+    scopeAllows(req.shopAuth?.scope, "receipts")
+  ) {
+    return next();
+  }
+  return res.status(403).json({ error: "Missing scope: pos_or_receipts" });
+}
+
+router.post(
+  "/mint-token",
+  requireClerkSession,
+  requireShopBody,
+  loadShopAuth,
+  requirePosOrReceipts,
+  (req, res) => {
   try {
     const { shopId, sale } = req.body || {};
 
@@ -35,7 +58,7 @@ router.post("/mint-token", (req, res) => {
       snapshot,
     });
 
-    const publicUrl = `${resolvePublicBaseUrl(req)}/r/${token}`;
+    const publicUrl = `${resolvePublicBaseUrl(req)}${WEB_ROUTES.publicReceipt(token)}`;
     res.json({ ok: true, token, url: publicUrl });
   } catch (err) {
     console.error("receipts/mint-token failed:", err?.message || err);

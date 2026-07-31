@@ -24,6 +24,13 @@ const RATE_LIMIT_WINDOW_SECONDS = 60; // 1 minute
 const RATE_LIMIT_MAX_REQUESTS = 3; // Max 3 SMS per minute per phone
 const RATE_LIMIT_LOCKOUT_SECONDS = 15 * 60; // 15 minute lockout after rate limit
 
+function isDevOtpEnabled() {
+  if (process.env.NODE_ENV === "production") return false;
+  return ["1", "true", "yes", "on"].includes(
+    String(process.env.FITSMS_FORCE_DEV_OTP || "").trim().toLowerCase(),
+  );
+}
+
 /**
  * Generate a cryptographically secure random 6-digit OTP
  */
@@ -273,6 +280,27 @@ export async function sendPhoneVerificationCode(db, {
         userAgent,
       });
       throw error;
+    }
+
+    // Local/dev escape hatch: keep the exact same persistence/rate-limit/verify
+    // path, but return the code to the browser instead of sending paid SMS.
+    if (isDevOtpEnabled()) {
+      logAudit(db, {
+        shopId,
+        userEmail,
+        normalizedPhone,
+        action,
+        result: "SUCCESS_DEV_CODE",
+        ipAddress,
+        userAgent,
+      });
+
+      return {
+        ok: true,
+        phone: normalizedPhone,
+        devCode: code,
+        devMode: true,
+      };
     }
 
     // Send SMS via FitSMS. Actual SMS delivery is required for production workflows.

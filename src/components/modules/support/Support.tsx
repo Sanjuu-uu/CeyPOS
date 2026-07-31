@@ -5,6 +5,7 @@ import { Input } from '../../ui/Input';
 import { getSearchHash } from '../../../lib/navigationSearch';
 import { useApp } from '../../../context/AppContext';
 import { API_BASE, authFetch } from '../../../lib/api';
+import { API_ROUTES } from '../../../lib/apiRoutes';
 
 interface FAQ {
   id: string;
@@ -71,7 +72,7 @@ export const Support: React.FC = () => {
   const loadChat = async (conversationId = chatConversationId) => {
     if (!conversationId) return;
     try {
-      const response = await authFetch(`${API_BASE}/api/admin/support/conversations/${encodeURIComponent(conversationId)}/merchant`);
+      const response = await authFetch(`${API_BASE}${API_ROUTES.admin.merchantSupportConversation(conversationId)}`);
       const payload = await response.json().catch(() => ({}));
       if (!response.ok || payload?.ok === false) throw new Error(payload?.error || `Chat unavailable (${response.status})`);
       setChatMessages(payload.messages || []);
@@ -175,7 +176,7 @@ export const Support: React.FC = () => {
     if (!message) return;
     setChatStatus('Sending...');
     try {
-      const response = await authFetch(`${API_BASE}/api/admin/support/conversations`, {
+      const response = await authFetch(`${API_BASE}${API_ROUTES.admin.supportConversations}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

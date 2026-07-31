@@ -4,6 +4,7 @@ import { Mail, AlertCircle, CheckCircle } from "lucide-react";
 import { useUser } from "@clerk/clerk-react";
 import { useEmployeeOnboard } from "../../../context/EmployeeOnboardContext";
 import { postJSON, waitForApiReady } from "../../../lib/api";
+import { API_ROUTES } from "../../../lib/apiRoutes";
 import "../ShopWizard/styles/ShopWizard.css";
 
 const cardVariants = {
@@ -20,6 +21,13 @@ interface VerificationError {
   code?: string;
   attemptsRemaining?: number;
   retryAfter?: number;
+}
+
+interface SendVerificationResponse {
+  ok: boolean;
+  phone: string;
+  devCode?: string;
+  devMode?: boolean;
 }
 
 function parseErrorResponse(err: unknown): VerificationError {
@@ -79,18 +87,31 @@ export const EmployeeOnboardStep2: React.FC = () => {
 
     try {
       await waitForApiReady();
-      await postJSON<{ ok: boolean }>(
-        "/api/team/verify/send-code",
+      const result = await postJSON<SendVerificationResponse>(
+        API_ROUTES.team.verifySendCode,
         { phone: formData.phone, userEmail },
       );
       setSent(true);
-      setInfo("Verification code sent to your phone.");
+      if (result.devMode && result.devCode) {
+        setCode(result.devCode);
+        setInfo(`Development mode: use verification code ${result.devCode}.`);
+      } else {
+        setInfo("Verification code sent to your phone.");
+      }
     } catch (err) {
       const errorData = parseErrorResponse(err);
       if (errorData.retryAfter) {
         setRetryAfterSeconds(errorData.retryAfter);
         setError(
           `${errorData.error || "Rate limited"}\nPlease wait ${Math.ceil(errorData.retryAfter / 60)} minute(s).`,
+        );
+      } else if (errorData.code === "SMS_PROVIDER_UNCONFIGURED") {
+        setError(
+          "SMS verification is not configured on this server. In local development, set FITSMS_FORCE_DEV_OTP=1 and restart the backend, or use Skip verification for now.",
+        );
+      } else if (errorData.code === "SMS_PROVIDER_AUTH_FAILED") {
+        setError(
+          "SMS provider rejected the configured credentials. Check FITSMS_TOKEN and FITSMS_SENDER_ID, or enable FITSMS_FORCE_DEV_OTP=1 for local testing.",
         );
       } else {
         setError(errorData.error || "Failed to send code");
@@ -137,7 +158,7 @@ export const EmployeeOnboardStep2: React.FC = () => {
     setAttemptsRemaining(null);
     try {
       await waitForApiReady();
-      await postJSON("/api/team/verify/check-code", {
+      await postJSON(API_ROUTES.team.verifyCheckCode, {
         phone: formData.phone,
         code: codeValue.trim(),
       });

@@ -4,6 +4,7 @@ import { Loader2, MonitorSpeaker, ShieldCheck } from "lucide-react";
 import { useUser } from "@clerk/clerk-react";
 import { useApp } from "../../../context/AppContext";
 import { postJSON, authFetch } from "../../../lib/api";
+import { API_ROUTES } from "../../../lib/apiRoutes";
 import { saveTerminalSession } from "../../../lib/shopContext";
 import { db } from "../../../lib/db";
 
@@ -26,7 +27,10 @@ export const PairingModal: React.FC = () => {
     const interval = window.setInterval(async () => {
       try {
         const res = await authFetch(
-          `/api/terminals/pairing/status/${encodeURIComponent(requestId)}?shopId=${encodeURIComponent(activeShopId)}`,
+          API_ROUTES.terminals.pairingStatus(
+            requestId,
+            new URLSearchParams({ shopId: activeShopId }),
+          ),
         );
         const body = await res.json();
         console.debug("[ceypos:pairing] status poll", { requestId, activeShopId, body });
@@ -37,7 +41,7 @@ export const PairingModal: React.FC = () => {
             terminalToken: string;
             label?: string;
             error?: string;
-          }>("/api/terminals/pairing/claim", {
+          }>(API_ROUTES.terminals.pairingClaim, {
             shopId: activeShopId,
             userEmail,
             requestId,
@@ -58,7 +62,7 @@ export const PairingModal: React.FC = () => {
           await db.connectWebSocket(activeShopId, {
             terminalId: claim.terminalId,
             terminalToken: claim.terminalToken,
-          });
+          }, { userEmail });
           setStatus("approved");
           window.dispatchEvent(new CustomEvent("ceypos:terminal-updated", { detail: { terminalId: claim.terminalId } }));
           await refreshShopContext();
@@ -87,7 +91,7 @@ export const PairingModal: React.FC = () => {
       };
       console.log("[ceypos:pairing] submit", payload);
       const result = await postJSON<{ ok: boolean; requestId: string; error?: string }>(
-        "/api/terminals/pairing/request",
+        API_ROUTES.terminals.pairingRequest,
         payload,
       );
       console.log("[ceypos:pairing] request success", result);

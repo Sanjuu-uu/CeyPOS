@@ -1,5 +1,6 @@
 import React from 'react';
 import { DownloadIcon, FileTextIcon } from 'lucide-react';
+import { API_ROUTES } from '../../../../lib/apiRoutes';
 
 interface TemplateDownloadProps {
   onNext?: () => void;
@@ -8,7 +9,7 @@ interface TemplateDownloadProps {
 export const TemplateDownload: React.FC<TemplateDownloadProps> = ({ onNext }) => {
   const handleDownloadTemplate = async () => {
     try {
-      const res = await fetch('/api/inventory/template');
+      const res = await fetch(API_ROUTES.inventory.template);
       if (!res.ok) throw new Error('Failed to download template');
       const buf = await res.arrayBuffer();
       const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });

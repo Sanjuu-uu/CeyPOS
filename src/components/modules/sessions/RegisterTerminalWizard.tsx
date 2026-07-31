@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { postJSON, authFetch } from "../../../lib/api";
+import { API_ROUTES } from "../../../lib/apiRoutes";
 import { db } from "../../../lib/db";
 
 interface RegisterTerminalWizardProps {
@@ -40,7 +41,7 @@ export const RegisterTerminalWizard: React.FC<RegisterTerminalWizardProps> = ({
     setLimitReached(false);
     try {
       const result = await postJSON<{ ok: boolean; code: string; expiresAt: string }>(
-        "/api/terminals/pairing-code/create",
+        API_ROUTES.terminals.pairingCodeCreate,
         { shopId, userEmail },
       );
       setCode(result.code);
@@ -61,7 +62,7 @@ export const RegisterTerminalWizard: React.FC<RegisterTerminalWizardProps> = ({
   const loadPending = async () => {
     try {
       const params = new URLSearchParams({ shopId, userEmail });
-      const res = await authFetch(`/api/terminals/pairing/pending?${params.toString()}`);
+      const res = await authFetch(API_ROUTES.terminals.pairingPending(params));
       const result = await res.json();
       if (res.ok) setPending(result.pending || []);
     } catch {
@@ -92,7 +93,7 @@ export const RegisterTerminalWizard: React.FC<RegisterTerminalWizardProps> = ({
   const approve = async (requestId: string) => {
     setApproving(requestId);
     try {
-      await postJSON("/api/terminals/pairing/approve", { shopId, userEmail, requestId });
+      await postJSON(API_ROUTES.terminals.pairingApprove, { shopId, userEmail, requestId });
       await loadPending();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Approval failed");
@@ -103,7 +104,7 @@ export const RegisterTerminalWizard: React.FC<RegisterTerminalWizardProps> = ({
 
   const reject = async (requestId: string) => {
     try {
-      await postJSON("/api/terminals/pairing/reject", { shopId, userEmail, requestId });
+      await postJSON(API_ROUTES.terminals.pairingReject, { shopId, userEmail, requestId });
       await loadPending();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Reject failed");

@@ -23,6 +23,7 @@ import {
 import { ChatVisualization, type VisualizationData } from './ChatVisualization';
 import { useApp } from '../../../context/AppContext';
 import { API_BASE, authFetch } from '../../../lib/api';
+import { API_ROUTES } from '../../../lib/apiRoutes';
 import { humanizeAgentStep, sanitizeUserFacingText } from '../../../lib/humanizeAgentStep';
 
 interface Attachment {
@@ -460,9 +461,7 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({ isOpen, onToggle }) =>
 
   const requestRecentChats = useCallback(async () => {
     const response = await authFetch(
-      `${API_BASE}/api/analytics/chats?shopId=${encodeURIComponent(
-        normalizedShopId ?? ''
-      )}&userEmail=${encodeURIComponent(userEmail)}`
+      `${API_BASE}${API_ROUTES.analytics.chatsForShop(normalizedShopId ?? '', userEmail)}`
     );
     if (!response.ok) {
       throw new Error('Failed to load recent chats');
@@ -473,10 +472,10 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({ isOpen, onToggle }) =>
 
   const requestConversation = useCallback(async (conversationId: string) => {
     const response = await authFetch(
-      `${API_BASE}/api/analytics/chats/${encodeURIComponent(
-        conversationId
-      )}?shopId=${encodeURIComponent(normalizedShopId ?? '')}&userEmail=${encodeURIComponent(
-        userEmail
+      `${API_BASE}${API_ROUTES.analytics.conversationForShop(
+        conversationId,
+        normalizedShopId ?? '',
+        userEmail,
       )}`
     );
     if (!response.ok) {
@@ -487,7 +486,7 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({ isOpen, onToggle }) =>
   }, [normalizedShopId, userEmail]);
 
   const requestNewChat = useCallback(async (mode: ChatMode = 'lite') => {
-    const response = await authFetch(`${API_BASE}/api/analytics/chats`, {
+    const response = await authFetch(`${API_BASE}${API_ROUTES.analytics.chats}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ shopId: normalizedShopId, userEmail, mode }),
@@ -501,10 +500,10 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({ isOpen, onToggle }) =>
 
   const requestDeleteChat = useCallback(async (conversationId: string) => {
     const response = await authFetch(
-      `${API_BASE}/api/analytics/chats/${encodeURIComponent(
-        conversationId
-      )}?shopId=${encodeURIComponent(normalizedShopId ?? '')}&userEmail=${encodeURIComponent(
-        userEmail
+      `${API_BASE}${API_ROUTES.analytics.conversationForShop(
+        conversationId,
+        normalizedShopId ?? '',
+        userEmail,
       )}`,
       { method: 'DELETE' }
     );
@@ -965,9 +964,7 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({ isOpen, onToggle }) =>
       .map((message) => ({ sender: message.sender, message: message.message }));
 
     const response = await authFetch(
-      `${API_BASE}/api/analytics/chats/${encodeURIComponent(
-        conversationId
-      )}/messages/stream`,
+      `${API_BASE}${API_ROUTES.analytics.conversationMessagesStream(conversationId)}`,
       {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

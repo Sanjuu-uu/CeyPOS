@@ -9,6 +9,7 @@ import { buildMemberScope, getShopPlanLimits, scopeAllows } from "../services/me
 import { upsertProducts } from "../services/inventory-service.js";
 import { lookupGlobalBarcodeProduct } from "../utils/global-barcode-database.js";
 import { createNotifications, getManagerNotificationRecipients } from "../services/notification-service.js";
+import { WEB_ROUTES } from "./paths.js";
 
 const router = express.Router();
 
@@ -227,7 +228,7 @@ router.post("/sessions/create", (req, res) => {
       const expiresAt = now + SESSION_PENDING_TTL_MS;
       const origin = resolveOrigin(req);
       const scanUrl = origin
-        ? `${origin}/mobilesessions/scan?session=${encodeURIComponent(
+        ? `${origin}${WEB_ROUTES.mobileScan}?session=${encodeURIComponent(
             sessionId
           )}&shopId=${encodeURIComponent(shopId)}&type=${encodeURIComponent(
             sessionType

@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { ChevronDown } from "lucide-react";
 import { buildRegisterHref, persistAccountIntent } from "../../lib/authFlow";
+import { APP_ROUTES } from "../../lib/routes";
 
 const Navigation: React.FC = () => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -10,7 +11,7 @@ const Navigation: React.FC = () => {
   const closeMobileMenu = () => setIsMobileMenuOpen(false);
 
   const handleLoginClick = () => {
-    window.location.href = "/login";
+    window.location.href = APP_ROUTES.login;
     closeMobileMenu();
   };
 
@@ -89,22 +90,22 @@ const Navigation: React.FC = () => {
         <div className="max-w-7xl mx-auto px-6">
           <div className="flex justify-between items-center h-16">
             <div className="flex items-center">
-              <a href="/" className="flex items-center">
+              <a href={APP_ROUTES.home} className="flex items-center">
                 <span className="text-xl font-bold text-slate-900">CeyPOS</span>
               </a>
             </div>
 
             <nav className="hidden md:flex items-center space-x-8">
-              <a href="/about" className="text-gray-700 hover:text-gray-900 font-medium text-sm transition-colors duration-200">
+              <a href={APP_ROUTES.about} className="text-gray-700 hover:text-gray-900 font-medium text-sm transition-colors duration-200">
                 About
               </a>
-              <a href="/features" className="text-gray-700 hover:text-gray-900 font-medium text-sm transition-colors duration-200">
+              <a href={APP_ROUTES.features} className="text-gray-700 hover:text-gray-900 font-medium text-sm transition-colors duration-200">
                 Features
               </a>
-              <a href="/pricing" className="text-gray-700 hover:text-gray-900 font-medium text-sm transition-colors duration-200">
+              <a href={APP_ROUTES.pricing} className="text-gray-700 hover:text-gray-900 font-medium text-sm transition-colors duration-200">
                 Pricing
               </a>
-              <a href="/support" className="text-gray-700 hover:text-gray-900 font-medium text-sm transition-colors duration-200">
+              <a href={APP_ROUTES.support} className="text-gray-700 hover:text-gray-900 font-medium text-sm transition-colors duration-200">
                 Support
               </a>
             </nav>
@@ -152,10 +153,10 @@ const Navigation: React.FC = () => {
           </div>
           <div className="px-6 py-6">
             <div className="space-y-6">
-              <a onClick={closeMobileMenu} href="/about" className="block text-gray-900 hover:text-gray-600 font-medium text-lg transition-colors duration-200">About</a>
-              <a onClick={closeMobileMenu} href="/features" className="block text-gray-900 hover:text-gray-600 font-medium text-lg transition-colors duration-200">Features</a>
-              <a onClick={closeMobileMenu} href="/pricing" className="block text-gray-900 hover:text-gray-600 font-medium text-lg transition-colors duration-200">Pricing</a>
-              <a onClick={closeMobileMenu} href="/support" className="block text-gray-900 hover:text-gray-600 font-medium text-lg transition-colors duration-200">Support</a>
+              <a onClick={closeMobileMenu} href={APP_ROUTES.about} className="block text-gray-900 hover:text-gray-600 font-medium text-lg transition-colors duration-200">About</a>
+              <a onClick={closeMobileMenu} href={APP_ROUTES.features} className="block text-gray-900 hover:text-gray-600 font-medium text-lg transition-colors duration-200">Features</a>
+              <a onClick={closeMobileMenu} href={APP_ROUTES.pricing} className="block text-gray-900 hover:text-gray-600 font-medium text-lg transition-colors duration-200">Pricing</a>
+              <a onClick={closeMobileMenu} href={APP_ROUTES.support} className="block text-gray-900 hover:text-gray-600 font-medium text-lg transition-colors duration-200">Support</a>
             </div>
             <div className="mt-8 pt-6 border-t border-gray-100 space-y-4">
               <button

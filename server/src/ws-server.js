@@ -25,6 +25,8 @@ const CHANGE_LATENCY_SAMPLE_LIMIT = 200;
 //   reservationsByShop: Map<shopId, Map<socketId, Map<inventoryCode, qty>>>
 // ---------------------------------------------------------------------------
 const reservationsByShop = new Map();
+const socketTerminalsByShop = new Map();
+const completedReservationSequencesByShop = new Map();
 
 function aggregateReservations(shopId) {
   const perSocket = reservationsByShop.get(shopId);
@@ -37,6 +39,52 @@ function aggregateReservations(shopId) {
     }
   }
   return totals;
+}
+
+function rememberSocketTerminal(shopId, socketId, terminalId) {
+  if (!terminalId) return;
+  let perSocket = socketTerminalsByShop.get(shopId);
+  if (!perSocket) {
+    perSocket = new Map();
+    socketTerminalsByShop.set(shopId, perSocket);
+  }
+  perSocket.set(socketId, String(terminalId));
+}
+
+function forgetSocketTerminal(shopId, socketId) {
+  const perSocket = socketTerminalsByShop.get(shopId);
+  if (!perSocket) return;
+  perSocket.delete(socketId);
+  if (perSocket.size === 0) socketTerminalsByShop.delete(shopId);
+}
+
+function rememberCompletedReservationSequence(shopId, terminalId, sequence) {
+  const normalizedTerminalId = String(terminalId || "");
+  const normalizedSequence = Number(sequence || 0);
+  if (
+    !shopId ||
+    !normalizedTerminalId ||
+    !Number.isFinite(normalizedSequence) ||
+    normalizedSequence <= 0
+  ) {
+    return;
+  }
+
+  let perTerminal = completedReservationSequencesByShop.get(shopId);
+  if (!perTerminal) {
+    perTerminal = new Map();
+    completedReservationSequencesByShop.set(shopId, perTerminal);
+  }
+  perTerminal.set(
+    normalizedTerminalId,
+    Math.max(Number(perTerminal.get(normalizedTerminalId) || 0), normalizedSequence),
+  );
+}
+
+function getCompletedReservationSequence(shopId, terminalId) {
+  const perTerminal = completedReservationSequencesByShop.get(shopId);
+  if (!perTerminal) return 0;
+  return Number(perTerminal.get(String(terminalId || "")) || 0);
 }
 
 function broadcastReservations(shopId) {
@@ -71,6 +119,24 @@ function setSocketReservations(shopId, socketId, items) {
   } else {
     perSocket.delete(socketId);
   }
+}
+
+function releaseTerminalReservations(shopId, terminalId) {
+  const normalizedTerminalId = String(terminalId || "");
+  if (!shopId || !normalizedTerminalId) return false;
+
+  const perSocket = reservationsByShop.get(shopId);
+  const terminalBySocket = socketTerminalsByShop.get(shopId);
+  if (!perSocket || !terminalBySocket) return false;
+
+  let changed = false;
+  for (const [socketId, heldTerminalId] of terminalBySocket.entries()) {
+    if (heldTerminalId !== normalizedTerminalId) continue;
+    if (perSocket.delete(socketId)) changed = true;
+  }
+
+  if (perSocket.size === 0) reservationsByShop.delete(shopId);
+  return changed;
 }
 
 function releaseSocketReservations(shopId, socketId) {
@@ -255,7 +321,26 @@ function init(httpServer, opts = {}) {
     },
   });
   ioInstance = io;
-    console.log("Ceypos Websocket server running...");
+  console.log("Ceypos Websocket server running...");
+
+  // A completed checkout permanently deducts stock in SQLite, so the
+  // temporary cart holds for that same terminal must be released even if the
+  // browser-side "clear cart" socket event is late, lost, or came from an old
+  // connection. Otherwise the next inventory broadcast looks like stock was
+  // deducted twice: once from the DB and once from a ghost reservation.
+  changeBus.on("change", (event) => {
+    if (event?.entity !== "transactions" || event?.action !== "created") return;
+    const terminalId = event?.payload?.transaction?.terminal_id;
+    if (!terminalId) return;
+    rememberCompletedReservationSequence(
+      String(event.shopId),
+      terminalId,
+      event?.payload?.transaction?.reservation_sequence,
+    );
+    if (releaseTerminalReservations(String(event.shopId), terminalId)) {
+      broadcastReservations(String(event.shopId));
+    }
+  });
 
   // Broadcast change bus events to interested rooms
   changeBus.on("change", (event) => {
@@ -322,6 +407,7 @@ function init(httpServer, opts = {}) {
           }
           socket.data.terminalId = terminalId;
           socket.data.terminalType = terminalCheck.terminal.terminal_type;
+          rememberSocketTerminal(shopId, socket.id, terminalId);
         } finally {
           db.close();
         }
@@ -462,6 +548,23 @@ function init(httpServer, opts = {}) {
     socket.on("cart:reserve", (payload, cb) => {
       try {
         const items = Array.isArray(payload?.items) ? payload.items : [];
+        const sequence = Number(payload?.sequence ?? payload?.reservationSequence ?? 0);
+        const completedSequence = getCompletedReservationSequence(
+          shopId,
+          socket.data?.terminalId,
+        );
+
+        if (
+          socket.data?.terminalId &&
+          items.length > 0 &&
+          Number.isFinite(sequence) &&
+          sequence > 0 &&
+          sequence <= completedSequence
+        ) {
+          if (typeof cb === "function") cb({ ok: true, stale: true });
+          return;
+        }
+
         setSocketReservations(shopId, socket.id, items);
         broadcastReservations(shopId);
         if (typeof cb === "function") cb({ ok: true });
@@ -476,6 +579,7 @@ function init(httpServer, opts = {}) {
       if (releaseSocketReservations(shopId, socket.id)) {
         broadcastReservations(shopId);
       }
+      forgetSocketTerminal(shopId, socket.id);
       if (socket.data?.terminalId) {
         publishChange({
           shopId,
