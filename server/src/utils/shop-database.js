@@ -222,6 +222,7 @@ function initializeShopDatabaseSchema(db) {
     pack_size DECIMAL(10,3) DEFAULT 1,
     preferred_supplier_id INTEGER,
     image_url TEXT,
+    deleted_at DATETIME,
     created_at DATETIME,
     updated_at DATETIME,
     FOREIGN KEY(preferred_supplier_id) REFERENCES inventory_suppliers(supplier_id)
@@ -896,6 +897,19 @@ function runInventoryLifecycleColumnMigrations(db) {
   addColumnIfMissing("inventory", "unit_name", "TEXT DEFAULT 'unit'");
   addColumnIfMissing("inventory", "pack_size", "DECIMAL(10,3) DEFAULT 1");
   addColumnIfMissing("inventory", "preferred_supplier_id", "INTEGER");
+  addColumnIfMissing("inventory", "deleted_at", "DATETIME");
+
+  try {
+    db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_inventory_active_name
+        ON inventory (deleted_at, name COLLATE NOCASE);
+      CREATE INDEX IF NOT EXISTS idx_inventory_active_barcode
+        ON inventory (barcode_id)
+        WHERE deleted_at IS NULL AND barcode_id IS NOT NULL;
+    `);
+  } catch {
+    // ignore
+  }
 }
 
 function runTeamWorkflowColumnMigrations(db) {
@@ -1153,8 +1167,8 @@ function ensureAllShopDatabasesSchema() {
 function insertInventoryRows(db, rows) {
   const insert = db.prepare(`
     INSERT INTO inventory (
-      inventory_code, barcode_id, name, category, sku, price, cost_price, stock, stock_last_month, restock_suggestion, reorder_threshold, unit_name, pack_size, preferred_supplier_id, image_url, created_at, updated_at
-    ) VALUES (@inventory_code, @barcode_id, @name, @category, @sku, @price, @cost_price, @stock, @stock_last_month, @restock_suggestion, @reorder_threshold, @unit_name, @pack_size, @preferred_supplier_id, @image_url, @created_at, @updated_at)
+      inventory_code, barcode_id, name, category, sku, price, cost_price, stock, stock_last_month, restock_suggestion, reorder_threshold, unit_name, pack_size, preferred_supplier_id, image_url, deleted_at, created_at, updated_at
+    ) VALUES (@inventory_code, @barcode_id, @name, @category, @sku, @price, @cost_price, @stock, @stock_last_month, @restock_suggestion, @reorder_threshold, @unit_name, @pack_size, @preferred_supplier_id, @image_url, NULL, @created_at, @updated_at)
     ON CONFLICT(inventory_code) DO UPDATE SET
       barcode_id=excluded.barcode_id,
       name=excluded.name,
@@ -1170,6 +1184,7 @@ function insertInventoryRows(db, rows) {
       pack_size=excluded.pack_size,
       preferred_supplier_id=excluded.preferred_supplier_id,
       image_url=excluded.image_url,
+      deleted_at=NULL,
       updated_at=excluded.updated_at
   `);
   const txn = db.transaction((list) => {

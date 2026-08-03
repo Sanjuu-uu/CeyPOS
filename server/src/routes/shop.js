@@ -17,7 +17,12 @@ import { getShopSnapshot } from "../services/shop-snapshot.js";
 import { ensureOwnerMember, normalizeEmail } from "../services/team-service.js";
 import { ensurePrimaryTerminal } from "../services/terminal-service.js";
 import { requireClerkSession } from "../middleware/clerk-auth.js";
-import { memberCanAccessShop } from "../middleware/shop-auth.js";
+import {
+  loadShopAuth,
+  memberCanAccessShop,
+  requireScope,
+  requireShopBody,
+} from "../middleware/shop-auth.js";
 
 const router = express.Router();
 
@@ -245,6 +250,73 @@ router.get("/:shopId/meta", requireClerkSession, requireShopReadAccess, (req, re
     });
   }
 });
+
+router.put(
+  "/:shopId/meta",
+  requireClerkSession,
+  requireShopBody,
+  loadShopAuth,
+  requireScope("settings"),
+  (req, res) => {
+    try {
+      const shopId = req.shopId || req.params.shopId;
+      if (!shopId) {
+        return res.status(400).json({ error: "shopId is required" });
+      }
+
+      const existing = req.db
+        .prepare("SELECT * FROM shop_meta WHERE shop_id = ?")
+        .get(shopId);
+
+      if (!existing) {
+        return res.status(404).json({ error: "Shop metadata not found" });
+      }
+
+      const body = req.body || {};
+      const merged = {
+        ...existing,
+        shop_name: String(body.shopName ?? body.shop_name ?? existing.shop_name ?? "").trim(),
+        phone: String(body.phone ?? body.contact ?? existing.phone ?? "").trim(),
+        address: String(body.address ?? existing.address ?? "").trim(),
+        city: String(body.city ?? existing.city ?? "").trim(),
+        state: String(body.state ?? existing.state ?? "").trim(),
+        zip_code: String(body.zipCode ?? body.zip_code ?? existing.zip_code ?? "").trim(),
+        country: String(body.country ?? existing.country ?? "").trim(),
+        shop_type: String(body.shopType ?? body.shop_type ?? existing.shop_type ?? "").trim(),
+        business_license: String(body.businessLicense ?? body.business_license ?? existing.business_license ?? "").trim(),
+        tax_id: String(body.taxId ?? body.tax_id ?? existing.tax_id ?? "").trim(),
+        registration_number: String(body.registrationNumber ?? body.registration_number ?? existing.registration_number ?? "").trim(),
+        currency: String(body.currency ?? existing.currency ?? "").trim(),
+        timezone: String(body.timezone ?? existing.timezone ?? "").trim(),
+        owner_name: existing.owner_name,
+        owner_email: existing.owner_email,
+        created_at: existing.created_at,
+      };
+
+      if (!merged.shop_name) {
+        return res.status(400).json({ error: "Shop name is required" });
+      }
+
+      upsertShopMetadata(req.db, shopId, merged);
+
+      const meta = req.db
+        .prepare("SELECT * FROM shop_meta WHERE shop_id = ?")
+        .get(shopId);
+
+      res.json({
+        ok: true,
+        meta,
+        dbFileName: getShopDatabaseFileName(shopId),
+      });
+    } catch (err) {
+      console.error("PUT /shop/:shopId/meta error", err);
+      res.status(500).json({
+        error: "Failed to update shop metadata",
+        detail: String(err.message || err),
+      });
+    }
+  },
+);
 
 // Return consolidated snapshot for realtime clients
 router.get("/:shopId/snapshot", requireClerkSession, requireShopReadAccess, (req, res) => {

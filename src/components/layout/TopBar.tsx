@@ -210,7 +210,7 @@ export const TopBar: React.FC = () => {
               w-56 lg:w-72
               bg-gray-50 border border-gray-300 rounded-lg
               pl-10 pr-4 py-2 text-sm
-              focus:outline-none focus:ring-2 focus:ring-[#ECFF76]/30 focus:border-[#ECFF76]
+              focus:outline-none focus:ring-2 focus:ring-[#c5f542]/25 focus:border-[#c5f542]
             "
           />
           {isSearchOpen && (
@@ -261,7 +261,7 @@ export const TopBar: React.FC = () => {
                     if (event.key === 'Escape') setIsSearchOpen(false);
                   }}
                   placeholder="Search pages or settings..."
-                  className="h-10 w-full rounded-lg border border-gray-200 bg-gray-50 pl-9 pr-10 text-sm outline-none focus:border-[#ECFF76]"
+                  className="h-10 w-full rounded-lg border border-gray-200 bg-gray-50 pl-9 pr-10 text-sm outline-none focus:border-[#c5f542] focus:ring-2 focus:ring-[#c5f542]/25"
                 />
                 <button
                   type="button"

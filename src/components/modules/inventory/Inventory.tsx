@@ -1,7 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Barcode,
-  Boxes,
   X,
   Package,
   Printer,
@@ -14,6 +12,7 @@ import { db, InventoryOperationsSnapshot } from '../../../lib/db';
 import { useApp } from '../../../context/AppContext';
 import { Product } from '../../../types';
 import { ImportWizard } from './import-wizard/ImportWizard';
+import { getSearchHash } from '../../../lib/navigationSearch';
 
 const LOW_STOCK_THRESHOLD = 10;
 const NEW_CATEGORY = '__new__';
@@ -442,7 +441,7 @@ export const Inventory: React.FC = () => {
     setErrorMessage(null);
   };
 
-  const startAdd = () => {
+  const startAdd = useCallback(() => {
     setEditingId(null);
     setForm(EMPTY_FORM);
     setUseCustomCategory(false);
@@ -450,7 +449,7 @@ export const Inventory: React.FC = () => {
     shouldFocusProductFormRef.current = true;
     setIsAddingProduct(true);
     setActiveTab('catalog');
-  };
+  }, []);
 
   const startEdit = useCallback((product: Product) => {
     setEditingId(product.id);
@@ -478,6 +477,29 @@ export const Inventory: React.FC = () => {
     setIsAddingProduct(true);
     setActiveTab('catalog');
   }, []);
+
+  useEffect(() => {
+    const applySearchHash = () => {
+      const hash = getSearchHash();
+      if (hash === 'inventory:add') {
+        startAdd();
+      }
+      if (hash === 'inventory:import') {
+        setActiveTab('catalog');
+        setShowImportWizard(true);
+      }
+      if (hash === 'inventory:stock') {
+        setActiveTab('stock');
+      }
+      if (hash === 'inventory:labels') {
+        setActiveTab('labels');
+      }
+    };
+
+    applySearchHash();
+    window.addEventListener('hashchange', applySearchHash);
+    return () => window.removeEventListener('hashchange', applySearchHash);
+  }, [startAdd]);
 
   const handleFieldChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>,

@@ -277,6 +277,33 @@ export const AppProvider: React.FC<AppProviderProps> = ({
   }, [externalShopId, shopProfile]);
 
   useEffect(() => {
+    if (!externalShopId) return;
+    const expectedShopKey = `shop_${externalShopId}`;
+    const unsubscribe = db.on('shopMeta', (payload) => {
+      const detail = payload as {
+        shopId?: string;
+        shop?: Shop;
+        meta?: {
+          shop_name?: string;
+          address?: string;
+          phone?: string;
+          currency?: string;
+        };
+      };
+      if (detail?.shopId !== expectedShopKey) return;
+      setCurrentShop((prev) => ({
+        ...(prev ?? { id: expectedShopKey, name: 'My Shop', address: '', contact: '' }),
+        ...(detail.shop ?? {}),
+        name: detail.shop?.name || detail.meta?.shop_name || prev?.name || 'My Shop',
+        address: detail.shop?.address || detail.meta?.address || prev?.address || '',
+        contact: detail.shop?.contact || detail.meta?.phone || prev?.contact || '',
+        currency: detail.shop?.currency || detail.meta?.currency || prev?.currency,
+      }));
+    });
+    return unsubscribe;
+  }, [externalShopId]);
+
+  useEffect(() => {
     const handler = (event: Event) => {
       const detail = (event as CustomEvent).detail;
       if (detail?.terminalId) {

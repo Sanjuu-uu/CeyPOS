@@ -17,6 +17,12 @@ import { ShopWizard } from "./components/modules/ShopWizard";
 import Home from "./pages/home/home";
 import Login from "./pages/login/Login";
 import AboutUs from "./pages/aboutUs/AboutUs";
+import {
+  MarketingContact,
+  MarketingFeatures,
+  MarketingPricing,
+  MarketingSupport,
+} from "./pages/marketing/MarketingPages";
 import MobileScan from "./pages/mobilesessions/MobileScan";
 import TeamOnboard from "./pages/team/TeamOnboard";
 import { PublicReceiptView } from "./components/modules/receipts/PublicReceiptView";
@@ -65,13 +71,10 @@ function PreAuthApp() {
       <Route path={APP_ROUTES.oauthCallback} element={<OAuthCallback />} />
       <Route path={APP_ROUTES.postOAuth} element={<PostOAuthRedirect />} />
       <Route path={APP_ROUTES.about} element={<AboutUs />} />
-      <Route
-        path={APP_ROUTES.features}
-        element={<div>Features Page - Coming Soon</div>}
-      />
-      <Route path={APP_ROUTES.pricing} element={<div>Pricing Page - Coming Soon</div>} />
-      <Route path={APP_ROUTES.support} element={<div>Support Page - Coming Soon</div>} />
-      <Route path={APP_ROUTES.contact} element={<div>Contact Page - Coming Soon</div>} />
+      <Route path={APP_ROUTES.features} element={<MarketingFeatures />} />
+      <Route path={APP_ROUTES.pricing} element={<MarketingPricing />} />
+      <Route path={APP_ROUTES.support} element={<MarketingSupport />} />
+      <Route path={APP_ROUTES.contact} element={<MarketingContact />} />
       {/* Redirect any authenticated routes back to home */}
       <Route path={`${APP_ROUTES.analytics}/*`} element={<Navigate to={APP_ROUTES.home} replace />} />
       <Route path={APP_ROUTES.shopWizard} element={<PreAuthWizardRedirect intent="owner" />} />

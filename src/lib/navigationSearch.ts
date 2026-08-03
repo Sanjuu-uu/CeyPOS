@@ -52,9 +52,9 @@ export const navigationSearchItems: NavigationSearchItem[] = [
   item("receipts-sms", "SMS Receipt", "Send a receipt link by SMS.", "receipts", "Feature", undefined),
 
   item("inventory", "Inventory", "Manage products, categories, barcodes and stock levels.", "inventory", "Navigation", undefined, ["catalog", "products", "stock"]),
-  item("inventory-add", "Add Product", "Create products with SKU, barcode, price, category and stock.", "inventory", "Feature", undefined, ["new item", "catalog item"]),
-  item("inventory-import", "Import Products", "Bulk import catalog data through the inventory import wizard.", "inventory", "Feature", undefined, ["csv", "bulk upload"]),
-  item("inventory-stock", "Stock Filters", "Filter inventory by all, in-stock, low-stock and out-of-stock items.", "inventory", "Feature", undefined, ["low stock", "out of stock"]),
+  item("inventory-add", "Add Product", "Create products with SKU, barcode, price, category and stock.", "inventory", "Feature", "inventory:add", ["new item", "catalog item"]),
+  item("inventory-import", "Import Products", "Bulk import catalog data through the inventory import wizard.", "inventory", "Feature", "inventory:import", ["csv", "bulk upload"]),
+  item("inventory-stock", "Stock Filters", "Filter inventory by all, in-stock, low-stock and out-of-stock items.", "inventory", "Feature", "inventory:stock", ["low stock", "out of stock"]),
 
   item("sessions", "Sessions", "Connect and manage register terminals and mobile devices.", "sessions", "Navigation", undefined, ["terminals", "devices", "mobile scanner"]),
   item("sessions-register", "Register Terminal", "Create and pair a register terminal with the shop.", "sessions", "Feature", undefined, ["pair terminal", "claim code"]),
@@ -89,6 +89,13 @@ export const navigationSearchItems: NavigationSearchItem[] = [
 
   item("settings", "Settings", "Customize workspace and account preferences.", "settings", "Navigation", undefined, ["preferences"]),
   item("settings-general", "General Settings", "Edit shop information, currency, timezone, tax rate and receipt message.", "settings", "Setting", "settings:general", ["shop information", "business settings"]),
+  item("settings-operations", "Operations Settings", "Configure checkout defaults, receipts, stock safeguards and terminal behavior.", "settings", "Setting", "settings:operations", ["checkout defaults", "sales settings", "receipt prefix", "stock safeguards", "terminal settings"]),
+  item("settings-checkout-defaults", "Checkout Defaults", "Set default payment, cash rounding, receipt copies, return window and cashier session rules.", "settings", "Setting", "settings:operations", ["payment default", "rounding", "cash drawer", "return days", "cashier session"]),
+  item("settings-receipt-prefix", "Receipt Prefix", "Set receipt number prefix and receipt copy defaults from Operations settings.", "settings", "Setting", "settings:operations", ["invoice prefix", "receipt number", "receipt copies"]),
+  item("settings-inventory-safeguards", "Inventory Safeguards", "Set low-stock thresholds, reorder defaults, barcode mode, stock reservation and negative-stock prevention.", "settings", "Setting", "settings:operations", ["low stock threshold", "reorder threshold", "barcode mode", "negative stock", "reserve stock"]),
+  item("settings-stock-safeguards", "Stock Safeguards", "Configure cross-terminal reservations and negative-stock prevention.", "settings", "Setting", "settings:operations", ["stock reservation", "oversell prevention", "inventory safeguards"]),
+  item("settings-negative-stock", "Negative Stock Prevention", "Prevent checkout from pushing products below available stock.", "settings", "Setting", "settings:operations", ["prevent negative stock", "oversell", "stock safeguards"]),
+  item("settings-barcode-mode", "Barcode Mode", "Choose scanner-first, manual or mixed barcode input behavior.", "settings", "Setting", "settings:operations", ["scanner mode", "manual barcode", "barcode input"]),
   item("settings-users", "Users", "Update user profile and password fields.", "settings", "Setting", "settings:users", ["profile", "password"]),
   item("settings-team", "Team", "Manage employees and module permissions.", "settings", "Setting", "settings:team", ["employees", "permissions"]),
   item("settings-keybindings", "Keybindings", "Customize POS keyboard shortcuts.", "settings", "Setting", "settings:keybindings", ["hotkeys", "shortcuts", "barcode shortcut"]),

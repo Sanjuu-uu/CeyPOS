@@ -6,7 +6,7 @@ function getShopSnapshot(shopId) {
   const db = openShopDatabase(shopId);
   try {
     const inventory = db
-      .prepare("SELECT * FROM inventory ORDER BY name COLLATE NOCASE")
+      .prepare("SELECT * FROM inventory WHERE deleted_at IS NULL ORDER BY name COLLATE NOCASE")
       .all();
 
     const customers = db

@@ -48,13 +48,16 @@ function normalizeProduct(input = {}) {
     preferred_supplier_id:
       input.preferred_supplier_id ?? input.preferredSupplierId ?? null,
     image_url: input.image_url ?? input.imageUrl ?? null,
+    deleted_at: null,
     created_at: input.created_at ?? now,
     updated_at: now,
   };
 }
 
 function fetchInventory(db) {
-  return db.prepare("SELECT * FROM inventory ORDER BY name COLLATE NOCASE").all();
+  return db
+    .prepare("SELECT * FROM inventory WHERE deleted_at IS NULL ORDER BY name COLLATE NOCASE")
+    .all();
 }
 
 function upsertInventoryRows(db, rows = []) {
@@ -63,11 +66,11 @@ function upsertInventoryRows(db, rows = []) {
     INSERT INTO inventory (
       inventory_code, barcode_id, name, category, sku, price, cost_price, stock,
       stock_last_month, restock_suggestion, reorder_threshold, unit_name, pack_size,
-      preferred_supplier_id, image_url, created_at, updated_at
+      preferred_supplier_id, image_url, deleted_at, created_at, updated_at
     ) VALUES (
       @inventory_code, @barcode_id, @name, @category, @sku, @price, @cost_price, @stock,
       @stock_last_month, @restock_suggestion, @reorder_threshold, @unit_name, @pack_size,
-      @preferred_supplier_id, @image_url, @created_at, @updated_at
+      @preferred_supplier_id, @image_url, NULL, @created_at, @updated_at
     )
     ON CONFLICT(inventory_code) DO UPDATE SET
       barcode_id = excluded.barcode_id,
@@ -84,6 +87,7 @@ function upsertInventoryRows(db, rows = []) {
       pack_size = excluded.pack_size,
       preferred_supplier_id = excluded.preferred_supplier_id,
       image_url = excluded.image_url,
+      deleted_at = NULL,
       updated_at = excluded.updated_at
   `);
 
@@ -105,7 +109,7 @@ function upsertInventoryRows(db, rows = []) {
   const placeholders = codes.map(() => "?").join(",");
   const updatedRows = db
     .prepare(
-      `SELECT * FROM inventory WHERE inventory_code IN (${placeholders}) ORDER BY name COLLATE NOCASE`
+      `SELECT * FROM inventory WHERE deleted_at IS NULL AND inventory_code IN (${placeholders}) ORDER BY name COLLATE NOCASE`
     )
     .all(...codes);
 
@@ -119,17 +123,18 @@ function adjustStockLevels(db, adjustments = []) {
        SET stock = MAX(0, COALESCE(stock, 0) + @delta),
            updated_at = @updated_at
      WHERE inventory_code = @inventory_code
+       AND deleted_at IS NULL
   `);
   const now = new Date().toISOString();
   const txn = db.transaction((items) => {
     for (const item of items) {
-      const before = db.prepare("SELECT inventory_code, stock, cost_price FROM inventory WHERE inventory_code = ?").get(item.inventory_code);
+      const before = db.prepare("SELECT inventory_code, stock, cost_price FROM inventory WHERE inventory_code = ? AND deleted_at IS NULL").get(item.inventory_code);
       stmt.run({
         inventory_code: item.inventory_code,
         delta: Number(item.delta || 0),
         updated_at: now,
       });
-      const after = db.prepare("SELECT inventory_code, stock FROM inventory WHERE inventory_code = ?").get(item.inventory_code);
+      const after = db.prepare("SELECT inventory_code, stock FROM inventory WHERE inventory_code = ? AND deleted_at IS NULL").get(item.inventory_code);
       if (before && after) {
         db.prepare(`
           INSERT INTO inventory_movements (
@@ -163,7 +168,7 @@ function adjustStockLevels(db, adjustments = []) {
   const placeholders = codes.map(() => "?").join(",");
   return db
     .prepare(
-      `SELECT * FROM inventory WHERE inventory_code IN (${placeholders}) ORDER BY name COLLATE NOCASE`
+      `SELECT * FROM inventory WHERE deleted_at IS NULL AND inventory_code IN (${placeholders}) ORDER BY name COLLATE NOCASE`
     )
     .all(...codes);
 }
@@ -238,30 +243,82 @@ function deleteProducts(shopId, codes = [], options = {}) {
     const placeholders = normalized.map(() => "?").join(",");
     const existing = db
       .prepare(
-        `SELECT inventory_code FROM inventory WHERE inventory_code IN (${placeholders})`
+        `SELECT item_id, inventory_code FROM inventory WHERE deleted_at IS NULL AND inventory_code IN (${placeholders})`
       )
       .all(...normalized)
-      .map((row) => String(row.inventory_code));
+      .map((row) => ({
+        item_id: row.item_id,
+        inventory_code: String(row.inventory_code),
+      }));
 
     if (!existing.length) {
       return [];
     }
 
-    const deletePlaceholders = existing.map(() => "?").join(",");
-    db.prepare(`DELETE FROM inventory WHERE inventory_code IN (${deletePlaceholders})`).run(
-      ...existing
-    );
+    const referenceTables = [
+      ["inventory_purchase_order_items", "inventory_code"],
+      ["inventory_goods_received_items", "inventory_code"],
+      ["inventory_purchase_return_items", "inventory_code"],
+      ["inventory_stock_count_items", "inventory_code"],
+      ["inventory_movements", "inventory_code"],
+      ["inventory_product_variants", "parent_inventory_code"],
+      ["transaction_items", "item_id"],
+    ];
+    const hasReferences = (row) =>
+      referenceTables.some(([table, column]) => {
+        const value = column === "item_id" ? row.item_id : row.inventory_code;
+        if (value === null || value === undefined) return false;
+        return Boolean(db.prepare(`SELECT 1 FROM ${table} WHERE ${column} = ? LIMIT 1`).get(value));
+      });
+
+    const hardDeleteCodes = [];
+    const archiveCodes = [];
+    existing.forEach((row) => {
+      if (hasReferences(row)) {
+        archiveCodes.push(row.inventory_code);
+      } else {
+        hardDeleteCodes.push(row.inventory_code);
+      }
+    });
+
+    const now = new Date().toISOString();
+    const txn = db.transaction(() => {
+      if (archiveCodes.length) {
+        const archivePlaceholders = archiveCodes.map(() => "?").join(",");
+        db.prepare(
+          `UPDATE inventory
+              SET deleted_at = ?,
+                  updated_at = ?
+            WHERE deleted_at IS NULL
+              AND inventory_code IN (${archivePlaceholders})`
+        ).run(now, now, ...archiveCodes);
+      }
+
+      if (hardDeleteCodes.length) {
+        const deletePlaceholders = hardDeleteCodes.map(() => "?").join(",");
+        db.prepare(`DELETE FROM inventory WHERE inventory_code IN (${deletePlaceholders})`).run(
+          ...hardDeleteCodes
+        );
+      }
+    });
+    txn();
+
+    const removedCodes = existing.map((row) => row.inventory_code);
 
     publishChange({
       shopId,
       entity: "inventory",
       action: "delete",
-      payload: { codes: existing },
-      metadata: options.metadata || {},
+      payload: { codes: removedCodes },
+      metadata: {
+        ...(options.metadata || {}),
+        archived: archiveCodes,
+        deleted: hardDeleteCodes,
+      },
       actor: options.actor || null,
     });
 
-    return existing;
+    return removedCodes;
   } finally {
     db.close();
   }

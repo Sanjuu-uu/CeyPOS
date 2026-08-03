@@ -188,7 +188,7 @@ function resolveBarcodeForShop(shopId, barcode, { includeGlobal = false } = {}) 
   const db = openShopDatabase(shopId);
   try {
     const inventory = db
-      .prepare("SELECT * FROM inventory WHERE barcode_id = ? LIMIT 1")
+      .prepare("SELECT * FROM inventory WHERE deleted_at IS NULL AND barcode_id = ? LIMIT 1")
       .get(clean);
     if (inventory) {
       return { barcode: clean, found: true, source: "inventory", product: inventory };

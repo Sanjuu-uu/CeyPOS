@@ -571,34 +571,38 @@ export const POS: React.FC = () => {
                 <ScanBarcode size={20} />
               </div>
             </div>
-
-            <div className="module-tabs no-scrollbar">
-              <button
-                onClick={() => setSelectedCategory(null)}
-                className={`module-tab ${selectedCategory === null ? "module-tab-active" : ""}`}
-              >
-                All Items
-              </button>
-              {categories.map((category) => (
-                <button
-                  key={category}
-                  onClick={() => setSelectedCategory(category)}
-                  className={`module-tab ${selectedCategory === category ? "module-tab-active" : ""}`}
-                >
-                  {category}
-                </button>
-              ))}
-            </div>
           </div>
 
-          <div className="flex-1 overflow-y-auto p-4 bg-gray-50/50">
-            {isLoading ? (
-              <div className="flex h-full items-center justify-center">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#ecff76]"></div>
+          <div className="flex-1 min-h-0 bg-gray-50/50 flex flex-col">
+            <div className="flex-1 overflow-y-auto p-4">
+              {isLoading ? (
+                <div className="flex h-full items-center justify-center">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#ecff76]"></div>
+                </div>
+              ) : (
+                <ProductGrid products={filteredProducts} />
+              )}
+            </div>
+
+            <div className="flex-shrink-0 border-t border-gray-100 bg-white p-4">
+              <div className="module-tabs no-scrollbar">
+                <button
+                  onClick={() => setSelectedCategory(null)}
+                  className={`module-tab ${selectedCategory === null ? "module-tab-active" : ""}`}
+                >
+                  All Items
+                </button>
+                {categories.map((category) => (
+                  <button
+                    key={category}
+                    onClick={() => setSelectedCategory(category)}
+                    className={`module-tab ${selectedCategory === category ? "module-tab-active" : ""}`}
+                  >
+                    {category}
+                  </button>
+                ))}
               </div>
-            ) : (
-              <ProductGrid products={filteredProducts} />
-            )}
+            </div>
           </div>
         </div>
 

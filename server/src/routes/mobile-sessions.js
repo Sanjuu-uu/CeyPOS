@@ -467,7 +467,7 @@ router.post("/import-product", (req, res) => {
       }
 
       const existing = db
-        .prepare("SELECT inventory_code FROM inventory WHERE barcode_id = ? LIMIT 1")
+        .prepare("SELECT inventory_code FROM inventory WHERE deleted_at IS NULL AND barcode_id = ? LIMIT 1")
         .get(cleanBarcode);
       const inventoryCode =
         product.inventory_code ||

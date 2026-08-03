@@ -228,7 +228,7 @@ router.post("/upload", requireClerkSession, (req, res, next) => {
       const dbBarcodeToCode = new Map();
       try {
         const stmt = db.prepare(
-          'SELECT inventory_code, barcode_id FROM inventory WHERE barcode_id IS NOT NULL'
+          'SELECT inventory_code, barcode_id FROM inventory WHERE deleted_at IS NULL AND barcode_id IS NOT NULL'
         );
         for (const row of stmt.iterate()) {
           if (row.barcode_id) {

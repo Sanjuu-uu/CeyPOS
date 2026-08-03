@@ -32,7 +32,7 @@ export const Input: React.FC<InputProps> = ({
   const baseInputClasses = 'bg-white border rounded-lg focus:outline-none focus:ring-2 transition-colors duration-200';
   const stateClasses = error
     ? 'border-red-300 focus:border-red-500 focus:ring-red-500/20 text-red-900 placeholder-red-300'
-    : 'border-gray-300 focus:border-[#ECFF76] focus:ring-[#ECFF76]/20 text-gray-900 placeholder-gray-400';
+    : 'border-gray-300 focus:border-[#c5f542] focus:ring-[#c5f542]/25 text-gray-900 placeholder-gray-400';
   
   const iconClasses = {
     left: leftIcon ? 'pl-10' : '',

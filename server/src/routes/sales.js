@@ -239,6 +239,7 @@ router.post("/complete", (req, res) => {
         SELECT item_id, inventory_code, name, price, cost_price, stock
           FROM inventory
          WHERE inventory_code = ?
+           AND deleted_at IS NULL
       `);
 
       for (const it of cleanItems) {
@@ -479,9 +480,10 @@ router.post("/complete", (req, res) => {
            SET stock = COALESCE(stock, 0) - ?,
                updated_at = ?
          WHERE inventory_code = ?
+           AND deleted_at IS NULL
            AND COALESCE(stock, 0) >= ?
       `);
-      const readStock = db.prepare("SELECT inventory_code, stock, cost_price FROM inventory WHERE inventory_code = ?");
+      const readStock = db.prepare("SELECT * FROM inventory WHERE inventory_code = ? AND deleted_at IS NULL");
       const inventoryRows = [];
       for (const [code, requestedQty] of requestedQtyByCode.entries()) {
         const info = updateStock.run(requestedQty, now, code, requestedQty);
@@ -629,6 +631,7 @@ router.post("/complete", (req, res) => {
       invoiceNumber: result.invoiceNumber,
       customerId: result.customerRow ? result.customerRow.customer_id : null,
       date: result.date,
+      inventoryRows: result.inventoryRows || [],
     });
 
     setImmediate(() => {

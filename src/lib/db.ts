@@ -321,6 +321,10 @@ interface ShopCache {
   // This terminal's own reservations (its current cart), so we can exclude
   // them when computing what's available to *this* terminal.
   myReservations: Map<string, number>;
+  // After this terminal completes a sale, socket events can arrive out of
+  // order for a moment. This adjustment subtracts our just-consumed cart hold
+  // from a stale aggregate while the server catches up.
+  recentReservationReleases: Map<string, { quantity: number; expiresAt: number }>;
 }
 
 const shopCaches: Record<string, ShopCache> = Object.create(null);
@@ -345,6 +349,7 @@ function ensureShopCache(shopKey: string): ShopCache {
       stockAppliedTxIds: new Set(),
       reservationsByCode: new Map(),
       myReservations: new Map(),
+      recentReservationReleases: new Map(),
       businessRules: {
         loyalty: {
           enabled: false,
@@ -514,16 +519,66 @@ function toShopKey(shopId: string) {
   return `shop_${normalizeShopId(shopId)}`;
 }
 
+function getRecentReservationRelease(cache: ShopCache, code: string) {
+  const release = cache.recentReservationReleases.get(code);
+  if (!release) return 0;
+  if (Date.now() > release.expiresAt) {
+    cache.recentReservationReleases.delete(code);
+    return 0;
+  }
+  return Math.max(0, Number(release.quantity || 0));
+}
+
+function releaseLocalSaleReservations(
+  shopKey: string,
+  items: Array<{ id?: string; inventory_code?: string; inventoryCode?: string; quantity?: number }>,
+) {
+  const cache = ensureShopCache(shopKey);
+  const previousMine = new Map(cache.myReservations);
+  cache.myReservations.clear();
+
+  const touchedCodes = new Set<string>(previousMine.keys());
+  const releaseUntil = Date.now() + 10000;
+
+  for (const item of items) {
+    const code = String(item.inventory_code ?? item.inventoryCode ?? item.id ?? "");
+    const qty = Number(item.quantity || 0);
+    if (!code || !Number.isFinite(qty) || qty <= 0) continue;
+    touchedCodes.add(code);
+    const existing = cache.recentReservationReleases.get(code);
+    cache.recentReservationReleases.set(code, {
+      quantity: Math.max(Number(existing?.quantity || 0), qty),
+      expiresAt: Math.max(Number(existing?.expiresAt || 0), releaseUntil),
+    });
+  }
+
+  for (const code of touchedCodes) {
+    const aggregate = cache.reservationsByCode.get(code) || 0;
+    const prev = previousMine.get(code) || 0;
+    const updated = Math.max(0, aggregate - prev);
+    if (updated > 0) {
+      cache.reservationsByCode.set(code, updated);
+    } else {
+      cache.reservationsByCode.delete(code);
+    }
+  }
+}
+
 function toProduct(shopKey: string, row: InventoryRow): Product {
   const stock = Number(row.stock ?? 0);
   const cache = ensureShopCache(shopKey);
   const code = String(row.inventory_code);
+  const aggregateReservations = Math.max(
+    0,
+    (cache.reservationsByCode.get(code) || 0) -
+      getRecentReservationRelease(cache, code),
+  );
   // Quantity held across ALL terminals' carts, including this one, so the
   // selling terminal sees the count drop the moment it adds to its cart.
   // max(serverAggregate, myCart): myCart gives instant local feedback before
   // the server echo arrives; the server aggregate takes over once it does.
   const reserved = Math.max(
-    cache.reservationsByCode.get(code) || 0,
+    aggregateReservations,
     cache.myReservations.get(code) || 0,
   );
   return {
@@ -644,7 +699,9 @@ function applyInventoryRows(shopKey: string, rows: InventoryRow[]) {
   let changed = false;
   for (const row of rows) {
     if (!row?.inventory_code) continue;
-    cache.inventoryByCode.set(String(row.inventory_code), row);
+    const code = String(row.inventory_code);
+    const existing = cache.inventoryByCode.get(code);
+    cache.inventoryByCode.set(code, existing ? { ...existing, ...row } : row);
     changed = true;
   }
   if (!changed) return;
@@ -954,6 +1011,11 @@ function handleChange(event: ChangeEventPayload | null | undefined) {
           }
         }
       }
+      for (const [code, release] of cache.recentReservationReleases.entries()) {
+        if (Date.now() > release.expiresAt || !cache.reservationsByCode.has(code)) {
+          cache.recentReservationReleases.delete(code);
+        }
+      }
       rebuildProducts(shopKey);
       break;
     }
@@ -1199,11 +1261,19 @@ function reserveCart(
   rebuildProducts(currentShopKey);
   if (socket) {
     try {
+      const releasedCart = cache.myReservations.size === 0;
+      const outgoingItems = Array.from(cache.myReservations.entries()).map(
+        ([inventory_code, quantity]) => ({ inventory_code, quantity }),
+      );
       socket.emit("cart:reserve", {
         sequence: currentReservationSequence,
-        items: Array.from(cache.myReservations.entries()).map(
-          ([inventory_code, quantity]) => ({ inventory_code, quantity }),
-        ),
+        items: outgoingItems,
+      }, (response: unknown) => {
+        if (!releasedCart || !(response as { ok?: boolean } | null)?.ok) return;
+        if (!currentShopKey) return;
+        const latestCache = ensureShopCache(currentShopKey);
+        latestCache.recentReservationReleases.clear();
+        rebuildProducts(currentShopKey);
       });
     } catch (err) {
       console.warn("Failed to send cart reservation", err);
@@ -1383,10 +1453,19 @@ async function createSaleRecord(sale: Omit<Sale, "id">): Promise<Sale> {
     body: JSON.stringify(payload),
   });
 
-  let body: any = null;
+  type CompleteSaleResponse = {
+    ok?: boolean;
+    error?: string;
+    message?: string;
+    transactionId?: string | number;
+    invoiceNumber?: string | number;
+    inventoryRows?: unknown;
+  };
+  let body: CompleteSaleResponse | null = null;
   const responseText = await res.text();
   try {
-    body = responseText ? JSON.parse(responseText) : null;
+    const parsed: unknown = responseText ? JSON.parse(responseText) : null;
+    body = parsed && typeof parsed === "object" ? (parsed as CompleteSaleResponse) : null;
   } catch {
     body = {
       ok: false,
@@ -1410,16 +1489,27 @@ async function createSaleRecord(sale: Omit<Sale, "id">): Promise<Sale> {
   };
 
   const cache = ensureShopCache(shopKey);
+  releaseLocalSaleReservations(shopKey, sale.items);
   // Mark this transaction's stock as applied so the realtime echo of the same
   // transaction does not deduct stock a second time on this terminal.
   const appliedTxId = Number(body.transactionId);
+  const alreadyApplied =
+    !Number.isNaN(appliedTxId) && cache.stockAppliedTxIds.has(appliedTxId);
+  const authoritativeRows = Array.isArray(body.inventoryRows)
+    ? body.inventoryRows.filter(isInventoryRow)
+    : [];
   let invChanged = false;
-  if (!Number.isNaN(appliedTxId) && cache.stockAppliedTxIds.has(appliedTxId)) {
+  if (alreadyApplied && !authoritativeRows.length) {
+    rebuildProducts(shopKey);
     // Already deducted (e.g. realtime echo arrived first) — skip to avoid double drop.
     return saleRecord;
   }
   if (!Number.isNaN(appliedTxId)) {
     cache.stockAppliedTxIds.add(appliedTxId);
+  }
+  if (authoritativeRows.length) {
+    applyInventoryRows(shopKey, authoritativeRows);
+    return saleRecord;
   }
   sale.items.forEach((item) => {
     const inv = cache.inventoryByCode.get(String(item.id));
@@ -1467,6 +1557,66 @@ export const db = {
       shopsCache[key] = created;
       emit("shopCreated", created);
       return created;
+    },
+    async updateMeta(
+      shopId: string,
+      settings: {
+        shopName: string;
+        phone?: string;
+        address?: string;
+        city?: string;
+        state?: string;
+        zipCode?: string;
+        country?: string;
+        shopType?: string;
+        businessLicense?: string;
+        taxId?: string;
+        registrationNumber?: string;
+        currency?: string;
+        timezone?: string;
+        userEmail?: string;
+      },
+    ): Promise<Shop> {
+      const cleanShopId = normalizeShopId(shopId);
+      const response = await authFetch(`${API_BASE}${API_ROUTES.shop.meta(cleanShopId)}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          shopId: cleanShopId,
+          userEmail: settings.userEmail,
+          shopName: settings.shopName,
+          phone: settings.phone,
+          address: settings.address,
+          city: settings.city,
+          state: settings.state,
+          zipCode: settings.zipCode,
+          country: settings.country,
+          shopType: settings.shopType,
+          businessLicense: settings.businessLicense,
+          taxId: settings.taxId,
+          registrationNumber: settings.registrationNumber,
+          currency: settings.currency,
+          timezone: settings.timezone,
+        }),
+      });
+      const body = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(body?.error || `Failed to update shop settings (${response.status})`);
+      }
+
+      const meta = body?.meta || {};
+      const key = toShopKey(cleanShopId);
+      const updated: Shop = {
+        ...(shopsCache[key] || { id: key, name: "Shop", address: "", contact: "" }),
+        id: key,
+        name: meta.shop_name || settings.shopName || "Shop",
+        address: meta.address || settings.address || "",
+        contact: meta.phone || settings.phone || "",
+        currency: meta.currency || settings.currency || "$",
+      };
+      shopsCache[key] = updated;
+      emit("shopMeta", { shopId: key, meta, shop: updated });
+      return updated;
     },
   },
   users: {
@@ -1788,7 +1938,7 @@ export const db = {
         try {
           const parsed = JSON.parse(data);
           return { ...defaultShortcuts, ...parsed };
-        } catch (e) {
+        } catch {
           console.warn("Failed to parse shortcuts, returning defaults");
         }
       }
